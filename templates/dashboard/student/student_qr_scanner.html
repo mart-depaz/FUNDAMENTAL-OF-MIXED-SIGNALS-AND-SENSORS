@@ -1,0 +1,319 @@
+{% extends 'dashboard/student/student.html' %}
+{% block title %}Scan QR Code{% endblock %}
+{% block dashboard_content %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<style>
+    #qr-reader {
+        width: 100%;
+        max-width: 500px;
+        margin: 0 auto;
+    }
+    #qr-reader__dashboard_section {
+        padding: 20px;
+    }
+    #qr-reader__camera_selection {
+        margin-bottom: 20px;
+    }
+    /* Fix camera inversion - ensure video is not mirrored */
+    #qr-reader video {
+        transform: scaleX(1) !important;
+        -webkit-transform: scaleX(1) !important;
+        object-fit: cover;
+    }
+    /* Hide any canvas elements that might be causing inversion */
+    #qr-reader canvas {
+        transform: scaleX(1) !important;
+        -webkit-transform: scaleX(1) !important;
+    }
+</style>
+
+<div class="max-w-4xl mx-auto">
+    <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8 mb-6">
+        <h1 class="text-2xl font-bold text-gray-900 mb-2 flex items-center">
+            <i class="fas fa-qrcode text-indigo-600 mr-3"></i> Scan QR Code for Attendance
+        </h1>
+        <p class="text-gray-600">Point your camera at the QR code displayed by your instructor to mark your attendance.</p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
+        <div id="qr-reader-loading" class="text-center py-8">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
+            <p class="text-gray-600 font-semibold">Initializing camera...</p>
+        </div>
+        <div id="qr-reader" class="mb-4 hidden"></div>
+        <div id="qr-reader-results" class="hidden mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <p class="text-green-800 font-semibold" id="scan-result-message"></p>
+        </div>
+        <div id="qr-reader-error" class="hidden mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p class="text-red-800 font-semibold" id="scan-error-message"></p>
+        </div>
+    </div>
+</div>
+
+<script>
+let html5QrcodeScanner = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const qrReader = document.getElementById('qr-reader');
+    
+    if (!qrReader) {
+        console.error('QR reader element not found');
+        return;
+    }
+
+    function onScanSuccess(decodedText, decodedResult) {
+        console.log('QR Code scanned:', decodedText);
+        
+        // Stop scanning temporarily
+        if (html5QrcodeScanner) {
+            try {
+                html5QrcodeScanner.pause();
+            } catch (e) {
+                console.log('Could not pause scanner:', e);
+            }
+        }
+        
+        // Show success message
+        document.getElementById('qr-reader-results').classList.remove('hidden');
+        document.getElementById('qr-reader-error').classList.add('hidden');
+        document.getElementById('scan-result-message').textContent = 'QR Code scanned! Processing attendance...';
+        
+        // Clean the scanned text - remove any URL encoding or extra characters
+        let cleanedQRCode = decodedText.trim();
+        
+        // Remove common URL patterns if present
+        if (cleanedQRCode.startsWith('http://') || cleanedQRCode.startsWith('https://')) {
+            // Extract from URL if it's a URL
+            try {
+                const url = new URL(cleanedQRCode);
+                cleanedQRCode = url.searchParams.get('qr_code') || url.pathname.split('/').pop() || cleanedQRCode;
+            } catch (e) {
+                // If URL parsing fails, try to extract hex string
+                const hexMatch = cleanedQRCode.match(/([a-f0-9]{32})/i);
+                if (hexMatch) {
+                    cleanedQRCode = hexMatch[1];
+                }
+            }
+        }
+        
+        console.log('Cleaned QR Code:', cleanedQRCode);
+        
+        // Send QR code to server
+        fetch('{% url "dashboard:student_scan_qr_attendance" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ qr_code: cleanedQRCode })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('qr-reader-results').classList.remove('hidden');
+                document.getElementById('qr-reader-error').classList.add('hidden');
+                document.getElementById('scan-result-message').textContent = data.message || 'Attendance marked successfully!';
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message || 'Attendance marked successfully!', 'success');
+                } else {
+                    alert('✓ Success!\n\n' + (data.message || 'Attendance marked successfully!'));
+                }
+                // Restart scanner quickly after 1.5 seconds (reduced from 3)
+                setTimeout(() => {
+                    if (html5QrcodeScanner) {
+                        try {
+                            html5QrcodeScanner.resume();
+                        } catch (e) {
+                            startScanner();
+                        }
+                    } else {
+                        startScanner();
+                    }
+                }, 1500);
+            } else {
+                document.getElementById('qr-reader-results').classList.add('hidden');
+                document.getElementById('qr-reader-error').classList.remove('hidden');
+                
+                // Show appropriate message based on attendance status
+                let errorMessage = data.message || 'Failed to mark attendance.';
+                let alertMessage = errorMessage;
+                if (data.attendance_status === 'closed') {
+                    errorMessage = 'Attendance is currently CLOSED for this course. Please contact your instructor.';
+                    alertMessage = '✗ Attendance Closed\n\nAttendance is currently CLOSED for this course.\nPlease contact your instructor.';
+                } else if (data.attendance_status === 'stopped') {
+                    errorMessage = 'Attendance has been STOPPED for this course. Please contact your instructor.';
+                    alertMessage = '✗ Attendance Stopped\n\nAttendance has been STOPPED for this course.\nPlease contact your instructor.';
+                } else if (data.attendance_status === 'open') {
+                    // Shouldn't reach here if open, but just in case
+                    alertMessage = '✓ Attendance Open\n\nYou can now scan the QR code.';
+                }
+                
+                document.getElementById('scan-error-message').textContent = errorMessage;
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMessage, 'error');
+                } else {
+                    alert(alertMessage);
+                }
+                // Restart scanner quickly after 2 seconds (reduced from 4)
+                setTimeout(() => {
+                    if (html5QrcodeScanner) {
+                        try {
+                            html5QrcodeScanner.resume();
+                        } catch (e) {
+                            startScanner();
+                        }
+                    } else {
+                        startScanner();
+                    }
+                }, 2000);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('qr-reader-error').classList.remove('hidden');
+            document.getElementById('scan-error-message').textContent = 'An error occurred. Please try again.';
+            if (typeof showNotification === 'function') {
+                showNotification('An error occurred. Please try again.', 'error');
+            }
+            // Restart scanner quickly after 1.5 seconds
+            setTimeout(() => {
+                startScanner();
+            }, 1500);
+        });
+    }
+
+    function onScanFailure(error) {
+        // Ignore scanning errors (they happen frequently during scanning)
+        // console.log('Scan error:', error);
+    }
+
+    function startScanner() {
+        // Hide previous messages
+        document.getElementById('qr-reader-results').classList.add('hidden');
+        document.getElementById('qr-reader-error').classList.add('hidden');
+        
+        // Clear previous scanner if exists
+        if (html5QrcodeScanner) {
+            try {
+                html5QrcodeScanner.clear().catch(() => {});
+            } catch (e) {
+                console.log('Error clearing scanner:', e);
+            }
+        }
+        
+        // Clear the container
+        const qrReader = document.getElementById('qr-reader');
+        if (qrReader) {
+            qrReader.innerHTML = '';
+        }
+        
+        // Start new scanner with optimized configuration for FAST scanning
+        html5QrcodeScanner = new Html5Qrcode("qr-reader");
+        
+        // Optimized camera config - prioritize speed
+        const cameraConfig = { facingMode: "environment" };
+        const scanConfig = {
+            fps: 30,  // Increased from 10 to 30 for much faster scanning
+            qrbox: function(viewfinderWidth, viewfinderHeight) {
+                // Optimize QR box size - smaller = faster processing
+                let minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                // Use 60% instead of 70% for faster processing
+                let qrboxSize = Math.floor(minEdge * 0.6);
+                return {
+                    width: Math.max(200, Math.min(300, qrboxSize)),  // Limit max size for speed
+                    height: Math.max(200, Math.min(300, qrboxSize))
+                };
+            },
+            aspectRatio: 1.0,
+            disableFlip: false,
+            supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+            // Lower resolution = MUCH faster processing - prioritize speed over quality
+            videoConstraints: {
+                facingMode: "environment",
+                width: { ideal: 640, max: 1280 },  // Lower resolution for speed
+                height: { ideal: 480, max: 720 }
+            },
+            // Additional optimizations
+            rememberLastUsedCamera: true,
+            showTorchButtonIfSupported: false  // Disable torch to reduce overhead
+        };
+        
+        html5QrcodeScanner.start(
+            cameraConfig,
+            scanConfig,
+            onScanSuccess,
+            onScanFailure
+        ).then(() => {
+            // Camera started successfully - hide loading, show scanner
+            document.getElementById('qr-reader-loading').classList.add('hidden');
+            document.getElementById('qr-reader').classList.remove('hidden');
+        }).catch(err => {
+            console.error('Unable to start QR scanner with back camera:', err);
+            // Try with any available camera (front camera as fallback)
+            html5QrcodeScanner.start(
+                { facingMode: "user" },
+                scanConfig,
+                onScanSuccess,
+                onScanFailure
+            ).then(() => {
+                // Camera started successfully - hide loading, show scanner
+                document.getElementById('qr-reader-loading').classList.add('hidden');
+                document.getElementById('qr-reader').classList.remove('hidden');
+            }).catch(err2 => {
+                // Last resort: try without facingMode constraint
+                html5QrcodeScanner.start(
+                    {},
+                    scanConfig,
+                    onScanSuccess,
+                    onScanFailure
+                ).then(() => {
+                    // Camera started successfully - hide loading, show scanner
+                    document.getElementById('qr-reader-loading').classList.add('hidden');
+                    document.getElementById('qr-reader').classList.remove('hidden');
+                }).catch(err3 => {
+                    console.error('Unable to start QR scanner with any camera:', err3);
+                    document.getElementById('qr-reader-loading').classList.add('hidden');
+                    document.getElementById('qr-reader-error').classList.remove('hidden');
+                    let errorMsg = 'Unable to access camera. ';
+                    if (err3.message && err3.message.includes('permission')) {
+                        errorMsg += 'Please grant camera permissions and refresh the page.';
+                    } else if (err3.message && err3.message.includes('device')) {
+                        errorMsg += 'No camera found. Please ensure your device has a camera.';
+                    } else {
+                        errorMsg += 'Please ensure you have granted camera permissions and try again.';
+                    }
+                    document.getElementById('scan-error-message').textContent = errorMsg;
+                });
+            });
+        });
+        
+        // Fix camera inversion - ensure video is not mirrored (faster initialization)
+        setTimeout(() => {
+            const videoElement = document.querySelector('#qr-reader video');
+            if (videoElement) {
+                videoElement.style.transform = 'scaleX(1)'; // No horizontal flip
+                videoElement.style.webkitTransform = 'scaleX(1)';
+                videoElement.style.mirror = 'none';
+            }
+            // Also fix any canvas elements
+            const canvasElements = document.querySelectorAll('#qr-reader canvas');
+            canvasElements.forEach(canvas => {
+                canvas.style.transform = 'scaleX(1)';
+                canvas.style.webkitTransform = 'scaleX(1)';
+            });
+        }, 200);  // Reduced from 500ms to 200ms for faster initialization
+    }
+
+    // Start scanner when page loads
+    startScanner();
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (html5QrcodeScanner) {
+            html5QrcodeScanner.clear();
+        }
+    });
+});
+</script>
+{% endblock %}
+

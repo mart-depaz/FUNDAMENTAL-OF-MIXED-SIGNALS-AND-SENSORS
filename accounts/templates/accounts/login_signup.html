@@ -1,0 +1,1318 @@
+<!-- templates/accounts/login_signup.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance System - Login & Sign-Up</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #FFFFFF;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Background Design Elements - Side by Side */
+        .bg-logos-container {
+            position: fixed;
+            top: 50%;
+            left: 0;
+            right: 0;
+            transform: translateY(-50%);
+            z-index: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 60px;
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        .bg-logo-left {
+            text-align: center;
+        }
+
+        .bg-logo-left .book-icon {
+            font-size: 64px;
+            color: #000000;
+            position: relative;
+            margin-bottom: 10px;
+        }
+
+        .bg-logo-left .checkmark {
+            position: absolute;
+            top: -8px;
+            right: -12px;
+            font-size: 24px;
+            color: #000000;
+            background: white;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .bg-logo-left .system-text {
+            font-size: 18px;
+            font-weight: bold;
+            color: #000000;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-top: 5px;
+        }
+
+        .bg-logo-right {
+            text-align: center;
+            transform: translateX(-165px);
+        }
+
+        .bg-logo-right .scan-box {
+            width: 80px;
+            height: 80px;
+            border: 3px solid #000000;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            background: transparent;
+        }
+
+        .bg-logo-right .fingerprint-icon {
+            font-size: 40px;
+            color: #000000;
+        }
+
+        .bg-logo-right .scan-text {
+            font-size: 16px;
+            font-weight: bold;
+            color: #000000;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .page-logo {
+            width: 140px;
+            margin: -140px auto 25px auto;
+            text-align: center;
+        }
+
+        .page-logo img {
+            width: 100%;
+            height: auto;
+            display: block;
+            object-fit: contain;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            padding: 15px;
+            box-sizing: border-box;
+            position: relative;
+            z-index: 1;
+            margin: 0 auto;
+        }
+
+        .form-card {
+            background-color: #FFFFFF;
+            border: 2px solid #3C4770;
+            border-radius: 8px;
+            padding: 10px 20px;
+            box-shadow: 0 4px 8px rgba(60, 71, 112, 0.2);
+        }
+
+        h1 {
+            color: #3C4770;
+            text-align: center;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        p {
+            text-align: center;
+            color: #666;
+            margin-top: 5px;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+
+        .subhead {
+            font-size: 0.85em;
+            margin-bottom: 5px;
+        }
+
+        .main-tabs {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 10px;
+            margin-bottom: 15px;
+        }
+
+        .main-tab-btn {
+            background-color: #DFCFD5;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s, color 0.3s;
+            flex: 1;
+            margin: 0 5px;
+            white-space: nowrap;
+            font-size: 0.95em;
+            color: #3C4770;
+        }
+
+        .main-tab-btn:not(.active):hover {
+            background-color: #AAB1C3;
+        }
+
+        .main-tab-btn.active {
+            background-color: #3C4770;
+            color: white;
+        }
+
+        .role-selection {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            margin: 10px 0;
+        }
+
+        .role-btn {
+            background-color: #DFCFD5;
+            border: none;
+            width: 48%;
+            margin-bottom: 5px;
+            padding: 8px 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s, box-shadow 0.3s;
+            box-sizing: border-box;
+            font-size: 0.9em;
+            color: #3C4770;
+        }
+
+        .role-btn:not(.active):hover {
+            background-color: #AAB1C3;
+            box-shadow: 0 2px 4px rgba(60, 71, 112, 0.2);
+        }
+
+        .role-btn.active {
+            background-color: #3C4770;
+            color: white;
+        }
+
+        .role-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            margin: 10px 0;
+        }
+
+        .tab-btn {
+            background-color: #DFCFD5;
+            border: none;
+            width: 48%;
+            margin-bottom: 5px;
+            padding: 8px 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s, box-shadow 0.3s;
+            box-sizing: border-box;
+            font-size: 0.9em;
+            color: #3C4770;
+        }
+
+        .tab-btn:not(.active):hover {
+            background-color: #AAB1C3;
+            box-shadow: 0 2px 4px rgba(60, 71, 112, 0.2);
+        }
+
+        .tab-btn.active {
+            background-color: #3C4770;
+            color: white;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            margin-top: 15px;
+        }
+
+        label {
+            margin-top: 8px;
+            font-weight: bold;
+            color: #3C4770;
+            font-size: 0.95em;
+        }
+
+        .input-group {
+            position: relative;
+            margin-top: 3px;
+            margin-bottom: 0;
+        }
+
+        .input-group input {
+            margin-top: 0;
+            width: 100%;
+            padding-right: 35px;
+        }
+
+        input {
+            padding: 6px;
+            margin-top: 3px;
+            border: 1px solid #AAB1C3;
+            border-radius: 5px;
+            font-size: 0.95em;
+            box-sizing: border-box;
+            transform: scale(1);
+            transition: border-color 0.3s, box-shadow 0.3s, transform 0.15s ease-in-out;
+        }
+
+        input:hover {
+            transform: scale(1.005);
+            border-color: #81C784;
+        }
+
+        input:focus {
+            border-color: #3C4770;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(60, 71, 112, 0.3);
+            transform: scale(1.01);
+        }
+
+        .toggle-password {
+            position: absolute;
+            top: 50%;
+            right: 8px;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: #3C4770;
+            font-size: 0.9em;
+            transition: color 0.2s;
+            z-index: 10;
+        }
+
+        .toggle-password:hover {
+            color: #447294;
+        }
+
+        .btn {
+            margin-top: 10px;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.3s, opacity 0.3s, transform 0.2s;
+            font-weight: 600;
+        }
+
+        .btn.primary {
+            background-color: #3C4770;
+            color: white;
+        }
+
+        .btn.primary:hover {
+            background-color: #447294;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(60, 71, 112, 0.3);
+        }
+
+        .btn.secondary {
+            background-color: #BE8199;
+            color: #3C4770;
+        }
+
+        .btn.secondary:hover {
+            background-color: #AAB1C3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(190, 129, 153, 0.3);
+        }
+
+        .btn.primary.loading::after {
+            content: ' ⏳';
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .link {
+            display: block;
+            text-align: center;
+            margin-top: 8px;
+            color: #3C4770;
+            text-decoration: none;
+            transition: color 0.3s;
+            font-weight: 500;
+        }
+
+        .link:hover {
+            color: #BE8199;
+            text-decoration: underline;
+        }
+
+        .message {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 5px;
+            text-align: center;
+            opacity: 1;
+            transition: opacity 0.5s ease-out;
+            position: relative;
+            z-index: 999999 !important;
+        }
+        
+        /* Ensure message elements are at top layer */
+        #login-message,
+        #signup-message,
+        #admin-login-message {
+            position: relative;
+            z-index: 999999 !important;
+        }
+        
+        /* Forgot message is now in fixed container at top */
+        #forgot-message {
+            position: relative;
+            z-index: 10001 !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            animation: slideInDown 0.3s ease-out;
+        }
+        
+        @keyframes slideInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.fade-out {
+            opacity: 0;
+        }
+
+        .message.success {
+            background-color: #e6ffe6;
+            color: #008000;
+            border: 1px solid #008000;
+        }
+
+        .message.error {
+            background-color: #ffe6e6;
+            color: #cc0000;
+            border: 1px solid #cc0000;
+        }
+
+        .message.info {
+            background-color: #e6f3ff;
+            color: #0066cc;
+            border: 1px solid #0066cc;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .footer-note {
+            font-size: 0.75em;
+            text-align: center;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 500px) {
+            .container {
+                max-width: 100%;
+                padding: 10px;
+            }
+            .form-card {
+                padding: 10px 15px;
+            }
+            .role-btn, .tab-btn {
+                width: 100%;
+                margin: 5px 0;
+            }
+            .bg-logos-container {
+                padding: 0 20px;
+            }
+            .bg-logo-left .book-icon {
+                font-size: 48px;
+            }
+            .bg-logo-left .system-text {
+                font-size: 14px;
+                letter-spacing: 1px;
+            }
+            .bg-logo-right .scan-box {
+                width: 60px;
+                height: 60px;
+            }
+            .bg-logo-right .fingerprint-icon {
+                font-size: 30px;
+            }
+            .bg-logo-right .scan-text {
+                font-size: 12px;
+            }
+        }
+    </style>
+    <!-- Include Notification System -->
+    {% include 'dashboard/shared/notification_system.html' %}
+</head>
+<body>
+    <!-- Password Recovery Notification Container (at top) -->
+    <div id="password-recovery-notification-container" style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10000; max-width: 90%; width: 480px; pointer-events: none;">
+        <div id="forgot-message" class="message hidden" style="margin-top: 0; margin-bottom: 10px; pointer-events: auto;"></div>
+    </div>
+    
+    <!-- Background Logo Elements - Side by Side (Reversed) -->
+    <div class="bg-logos-container">
+        <!-- Left: SCHOOL ATTENDANCE SYSTEM -->
+        <div class="bg-logo-left">
+            <div style="position: relative; display: inline-block;">
+                <i class="fas fa-book-open book-icon"></i>
+                <div class="checkmark">
+                    <i class="fas fa-check" style="font-size: 14px;"></i>
+                </div>
+            </div>
+            <div class="system-text">SCHOOL ATTENDANCE SYSTEM</div>
+        </div>
+
+        <!-- Right: SCAN Logo -->
+        <div class="bg-logo-right">
+            <div class="scan-box">
+                <i class="fas fa-fingerprint fingerprint-icon"></i>
+            </div>
+            <div class="scan-text">SCAN</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="page-logo">
+            <img src="{% static 'img/attendance-logo-alt.png' %}" alt="Attendance System logo">
+        </div>
+        <div class="form-card">
+        <div class="main-tabs">
+            <button id="login-tab" class="main-tab-btn active"><i class="fa-solid fa-right-to-bracket"></i> Login</button>
+            <!-- Signup removed - users are created by school administrators only -->
+        </div>
+
+            <!-- LOGIN SECTION -->
+            <div id="login-section">
+                <h1>Welcome Back!</h1>
+                <p>Log in to your account to continue.</p>
+                <p class="subhead">Select your role to access your dashboard.</p>
+
+                <div class="role-selection">
+                    <button id="teacher-role" class="role-btn active"><i class="fa-solid fa-chalkboard-user"></i> I’m a Teacher</button>
+                    <button id="student-role" class="role-btn"><i class="fa-solid fa-graduation-cap"></i> I’m a Student</button>
+                </div>
+
+                <form id="login-form" method="post" action="">
+                    {% csrf_token %}
+                    <input type="hidden" name="login-form" value="1">
+                    <label for="email-id">Email / ID Number:</label>
+                    <input type="text" id="email-id" name="email_or_id" placeholder="Enter your registered email or ID" required>
+
+                    <label for="password">Password:</label>
+                    <div class="input-group">
+                        <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                        <i class="fa-solid fa-eye toggle-password" data-target="password"></i>
+                    </div>
+
+                    <button type="submit" class="btn primary"><i class="fa-solid fa-sign-in-alt"></i> Login</button>
+                    <a href="#" id="forgot-password-link" class="link">Forgot Password?</a>
+                </form>
+
+                <div id="login-message" class="message hidden"></div>
+            </div>
+
+            <!-- SIGN-UP SECTION - HIDDEN: Users are created by school administrators only -->
+            <div id="signup-section" class="hidden" style="display: none !important;">
+                <h1>Create Your Account</h1>
+                <p>Join the attendance system and access your dashboard.</p>
+
+                <div class="role-tabs">
+                    <button id="teacher-tab" class="tab-btn active"><i class="fa-solid fa-chalkboard-user"></i> Teacher Registration</button>
+                    <button id="student-tab" class="tab-btn"><i class="fa-solid fa-graduation-cap"></i> Student Registration</button>
+                </div>
+
+                <form id="signup-form" class="teacher-form">
+                    <label for="full-name-teacher">Full Name</label>
+                    <input type="text" id="full-name-teacher" name="full_name" required>
+
+                    <label for="email-teacher">Email Address</label>
+                    <input type="email" id="email-teacher" name="email" required>
+
+                    <label for="employee-id">Employee ID</label>
+                    <input type="text" id="employee-id" name="employee_id" required>
+
+                    <label for="education-level-teacher">Education Level</label>
+                    <select id="education-level-teacher" name="education_level" required>
+                        <option value="">-- Select Education Level --</option>
+                        <option value="high_senior">High/Senior High</option>
+                        <option value="university_college">University/College</option>
+                    </select>
+
+                    <label for="school-teacher">School <span style="color: red;">*</span></label>
+                    <select id="school-teacher" name="school_name" required>
+                        <option value="">-- Select Education Level First --</option>
+                    </select>
+
+                    <div id="program-teacher-container" class="input-group" style="display: none;">
+                        <label for="program-teacher">Program/Major <span style="color: red;">*</span></label>
+                        <select id="program-teacher" name="program_id">
+                            <option value="">-- Select School First --</option>
+                        </select>
+                    </div>
+
+                    <div id="department-teacher-container" class="input-group">
+                        <label for="department-teacher">Department</label>
+                        <input type="text" id="department-teacher" name="department" required>
+                    </div>
+
+                    <label for="password-teacher">Password</label>
+                    <div class="input-group">
+                        <input type="password" id="password-teacher" name="password1" required>
+                        <i class="fa-solid fa-eye toggle-password" data-target="password-teacher"></i>
+                    </div>
+
+                    <label for="confirm-password-teacher">Confirm Password</label>
+                    <div class="input-group">
+                        <input type="password" id="confirm-password-teacher" name="password2" required>
+                        <i class="fa-solid fa-eye toggle-password" data-target="confirm-password-teacher"></i>
+                    </div>
+
+                    <input type="hidden" name="signup-form" value="1">
+                    <input type="hidden" name="role" value="teacher">
+                    <button type="submit" class="btn primary"><i class="fa-solid fa-arrow-right"></i> Create Teacher Account</button>
+                </form>
+
+                <form id="signup-form-student" class="student-form hidden">
+                    <label for="full-name-student">Full Name</label>
+                    <input type="text" id="full-name-student" name="full_name" required>
+
+                    <label for="student-id">Student ID Number</label>
+                    <input type="text" id="student-id" name="student_id" required>
+
+                    <label for="education-level-student">Education Level</label>
+                    <select id="education-level-student" name="education_level" required>
+                        <option value="">-- Select Education Level --</option>
+                        <option value="high_senior">High/Senior High</option>
+                        <option value="university_college">University/College</option>
+                    </select>
+
+                    <label for="school-student">School <span style="color: red;">*</span></label>
+                    <select id="school-student" name="school_name" required>
+                        <option value="">-- Select Education Level First --</option>
+                    </select>
+
+                    <div id="program-student-container" class="input-group" style="display: none;">
+                        <label for="program-student">Program/Major <span style="color: red;">*</span></label>
+                        <select id="program-student" name="program_id">
+                            <option value="">-- Select School First --</option>
+                        </select>
+                    </div>
+
+                    <div id="department-student-container" class="input-group">
+                        <label for="department-student">Department</label>
+                        <input type="text" id="department-student" name="department" required>
+                    </div>
+
+                    <label for="email-student">Email Address</label>
+                    <input type="email" id="email-student" name="email" required>
+
+                    <label for="password-student">Password</label>
+                    <div class="input-group">
+                        <input type="password" id="password-student" name="password1" required>
+                        <i class="fa-solid fa-eye toggle-password" data-target="password-student"></i>
+                    </div>
+
+                    <label for="confirm-password-student">Confirm Password</label>
+                    <div class="input-group">
+                        <input type="password" id="confirm-password-student" name="password2" required>
+                        <i class="fa-solid fa-eye toggle-password" data-target="confirm-password-student"></i>
+                    </div>
+
+                    <input type="hidden" name="signup-form-student" value="1">
+                    <input type="hidden" name="role" value="student">
+                    <button type="submit" class="btn primary"><i class="fa-solid fa-arrow-right"></i> Create Student Account</button>
+                </form>
+
+                <div id="signup-message" class="message hidden"></div>
+
+                <p class="footer-note">By signing up, you agree to our <a href="#">Terms of Use</a> and <a href="#">Privacy Policy</a>.</p>
+            </div>
+
+            <!-- FORGOT PASSWORD SECTION -->
+            <div id="forgot-section" class="hidden">
+                <h1>Password Recovery</h1>
+                <p id="forgot-header-text">Step 1: Enter your registered email.</p>
+
+                <form id="verify-form" method="post" action="">
+                    {% csrf_token %}
+                    <input type="hidden" name="verify-form" value="1">
+                    <label for="verify-email">Email Address:</label>
+                    <input type="email" id="verify-email" name="verify-email" placeholder="Enter your registered email" required>
+                    <button type="submit" class="btn primary">Send Verification Code</button>
+                </form>
+
+                <form id="code-verification-form" method="post" action="" class="hidden">
+                    {% csrf_token %}
+                    <input type="hidden" name="code-verification-form" value="1">
+                    <p class="subhead">A 6-digit code was sent to the email address provided. Please check your inbox and spam/junk folder.</p>
+                    <label for="verification-code">Verification Code:</label>
+                    <input type="text" id="verification-code" name="verification-code" placeholder="Enter 6-digit code" maxlength="6" required>
+                    <button type="submit" class="btn primary">Verify Code</button>
+                    <button type="button" id="resend-code-btn" class="btn secondary">Resend Code</button>
+                </form>
+
+                <form id="reset-password-form" method="post" action="" class="hidden">
+                    {% csrf_token %}
+                    <input type="hidden" name="reset-password-form" value="1">
+                    <label for="new-password">New Password</label>
+                    <div class="input-group">
+                        <input type="password" id="new-password" name="new-password" required>
+                        <i class="fa-solid fa-eye toggle-password" data-target="new-password"></i>
+                    </div>
+
+                    <label for="confirm-new-password">Confirm New Password</label>
+                    <div class="input-group">
+                        <input type="password" id="confirm-new-password" name="confirm-new-password" required>
+                        <i class="fa-solid fa-eye toggle-password" data-target="confirm-new-password"></i>
+                    </div>
+
+                    <button type="submit" class="btn primary">Reset Password</button>
+                </form>
+
+                <button type="button" id="back-to-login" class="btn secondary"><i class="fa-solid fa-arrow-left"></i> Back to Login</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let verifiedEmail = '{{ request.session.verified_email|default:"" }}';
+
+        function switchSection(activeTabId, activeSectionId) {
+            const tabs = ['login-tab']; // Signup tab removed
+            const sections = ['login-section', 'forgot-section']; // Signup section removed
+
+            tabs.forEach(tabId => {
+                const tab = document.getElementById(tabId);
+                if (tab) tab.classList.toggle('active', tabId === activeTabId);
+            });
+
+            sections.forEach(sectionId => {
+                document.getElementById(sectionId).classList.toggle('hidden', sectionId !== activeSectionId);
+            });
+
+            if (activeSectionId !== 'forgot-section') {
+                document.getElementById('forgot-header-text').textContent = 'Step 1: Enter your registered email.';
+                document.getElementById('verify-form').classList.remove('hidden');
+                document.getElementById('code-verification-form').classList.add('hidden');
+                document.getElementById('reset-password-form').classList.add('hidden');
+
+                document.getElementById('verify-email').value = '';
+                document.getElementById('verification-code').value = '';
+                document.getElementById('new-password').value = '';
+                document.getElementById('confirm-new-password').value = '';
+
+                const forgotMessage = document.getElementById('forgot-message');
+                forgotMessage.classList.add('hidden');
+                forgotMessage.textContent = '';
+            }
+            document.getElementById('login-message').classList.add('hidden');
+            document.getElementById('signup-message').classList.add('hidden');
+        }
+
+        function togglePasswordVisibility(icon) {
+            const targetId = icon.getAttribute('data-target');
+            const targetInput = document.getElementById(targetId);
+
+            if (targetInput.type === 'password') {
+                targetInput.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                targetInput.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
+
+        function showMessageWithFade(messageElement) {
+            if (messageElement && !messageElement.classList.contains('hidden')) {
+                setTimeout(() => {
+                    messageElement.classList.add('fade-out');
+                    setTimeout(() => {
+                        messageElement.classList.add('hidden');
+                        messageElement.classList.remove('fade-out');
+                        messageElement.textContent = '';
+                    }, 500);
+                }, 3000);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const activeSection = '{{ active_section|default:"login-section" }}';
+            const step = parseInt('{{ step|default:"1" }}', 10) || 1;
+            if (activeSection === 'forgot-section') {
+                switchSection('login-tab', 'forgot-section');
+                if (step === 2) {
+                    document.getElementById('verify-form').classList.add('hidden');
+                    document.getElementById('code-verification-form').classList.remove('hidden');
+                } else if (step === 3) {
+                    document.getElementById('verify-form').classList.add('hidden');
+                    document.getElementById('code-verification-form').classList.add('hidden');
+                    document.getElementById('reset-password-form').classList.remove('hidden');
+                }
+            } else {
+                switchSection('login-tab', activeSection === 'signup-section' ? 'signup-section' : 'login-section');
+            }
+
+            const toggleDepartmentVisibility = (selectElement, containerId) => {
+                const container = document.getElementById(containerId);
+                const isUniversity = selectElement.value === 'university_college';
+                container.style.display = isUniversity ? 'block' : 'none';
+                const input = container.querySelector('input');
+                input.required = isUniversity;
+            };
+
+            // Function to load schools based on education level
+            async function loadSchools(educationLevel, schoolSelectId) {
+                const schoolSelect = document.getElementById(schoolSelectId);
+                if (!schoolSelect) return;
+
+                // Clear existing options
+                schoolSelect.innerHTML = '<option value="">Loading schools...</option>';
+                schoolSelect.disabled = true;
+
+                if (!educationLevel) {
+                    schoolSelect.innerHTML = '<option value="">-- Select Education Level First --</option>';
+                    schoolSelect.disabled = false;
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/api/get-schools/?education_level=${encodeURIComponent(educationLevel)}`);
+                    const data = await response.json();
+
+                    if (data.success && data.schools.length > 0) {
+                        schoolSelect.innerHTML = '<option value="">-- Select School --</option>';
+                        data.schools.forEach(school => {
+                            const option = document.createElement('option');
+                            option.value = school.name;
+                            option.textContent = school.name;
+                            schoolSelect.appendChild(option);
+                        });
+                    } else {
+                        schoolSelect.innerHTML = '<option value="">No schools available for this level</option>';
+                    }
+                } catch (error) {
+                    console.error('Error loading schools:', error);
+                    schoolSelect.innerHTML = '<option value="">Error loading schools</option>';
+                } finally {
+                    schoolSelect.disabled = false;
+                }
+            }
+
+            // Function to load programs based on school and education level
+            async function loadPrograms(schoolName, educationLevel, programSelectId) {
+                const programSelect = document.getElementById(programSelectId);
+                let programContainerId = programSelectId.replace('program-', 'program-');
+                if (programSelectId.includes('teacher')) {
+                    programContainerId = 'program-teacher-container';
+                } else if (programSelectId.includes('student')) {
+                    programContainerId = 'program-student-container';
+                }
+                const programContainer = document.getElementById(programContainerId);
+                
+                if (!programSelect || !programContainer) return;
+
+                // Only show program field for university/college
+                if (educationLevel === 'university_college' && schoolName) {
+                    programContainer.style.display = 'block';
+                    programSelect.required = true;
+                    
+                    // Clear existing options
+                    programSelect.innerHTML = '<option value="">Loading programs...</option>';
+                    programSelect.disabled = true;
+
+                    try {
+                        const response = await fetch(`/api/get-programs/?school_name=${encodeURIComponent(schoolName)}&education_level=${encodeURIComponent(educationLevel)}`);
+                        const data = await response.json();
+
+                        if (data.success && data.programs.length > 0) {
+                            programSelect.innerHTML = '<option value="">-- Select Program --</option>';
+                            data.programs.forEach(program => {
+                                const option = document.createElement('option');
+                                option.value = program.id;
+                                option.textContent = `${program.code} - ${program.name}`;
+                                programSelect.appendChild(option);
+                            });
+                        } else {
+                            programSelect.innerHTML = '<option value="">No programs available for this school</option>';
+                        }
+                    } catch (error) {
+                        console.error('Error loading programs:', error);
+                        programSelect.innerHTML = '<option value="">Error loading programs</option>';
+                    } finally {
+                        programSelect.disabled = false;
+                    }
+                } else {
+                    // Hide program field for high/senior high
+                    programContainer.style.display = 'none';
+                    programSelect.required = false;
+                    programSelect.innerHTML = '<option value="">-- Select School First --</option>';
+                }
+            }
+
+            const educationLevelTeacher = document.getElementById('education-level-teacher');
+            const educationLevelStudent = document.getElementById('education-level-student');
+            const schoolTeacher = document.getElementById('school-teacher');
+            const schoolStudent = document.getElementById('school-student');
+
+            if (educationLevelTeacher) {
+                toggleDepartmentVisibility(educationLevelTeacher, 'department-teacher-container');
+                educationLevelTeacher.addEventListener('change', () => {
+                    toggleDepartmentVisibility(educationLevelTeacher, 'department-teacher-container');
+                    loadSchools(educationLevelTeacher.value, 'school-teacher');
+                    // Reset program when education level changes
+                    document.getElementById('program-teacher').innerHTML = '<option value="">-- Select School First --</option>';
+                    document.getElementById('program-teacher-container').style.display = 'none';
+                });
+            }
+            
+            if (schoolTeacher) {
+                schoolTeacher.addEventListener('change', () => {
+                    const educationLevel = educationLevelTeacher?.value;
+                    const schoolName = schoolTeacher.value;
+                    if (educationLevel && schoolName) {
+                        loadPrograms(schoolName, educationLevel, 'program-teacher');
+                    }
+                });
+            }
+
+            if (educationLevelStudent) {
+                toggleDepartmentVisibility(educationLevelStudent, 'department-student-container');
+                educationLevelStudent.addEventListener('change', () => {
+                    toggleDepartmentVisibility(educationLevelStudent, 'department-student-container');
+                    loadSchools(educationLevelStudent.value, 'school-student');
+                    // Reset program when education level changes
+                    document.getElementById('program-student').innerHTML = '<option value="">-- Select School First --</option>';
+                    document.getElementById('program-student-container').style.display = 'none';
+                });
+            }
+            
+            if (schoolStudent) {
+                schoolStudent.addEventListener('change', () => {
+                    const educationLevel = educationLevelStudent?.value;
+                    const schoolName = schoolStudent.value;
+                    if (educationLevel && schoolName) {
+                        loadPrograms(schoolName, educationLevel, 'program-student');
+                    }
+                });
+            }
+
+            document.querySelectorAll('.toggle-password').forEach(icon => {
+                icon.addEventListener('click', () => togglePasswordVisibility(icon));
+            });
+
+            ['login-message', 'signup-message', 'forgot-message'].forEach(id => {
+                showMessageWithFade(document.getElementById(id));
+            });
+        });
+
+        document.getElementById('login-tab').addEventListener('click', () => switchSection('login-tab', 'login-section'));
+        // Signup tab removed - users are created by school administrators only
+
+        document.getElementById('forgot-password-link').addEventListener('click', function(e) {
+            e.preventDefault();
+            switchSection('login-tab', 'forgot-section');
+        });
+
+        document.getElementById('back-to-login').addEventListener('click', () => switchSection('login-tab', 'login-section'));
+
+        document.getElementById('teacher-role').addEventListener('click', function() {
+            this.classList.add('active');
+            document.getElementById('student-role').classList.remove('active');
+        });
+
+        document.getElementById('student-role').addEventListener('click', function() {
+            this.classList.add('active');
+            document.getElementById('teacher-role').classList.remove('active');
+        });
+
+        document.getElementById('teacher-tab').addEventListener('click', function() {
+            this.classList.add('active');
+            document.getElementById('student-tab').classList.remove('active');
+            document.getElementById('signup-form').classList.remove('hidden');
+            document.getElementById('signup-form-student').classList.add('hidden');
+        });
+
+        document.getElementById('student-tab').addEventListener('click', function() {
+            this.classList.add('active');
+            document.getElementById('teacher-tab').classList.remove('active');
+            document.getElementById('signup-form-student').classList.remove('hidden');
+            document.getElementById('signup-form').classList.add('hidden');
+        });
+
+        document.getElementById('login-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const submitBtn = this.querySelector('button[type="submit"]');
+            submitBtn.classList.add('loading');
+            submitBtn.disabled = true;
+
+            const formData = new FormData(this);
+            const roleBtn = document.querySelector('.role-btn.active');
+            const selectedRole = roleBtn.id === 'teacher-role' ? 'teacher' : 'student';
+            formData.append('selected_role', selectedRole);
+
+            fetch('', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            }).then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            }).then(data => {
+                const message = document.getElementById('login-message');
+                message.classList.add('hidden');
+                if (data.success) {
+                    // Show welcome message using notification system if available, otherwise use local message
+                    const welcomeMsg = data.message || '✅ Login successful!';
+                    if (typeof showNotification === 'function') {
+                        showNotification(welcomeMsg, 'success');
+                    } else {
+                        message.textContent = welcomeMsg;
+                        message.className = 'message success';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
+                    setTimeout(() => {
+                        window.location.href = data.redirect || '/dashboard/';
+                    }, 1000);
+                } else {
+                    const errorMsg = data.message || '❌ Invalid email, ID, password, or role.';
+                    if (typeof showNotification === 'function') {
+                        showNotification(errorMsg, 'error');
+                    } else {
+                        message.textContent = errorMsg;
+                        message.className = 'message error';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
+                }
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            }).catch(error => {
+                const errorMsg = '❌ An unexpected error occurred. Please try again later.';
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                } else {
+                    const message = document.getElementById('login-message');
+                    message.classList.remove('hidden');
+                    message.textContent = errorMsg;
+                    message.className = 'message error';
+                    showMessageWithFade(message);
+                }
+                console.error('Fetch error:', error);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            });
+        });
+
+        document.getElementById('signup-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const submitBtn = this.querySelector('button[type="submit"]');
+            submitBtn.classList.add('loading');
+            submitBtn.disabled = true;
+
+            const formData = new FormData(this);
+            fetch('', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            }).then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            }).then(data => {
+                const message = document.getElementById('signup-message');
+                message.classList.add('hidden');
+                if (data.success) {
+                    message.textContent = data.message || '✅ Your teacher account request has been submitted. Await admin approval.';
+                    message.className = 'message success';
+                    setTimeout(() => {
+                        switchSection('login-tab', 'login-section');
+                    }, 2000);
+                } else {
+                    message.textContent = data.message || '❌ An error occurred during signup.';
+                    message.className = 'message error';
+                }
+                message.classList.remove('hidden');
+                showMessageWithFade(message);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            }).catch(error => {
+                const message = document.getElementById('signup-message');
+                message.classList.remove('hidden');
+                message.textContent = '❌ An unexpected error occurred. Please try again later.';
+                message.className = 'message error';
+                showMessageWithFade(message);
+                console.error('Fetch error:', error);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            });
+        });
+
+        document.getElementById('signup-form-student').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const submitBtn = this.querySelector('button[type="submit"]');
+            submitBtn.classList.add('loading');
+            submitBtn.disabled = true;
+
+            const formData = new FormData(this);
+            fetch('', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            }).then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            }).then(data => {
+                const message = document.getElementById('signup-message');
+                message.classList.add('hidden');
+                if (data.success) {
+                    message.textContent = data.message || '✅ Your student account has been created successfully! Redirecting to dashboard...';
+                    message.className = 'message success';
+                    setTimeout(() => {
+                        if (data.redirect) {
+                            window.location.href = data.redirect;
+                        } else {
+                            switchSection('login-tab', 'login-section');
+                        }
+                    }, data.redirect ? 1000 : 2000);  // Faster redirect if auto-login succeeded
+                } else {
+                    message.textContent = data.message || '❌ An error occurred during signup.';
+                    message.className = 'message error';
+                }
+                message.classList.remove('hidden');
+                showMessageWithFade(message);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            }).catch(error => {
+                const message = document.getElementById('signup-message');
+                message.classList.remove('hidden');
+                message.textContent = '❌ An unexpected error occurred. Please try again later.';
+                message.className = 'message error';
+                showMessageWithFade(message);
+                console.error('Fetch error:', error);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            });
+        });
+
+        document.getElementById('verify-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const submitBtn = this.querySelector('button[type="submit"]');
+            submitBtn.classList.add('loading');
+            submitBtn.disabled = true;
+
+            const formData = new FormData(this);
+            fetch('', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            }).then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            }).then(data => {
+                const message = document.getElementById('forgot-message');
+                message.classList.add('hidden');
+                if (data.success) {
+                    document.getElementById('forgot-header-text').textContent = 'Step 2: Enter Verification Code';
+                    document.getElementById('verify-form').classList.add('hidden');
+                    document.getElementById('code-verification-form').classList.remove('hidden');
+                    message.textContent = data.message || `✅ Verification code sent to ${data.email}. Please check your inbox (and spam/junk folder).`;
+                    message.className = 'message success';
+                    verifiedEmail = data.email;
+                } else {
+                    message.textContent = data.message || '❌ An error occurred. Please try again.';
+                    message.className = 'message error';
+                }
+                message.classList.remove('hidden');
+                showMessageWithFade(message);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            }).catch(error => {
+                const message = document.getElementById('forgot-message');
+                message.classList.remove('hidden');
+                message.textContent = '❌ An unexpected error occurred. Please try again later.';
+                message.className = 'message error';
+                showMessageWithFade(message);
+                console.error('Fetch error:', error);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            });
+        });
+
+        document.getElementById('code-verification-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const submitBtn = this.querySelector('button[type="submit"]');
+            submitBtn.classList.add('loading');
+            submitBtn.disabled = true;
+
+            const formData = new FormData(this);
+            fetch('', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            }).then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            }).then(data => {
+                const message = document.getElementById('forgot-message');
+                message.classList.add('hidden');
+                if (data.success) {
+                    document.getElementById('forgot-header-text').textContent = 'Step 3: Enter New Password';
+                    document.getElementById('code-verification-form').classList.add('hidden');
+                    document.getElementById('reset-password-form').classList.remove('hidden');
+                    message.textContent = '✅ Code verified. Please set your new password below.';
+                    message.className = 'message success';
+                } else {
+                    message.textContent = data.message || '❌ Incorrect code. Please try again.';
+                    message.className = 'message error';
+                }
+                message.classList.remove('hidden');
+                showMessageWithFade(message);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            }).catch(error => {
+                const message = document.getElementById('forgot-message');
+                message.classList.remove('hidden');
+                message.textContent = '❌ An unexpected error occurred. Please try again later.';
+                message.className = 'message error';
+                showMessageWithFade(message);
+                console.error('Fetch error:', error);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            });
+        });
+
+        document.getElementById('reset-password-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const submitBtn = this.querySelector('button[type="submit"]');
+            submitBtn.classList.add('loading');
+            submitBtn.disabled = true;
+
+            const formData = new FormData(this);
+            fetch('', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            }).then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            }).then(data => {
+                const message = document.getElementById('forgot-message');
+                message.classList.add('hidden');
+                if (data.success) {
+                    message.textContent = '🎉 Your password has been successfully reset! You can now log in.';
+                    message.className = 'message success';
+                    setTimeout(() => {
+                        switchSection('login-tab', 'login-section');
+                    }, 2000);
+                } else {
+                    message.textContent = data.message || '❌ An error occurred. Please try again.';
+                    message.className = 'message error';
+                }
+                message.classList.remove('hidden');
+                showMessageWithFade(message);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            }).catch(error => {
+                const message = document.getElementById('forgot-message');
+                message.classList.remove('hidden');
+                message.textContent = '❌ An unexpected error occurred. Please try again later.';
+                message.className = 'message error';
+                showMessageWithFade(message);
+                console.error('Fetch error:', error);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            });
+        });
+
+        document.getElementById('resend-code-btn').addEventListener('click', function() {
+            const submitBtn = this;
+            submitBtn.classList.add('loading');
+            submitBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('resend_code', 'true');
+            formData.append('verify-email', verifiedEmail);
+            fetch('', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            }).then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            }).then(data => {
+                const message = document.getElementById('forgot-message');
+                message.classList.add('hidden');
+                if (data.success) {
+                    message.textContent = data.message || `✅ Code resent to ${verifiedEmail}. Please check your inbox (and spam/junk folder).`;
+                    message.className = 'message success';
+                } else {
+                    message.textContent = data.message || '❌ Failed to resend code. Please try again.';
+                    message.className = 'message error';
+                }
+                message.classList.remove('hidden');
+                showMessageWithFade(message);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            }).catch(error => {
+                const message = document.getElementById('forgot-message');
+                message.classList.remove('hidden');
+                message.textContent = '❌ An unexpected error occurred. Please try again later.';
+                message.className = 'message error';
+                showMessageWithFade(message);
+                console.error('Fetch error:', error);
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+            });
+        });
+    </script>
+</body>
+</html>

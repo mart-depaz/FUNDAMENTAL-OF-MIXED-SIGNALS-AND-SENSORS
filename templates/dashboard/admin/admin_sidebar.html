@@ -1,0 +1,1119 @@
+<!-- templates/dashboard/admin/admin_sidebar.html -->
+<!-- Cropper.js for image cropping -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+<style>
+    .cropper-container {
+        max-width: 100%;
+        max-height: 500px;
+        min-height: 300px;
+        position: relative;
+        background-color: transparent;
+    }
+    
+    /* Ensure crop box is visible - overlay only outside crop area */
+    .cropper-container .cropper-crop-box {
+        border: 2px solid #3b82f6 !important;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5) !important;
+        background-color: transparent !important;
+    }
+    
+    /* Make sure the image area doesn't have grey background */
+    .cropper-container .cropper-canvas {
+        background-color: transparent !important;
+    }
+    
+    .cropper-container .cropper-view-box {
+        outline: 1px solid rgba(59, 130, 246, 0.5) !important;
+        background-color: transparent !important;
+    }
+    
+    /* Background overlay for the entire cropper container (outside the image) */
+    .cropper-container::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #f3f4f6;
+        z-index: -1;
+    }
+    
+    /* Make all crop box handles more visible */
+    .cropper-container .cropper-crop-box .cropper-point {
+        width: 10px !important;
+        height: 10px !important;
+        background-color: #3b82f6 !important;
+        border: 2px solid #ffffff !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+    }
+    
+    .cropper-container .cropper-crop-box .cropper-point:hover {
+        background-color: #2563eb !important;
+        transform: scale(1.15);
+        transition: all 0.2s;
+    }
+    
+    /* Remove underlines from all sidebar links and buttons */
+    .sidebar-link,
+    .sidebar-link:hover,
+    .sidebar-link:focus,
+    .sidebar-link:active,
+    .sidebar-link:visited {
+        text-decoration: none !important;
+    }
+    
+    .sidebar-link span,
+    .sidebar-link .font-medium {
+        text-decoration: none !important;
+    }
+    
+    #sidebar a,
+    #sidebar a:hover,
+    #sidebar a:focus,
+    #sidebar a:active,
+    #sidebar a:visited {
+        text-decoration: none !important;
+    }
+    
+    #sidebar button,
+    #sidebar button:hover,
+    #sidebar button:focus,
+    #sidebar button:active {
+        text-decoration: none !important;
+    }
+</style>
+<!-- Mobile Overlay -->
+<div id="sidebar-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+<!-- Sidebar Content -->
+<aside id="sidebar" class="fixed inset-y-0 left-0 transform -translate-x-full lg:translate-x-0 lg:fixed lg:w-64 w-64 text-white p-6 shadow-2xl transition-transform duration-300 ease-in-out z-40 flex flex-col relative overflow-hidden" style="background: linear-gradient(180deg, #3C4770 0%, #447294 100%); box-shadow: 2px 0 10px rgba(60, 71, 112, 0.3); top: 64px; height: calc(100vh - 64px);">
+    <!-- Header - Fixed at top -->
+    <div class="flex items-center justify-between mb-8 pb-4 border-b flex-shrink-0" style="border-color: rgba(190, 129, 153, 0.3);">
+        <div class="flex items-center">
+            <i class="fas fa-school text-2xl mr-2" style="color: #BE8199;"></i>
+            <h2 class="text-2xl font-bold tracking-wider">Admin Panel</h2>
+        </div>
+        <button class="lg:hidden p-1 rounded-full hover:bg-white/20" onclick="toggleSidebar()">
+            <i class="fas fa-times text-xl"></i>
+        </button>
+    </div>
+
+    <!-- Navigation - Scrollable area in the middle -->
+    <nav id="sidebar-nav" class="space-y-3 flex-1 overflow-y-auto min-h-0" style="scrollbar-width: thin; scrollbar-color: #BE8199 #3C4770; overscroll-behavior: contain;">
+        <a href="{% url 'dashboard:admin_dashboard' %}" class="sidebar-link flex items-center w-full px-4 py-3 rounded-xl transition duration-150 {% if request.resolver_match.url_name == 'admin_dashboard' %}shadow-lg hover:opacity-90{% else %}hover:bg-white/20{% endif %}" style="{% if request.resolver_match.url_name == 'admin_dashboard' %}background-color: #BE8199; color: #3C4770;{% else %}color: #ffffff;{% endif %}">
+            <i class="fas fa-chart-line w-5 h-5 mr-3 flex-shrink-0" style="{% if request.resolver_match.url_name == 'admin_dashboard' %}color: #3C4770;{% else %}color: #BE8199;{% endif %}"></i>
+            <span class="font-medium text-left flex-grow">System Overview</span>
+        </a>
+        <a href="{% url 'dashboard:admin_institutional_setup' %}" class="sidebar-link flex items-center w-full px-4 py-3 rounded-xl transition duration-150 {% if request.resolver_match.url_name == 'admin_institutional_setup' or request.resolver_match.url_name == 'admin_department_programs' %}shadow-lg{% else %}hover:bg-white/10{% endif %}" style="{% if request.resolver_match.url_name == 'admin_institutional_setup' or request.resolver_match.url_name == 'admin_department_programs' %}background-color: #BE8199; color: #3C4770;{% else %}color: #ffffff;{% endif %}">
+            <i class="fas fa-graduation-cap w-5 h-5 mr-3 flex-shrink-0" style="{% if request.resolver_match.url_name == 'admin_institutional_setup' or request.resolver_match.url_name == 'admin_department_programs' %}color: #3C4770;{% else %}color: #BE8199;{% endif %}"></i>
+            <span class="font-medium text-left flex-grow">Academics</span>
+        </a>
+        <a href="{% url 'dashboard:admin_user_management' %}" class="sidebar-link flex items-center w-full px-4 py-3 rounded-xl transition duration-150 {% if request.resolver_match.url_name == 'admin_user_management' or request.resolver_match.url_name == 'admin_department_users' or request.resolver_match.url_name == 'admin_program_users' %}shadow-lg{% else %}hover:bg-white/10{% endif %}" style="{% if request.resolver_match.url_name == 'admin_user_management' or request.resolver_match.url_name == 'admin_department_users' or request.resolver_match.url_name == 'admin_program_users' %}background-color: #BE8199; color: #3C4770;{% else %}color: #ffffff;{% endif %}">
+            <i class="fas fa-users w-5 h-5 mr-3 flex-shrink-0" style="{% if request.resolver_match.url_name == 'admin_user_management' or request.resolver_match.url_name == 'admin_department_users' or request.resolver_match.url_name == 'admin_program_users' %}color: #3C4770;{% else %}color: #BE8199;{% endif %}"></i>
+            <span class="font-medium text-left flex-grow">{% if user.education_level == 'university_college' %}Database{% else %}User Management{% endif %}</span>
+        </a>
+        <a href="{% url 'dashboard:admin_courses' %}" class="sidebar-link flex items-center w-full px-4 py-3 rounded-xl transition duration-150 {% if request.resolver_match.url_name == 'admin_courses' or request.resolver_match.url_name == 'admin_department_courses' or request.resolver_match.url_name == 'admin_program_courses' %}shadow-lg{% else %}hover:bg-white/10{% endif %}" style="{% if request.resolver_match.url_name == 'admin_courses' or request.resolver_match.url_name == 'admin_department_courses' or request.resolver_match.url_name == 'admin_program_courses' %}background-color: #BE8199; color: #3C4770;{% else %}color: #ffffff;{% endif %}">
+            <i class="fas fa-book-open w-5 h-5 mr-3 flex-shrink-0" style="{% if request.resolver_match.url_name == 'admin_courses' or request.resolver_match.url_name == 'admin_department_courses' or request.resolver_match.url_name == 'admin_program_courses' %}color: #3C4770;{% else %}color: #BE8199;{% endif %}"></i>
+            <span class="font-medium text-left flex-grow">Course Directory</span>
+        </a>
+        <a href="{% url 'dashboard:admin_trash' %}" class="sidebar-link flex items-center w-full px-4 py-3 rounded-xl transition duration-150 {% if request.resolver_match.url_name == 'admin_trash' %}shadow-lg{% else %}hover:bg-white/10{% endif %}" style="{% if request.resolver_match.url_name == 'admin_trash' %}background-color: #BE8199; color: #3C4770;{% else %}color: #ffffff;{% endif %}">
+            <i class="fas fa-trash-alt w-5 h-5 mr-3 flex-shrink-0" style="{% if request.resolver_match.url_name == 'admin_trash' %}color: #3C4770;{% else %}color: #BE8199;{% endif %}"></i>
+            <span class="font-medium text-left flex-grow">Trash</span>
+        </a>
+        <!-- Attendance Reports moved to instructor dashboard -->
+    </nav>
+
+    <!-- Profile Section - Fixed at Bottom -->
+    <div class="pt-4 mt-6 border-t flex-shrink-0" style="border-color: rgba(190, 129, 153, 0.3);">
+        <button onclick="openProfileModal()" class="w-full flex items-center mb-4 hover:bg-white/10 rounded-xl p-2 transition cursor-pointer group" style="color: #ffffff;">
+            {% if user.profile_picture %}
+            <img id="sidebar-profile-picture" src="{{ user.profile_picture.url }}?v={{ user.id }}" alt="Profile" class="w-10 h-10 rounded-full object-cover border-2 border-white flex-shrink-0">
+            {% else %}
+            <div id="sidebar-profile-placeholder" class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg border-2 border-white text-white flex-shrink-0" style="background: rgba(190, 129, 153, 0.3);">
+                {{ user.username|first|upper|default:"A" }}
+            </div>
+            {% endif %}
+            <div class="ml-3 flex-1 min-w-0 text-left">
+                <div class="text-sm font-semibold text-white truncate">{{ user.username|default:"Super Admin" }}</div>
+                <div class="text-xs truncate" style="color: rgba(255, 255, 255, 0.8);">ID: {{ user.school_id|default:"ADMIN" }}</div>
+                {% if user.school_name %}
+                <div class="text-xs truncate" style="color: rgba(190, 129, 153, 0.9);">{{ user.school_name }}</div>
+                {% endif %}
+            </div>
+        </button>
+        <a href="{% url 'admin_logout' %}" class="flex items-center w-full px-4 py-3 rounded-xl transition duration-150 shadow-md hover:bg-white/20" style="color: rgba(255, 255, 255, 0.9); background: rgba(190, 129, 153, 0.2);">
+            <i class="fas fa-sign-out-alt w-5 h-5 mr-3"></i>
+            <span class="font-medium">Logout</span>
+        </a>
+    </div>
+</aside>
+
+<script>
+    // Maintain active state on click for admin sidebar
+    document.addEventListener('DOMContentLoaded', function() {
+        const sidebarLinks = document.querySelectorAll('#sidebar-nav .sidebar-link');
+        
+        // Function to apply active styling
+        function applyActiveStyle(link) {
+            link.classList.add('shadow-lg');
+            link.style.backgroundColor = '#BE8199';
+            link.style.color = '#3C4770';
+            const icon = link.querySelector('i');
+            if (icon) {
+                icon.style.color = '#3C4770';
+            }
+        }
+        
+        // Function to remove active styling
+        function removeActiveStyle(link) {
+            link.classList.remove('shadow-lg');
+            link.style.backgroundColor = '';
+            link.style.color = '#ffffff';
+            const icon = link.querySelector('i');
+            if (icon) {
+                icon.style.color = '#BE8199';
+            }
+        }
+        
+        // Define URL patterns for each sidebar section
+        const academicsPatterns = ['admin_institutional_setup', 'admin_department_programs'];
+        const databasePatterns = ['admin_user_management', 'admin_department_users', 'admin_program_users'];
+        const coursePatterns = ['admin_courses', 'admin_department_courses', 'admin_program_courses'];
+        
+        // Function to check if current URL matches patterns based on pathname
+        function getActiveSection() {
+            const currentPath = window.location.pathname;
+            const urlParams = new URLSearchParams(window.location.search);
+            const fromAcademics = urlParams.get('from') === 'academics';
+            
+            // Check for academics pages - must check this first before database check
+            // Academics: institutional-setup OR departments/{id}/programs (without users/courses)
+            // OR programs/{id}/users with ?from=academics parameter
+            if (currentPath.includes('institutional-setup') || 
+                (currentPath.includes('departments') && currentPath.includes('programs') && 
+                 !currentPath.includes('courses') && !currentPath.includes('users')) ||
+                (fromAcademics && currentPath.includes('programs') && currentPath.includes('users'))) {
+                return 'academics';
+            }
+            // Check for database/user management pages
+            // Database: user-management OR departments/{id}/users OR programs/{id}/users (without from=academics)
+            if (currentPath.includes('user-management') || 
+                (currentPath.includes('departments') && currentPath.includes('users')) || 
+                (currentPath.includes('programs') && currentPath.includes('users') && !fromAcademics)) {
+                return 'database';
+            }
+            // Check for course management pages
+            // Course: courses (but not institutional) OR departments/{id}/courses OR programs/{id}/courses
+            if ((currentPath.includes('courses') && !currentPath.includes('institutional')) || 
+                (currentPath.includes('departments') && currentPath.includes('courses')) || 
+                (currentPath.includes('programs') && currentPath.includes('courses'))) {
+                return 'course';
+            }
+            return null;
+        }
+        
+        // Set initial active state based on current URL
+        const activeSection = getActiveSection();
+        sidebarLinks.forEach(link => {
+            const linkHref = link.getAttribute('href');
+            let shouldBeActive = false;
+            
+            if (activeSection === 'academics' && linkHref.includes('institutional-setup')) {
+                shouldBeActive = true;
+            } else if (activeSection === 'database' && linkHref.includes('user-management')) {
+                shouldBeActive = true;
+            } else if (activeSection === 'course' && linkHref.includes('courses') && !linkHref.includes('institutional')) {
+                shouldBeActive = true;
+            }
+            
+            if (shouldBeActive) {
+                applyActiveStyle(link);
+            } else {
+                removeActiveStyle(link);
+            }
+        });
+        
+        // Handle clicks to maintain active state
+        sidebarLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                const linkHref = this.getAttribute('href');
+                // Only change active state if clicking a different main section
+                const isAcademics = linkHref.includes('institutional-setup');
+                const isDatabase = linkHref.includes('user-management');
+                const isCourse = linkHref.includes('courses') && !linkHref.includes('institutional');
+                
+                // Remove active state from all links
+                sidebarLinks.forEach(l => {
+                    removeActiveStyle(l);
+                });
+                
+                // Apply active state to clicked link
+                applyActiveStyle(this);
+            });
+        });
+        
+        // Monitor for URL changes to update active state
+        let currentUrl = window.location.pathname;
+        setInterval(function() {
+            if (window.location.pathname !== currentUrl) {
+                currentUrl = window.location.pathname;
+                const activeSection = getActiveSection();
+                
+                // Update active states based on current section
+                sidebarLinks.forEach(link => {
+                    const linkHref = link.getAttribute('href');
+                    let shouldBeActive = false;
+                    
+                    if (activeSection === 'academics' && linkHref.includes('institutional-setup')) {
+                        shouldBeActive = true;
+                    } else if (activeSection === 'database' && linkHref.includes('user-management')) {
+                        shouldBeActive = true;
+                    } else if (activeSection === 'course' && linkHref.includes('courses') && !linkHref.includes('institutional')) {
+                        shouldBeActive = true;
+                    }
+                    
+                    if (shouldBeActive) {
+                        sidebarLinks.forEach(l => removeActiveStyle(l));
+                        applyActiveStyle(link);
+                    }
+                });
+            }
+        }, 100);
+    });
+</script>
+
+<!-- Profile Picture Cropper Modal -->
+<div id="profile-cropper-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 p-6 md:p-8 border-2 border-gray-200">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center" style="color: #3C4770;">
+                <i class="fas fa-crop w-6 h-6 mr-2"></i> Crop Profile Picture
+            </h3>
+            <button onclick="closeProfileCropperModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <!-- Crop Shape Selection - Removed, only square cropping available -->
+        
+        <div class="mb-4">
+            <div id="profile-cropper-container-wrapper" class="cropper-container" style="max-height: 500px; min-height: 300px; position: relative;">
+                <img id="profile-cropper-image" src="" alt="Crop" style="max-width: 100%; display: block;">
+            </div>
+        </div>
+        
+        <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200 bg-gray-50 -mx-6 md:-mx-8 -mb-6 md:-mb-8 px-6 md:px-8 pb-6 md:pb-8 rounded-b-2xl">
+            <button type="button" onclick="closeProfileCropperModal()" class="px-5 py-2.5 text-gray-700 bg-white border-2 border-gray-300 font-semibold rounded-xl hover:bg-gray-50 hover:border-gray-400 transition duration-150 shadow-sm hover:shadow-md">
+                Done
+            </button>
+            <button type="button" onclick="applyProfileCrop()" class="px-6 py-2.5 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg border-2 border-green-600" style="background-color: #10b981;" onmouseover="this.style.backgroundColor='#059669'; this.style.borderColor='#047857';" onmouseout="this.style.backgroundColor='#10b981'; this.style.borderColor='#059669';">
+                <i class="fas fa-check mr-2"></i> Apply Crop
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Profile Modal -->
+<div id="profile-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-start justify-center p-4 overflow-y-auto" style="padding-top: 5vh;">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mt-8 mb-8 p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center" style="color: #3C4770;">
+                <i class="fas fa-user-circle w-6 h-6 mr-2"></i> Admin Profile
+            </h3>
+            <button onclick="closeProfileModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <form id="profileForm" method="POST" action="{% url 'dashboard:admin_update_profile' %}" enctype="multipart/form-data" class="space-y-6">
+            {% csrf_token %}
+            <!-- Profile Header -->
+            <div class="flex items-center space-x-6 pb-6 border-b border-gray-200">
+                <div class="relative">
+                    {% if user.profile_picture %}
+                    <img src="{{ user.profile_picture.url }}?v={{ user.id }}" alt="Profile" id="profile-picture-preview" class="w-24 h-24 rounded-full object-cover border-4" style="border-color: rgba(190, 129, 153, 0.3);" data-original-src="{{ user.profile_picture.url }}?v={{ user.id }}">
+                    <div id="profile-picture-placeholder" class="w-24 h-24 rounded-full flex items-center justify-center font-bold text-4xl border-4 text-white hidden" style="background-color: #3C4770; border-color: rgba(190, 129, 153, 0.3);">
+                        {{ user.username|first|upper|default:"A" }}
+                    </div>
+                    {% else %}
+                    <img src="" alt="Profile" id="profile-picture-preview" class="w-24 h-24 rounded-full object-cover border-4 hidden" style="border-color: rgba(190, 129, 153, 0.3);" data-original-src="">
+                    <div id="profile-picture-placeholder" class="w-24 h-24 rounded-full flex items-center justify-center font-bold text-4xl border-4 text-white" style="background-color: #3C4770; border-color: rgba(190, 129, 153, 0.3);">
+                        {{ user.username|first|upper|default:"A" }}
+                    </div>
+                    {% endif %}
+                    <label for="profile_picture_input" id="profile-picture-edit-label" class="absolute bottom-0 right-0 w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-600 transition shadow-lg hidden">
+                        <i class="fas fa-camera text-white text-sm"></i>
+                    </label>
+                    <input type="file" name="profile_picture" id="profile_picture_input" accept="image/*" class="hidden" onchange="openProfilePictureCropper(this)">
+                </div>
+                <div class="flex-1">
+                    <div id="profile-name-container">
+                        <h2 class="text-2xl font-bold text-gray-900 mb-2" id="profile-name-display" data-original-value="{{ user.username }}">{{ user.username }}</h2>
+                        <input type="text" name="full_name" id="profile-name-input" value="{{ user.username }}" class="text-2xl font-bold text-gray-900 w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mb-2" style="display: none;" placeholder="Enter Full Name">
+                    </div>
+                    <div id="profile-email-container">
+                        <p class="text-gray-600 mb-2" id="profile-email-display" data-original-value="{{ user.email }}">{{ user.email }}</p>
+                        <input type="email" name="email" id="profile-email-input" value="{{ user.email }}" class="text-gray-600 w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mb-2" style="display: none;" placeholder="Enter Email">
+                    </div>
+                    <span class="inline-block mt-2 px-3 py-1 rounded-full text-sm font-semibold" style="background-color: #DFCFD5; color: #3C4770;">
+                        <i class="fas fa-user-shield mr-1"></i>Administrator
+                    </span>
+                </div>
+            </div>
+
+            <!-- Profile Details -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-gray-50 p-4 rounded-xl">
+                    <label class="block text-sm font-medium text-gray-500 mb-1">Admin ID</label>
+                    <div id="profile-school-id-container">
+                        <p class="text-lg font-semibold text-gray-900 font-mono" id="profile-school-id-display" data-original-value="{{ user.school_id|default:'' }}">{{ user.school_id|default:"Not Set" }}</p>
+                        <input type="text" name="school_id" id="profile-school-id-input" value="{{ user.school_id|default:'' }}" class="text-lg font-semibold text-gray-900 font-mono w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" style="display: none;" placeholder="Enter School ID">
+                    </div>
+                </div>
+                
+                <div class="bg-gray-50 p-4 rounded-xl">
+                    <label class="block text-sm font-medium text-gray-500 mb-1">School Name</label>
+                    <div id="profile-school-name-container">
+                        <p class="text-lg font-semibold text-gray-900" id="profile-school-name-display" data-original-value="{% if user.school_name %}{{ user.school_name }}{% endif %}">{% if user.school_name %}{{ user.school_name }}{% else %}Not Assigned{% endif %}</p>
+                        <input type="text" name="school_name" id="profile-school-name-input" value="{% if user.school_name %}{{ user.school_name }}{% endif %}" class="text-lg font-semibold text-gray-900 w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mt-1" style="display: none;" placeholder="Enter School Name">
+                    </div>
+                </div>
+                
+                <div class="bg-gray-50 p-4 rounded-xl">
+                    <label class="block text-sm font-medium text-gray-500 mb-1">Education Level</label>
+                    <p class="text-lg font-semibold text-gray-900">
+                        {% if user.education_level == 'high_senior' %}High/Senior High
+                        {% elif user.education_level == 'university_college' %}University/College
+                        {% else %}Not Set
+                        {% endif %}
+                    </p>
+                </div>
+                
+                <div class="bg-gray-50 p-4 rounded-xl">
+                    <label class="block text-sm font-medium text-gray-500 mb-1">Account Status</label>
+                    <p class="text-lg font-semibold text-green-600">
+                        <i class="fas fa-check-circle mr-1"></i>Active
+                    </p>
+                </div>
+                
+                {% if user.temporary_password_record %}
+                <div class="bg-gray-50 p-4 rounded-xl">
+                    <label class="block text-sm font-medium text-gray-500 mb-1">Temporary Password</label>
+                    <div class="flex items-center space-x-2">
+                        <p class="text-lg font-semibold text-gray-900 font-mono" id="profile-password-display" style="display: none;">{{ user.temporary_password_record.password }}</p>
+                        <p class="text-lg font-semibold text-gray-900 font-mono" id="profile-password-hidden">••••••••</p>
+                        <button type="button" onclick="togglePasswordVisibility()" class="ml-2 px-2 py-1 text-sm text-blue-600 hover:text-blue-800 transition duration-150">
+                            <i class="fas fa-eye" id="password-toggle-icon"></i>
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Custom Password Section -->
+                <div class="bg-gray-50 p-4 rounded-xl col-span-1 md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-500 mb-2" id="profile-password-label">
+                        {% if user.custom_password %}Change Your Password{% else %}Add Your Password{% endif %}
+                    </label>
+                    {% if user.custom_password %}
+                    <div class="mb-3 p-3 bg-white rounded-lg border border-gray-300">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Your Custom Password</label>
+                        <div class="flex items-center space-x-2">
+                            <p class="text-lg font-semibold text-gray-900 font-mono" id="profile-custom-password-display" style="display: none;">{% if user.custom_password_record %}{{ user.custom_password_record.password }}{% else %}••••••••{% endif %}</p>
+                            <p class="text-lg font-semibold text-gray-900 font-mono" id="profile-custom-password-hidden">••••••••</p>
+                            <button type="button" onclick="toggleCustomPasswordVisibility()" class="ml-2 px-2 py-1 text-sm text-blue-600 hover:text-blue-800 transition duration-150">
+                                <i class="fas fa-eye" id="custom-password-toggle-icon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {% endif %}
+                    <div id="profile-password-section" style="display: none;">
+                        <div class="space-y-3">
+                            {% if user.custom_password %}
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Current Password</label>
+                                <input type="password" name="current_password" id="profile-current-password" class="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" placeholder="Enter current password">
+                            </div>
+                            {% endif %}
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">{% if user.custom_password %}New Password{% else %}Password{% endif %}</label>
+                                <input type="password" name="new_password" id="profile-new-password" class="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" placeholder="Enter {% if user.custom_password %}new {% endif %}password (min 6 characters)">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Confirm {% if user.custom_password %}New {% endif %}Password</label>
+                                <input type="password" name="confirm_new_password" id="profile-confirm-password" class="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" placeholder="Confirm {% if user.custom_password %}new {% endif %}password">
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" id="profile-change-password-btn" onclick="togglePasswordSection()" class="mt-2 px-3 py-1.5 text-sm text-blue-600 hover:text-blue-800 transition duration-150 border border-blue-300 rounded-lg hover:bg-blue-50 opacity-50 cursor-not-allowed" disabled>
+                        <i class="fas fa-key mr-1"></i><span id="profile-password-btn-text">{% if user.custom_password %}Change Password{% else %}Add Password{% endif %}</span>
+                    </button>
+                    <p class="text-xs text-gray-500 mt-2 italic" id="profile-password-hint">Please click "Edit Profile" first to enable password changes.</p>
+                </div>
+            </div>
+
+            <!-- Signup Information -->
+            <div class="p-4 rounded-xl border" style="background-color: #DFCFD5; border-color: rgba(60, 71, 112, 0.3);">
+                <h5 class="font-semibold mb-3 flex items-center" style="color: #3C4770;">
+                    <i class="fas fa-info-circle mr-2"></i>Account Information
+                </h5>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Username:</span>
+                        <span class="font-mono font-semibold text-gray-900">{{ user.username }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Email:</span>
+                        <span class="font-semibold text-gray-900">{{ user.email }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Date Joined:</span>
+                        <span class="font-semibold text-gray-900">{{ user.date_joined|date:"F d, Y" }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Last Login:</span>
+                        <span class="font-semibold text-gray-900">
+                            {% if user.last_login %}{{ user.last_login|date:"F d, Y g:i A" }}{% else %}Never{% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                <button type="button" id="profile-edit-btn" onclick="enableProfileEdit()" class="px-5 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg transform hover:scale-105" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                    <i class="fas fa-edit mr-2"></i>Edit Profile
+                </button>
+                <button type="button" id="profile-cancel-btn" onclick="cancelProfileEdit()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 hover:shadow-md transition duration-150 hidden">
+                    Cancel
+                </button>
+                <button type="submit" id="profile-save-btn" class="px-5 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg transform hover:scale-105 hidden" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                    <i class="fas fa-save mr-2"></i>Save Changes
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// Profile picture cropper instance
+let profilePictureCropper = null;
+
+function openProfilePictureCropper(input) {
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            if (typeof showNotification === 'function') {
+                showNotification('Please select a valid image file.', 'error');
+            } else {
+                alert('Please select a valid image file.');
+            }
+            input.value = '';
+            return;
+        }
+        
+        // Validate file size (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            if (typeof showNotification === 'function') {
+                showNotification('Image size must be less than 10MB.', 'error');
+            } else {
+                alert('Image size must be less than 10MB.');
+            }
+            input.value = '';
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            // Open cropper modal
+            document.getElementById('profile-cropper-image').src = e.target.result;
+            document.getElementById('profile-cropper-modal').classList.remove('hidden');
+            
+            // Initialize cropper
+            setTimeout(() => {
+                const image = document.getElementById('profile-cropper-image');
+                if (profilePictureCropper) {
+                    profilePictureCropper.destroy();
+                }
+                profilePictureCropper = new Cropper(image, {
+                    aspectRatio: 1, // Square crop only
+                    viewMode: 1,
+                    dragMode: 'move',
+                    autoCropArea: 0.8,
+                    restore: false,
+                    guides: true,
+                    center: true,
+                    highlight: false,
+                    cropBoxMovable: true,
+                    cropBoxResizable: true,
+                    toggleDragModeOnDblclick: false,
+                });
+            }, 100);
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+
+function closeProfileCropperModal() {
+    document.getElementById('profile-cropper-modal').classList.add('hidden');
+    if (profilePictureCropper) {
+        profilePictureCropper.destroy();
+        profilePictureCropper = null;
+    }
+    // Reset file input
+    const pictureInput = document.getElementById('profile_picture_input');
+    if (pictureInput) {
+        pictureInput.value = '';
+    }
+}
+
+function applyProfileCrop() {
+    if (!profilePictureCropper) {
+        closeProfileCropperModal();
+        return;
+    }
+    
+    // Get cropped canvas - square crop only
+    const canvas = profilePictureCropper.getCroppedCanvas({
+        width: 400,
+        height: 400,
+        imageSmoothingEnabled: true,
+        imageSmoothingQuality: 'high',
+    });
+    
+    if (canvas) {
+        // Convert canvas to blob
+        canvas.toBlob(function(blob) {
+            if (blob) {
+                // Create a new File from the blob
+                const file = new File([blob], 'cropped-profile.png', { type: 'image/png' });
+                
+                // Create a new FileList-like object
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                
+                // Update the file input
+                const input = document.getElementById('profile_picture_input');
+                input.files = dataTransfer.files;
+                
+                // Update preview
+                const profileImg = document.getElementById('profile-picture-preview');
+                const profileDiv = document.getElementById('profile-picture-placeholder');
+                const previewDataUrl = canvas.toDataURL('image/png');
+                
+                if (profileImg) {
+                    profileImg.src = previewDataUrl;
+                    profileImg.style.display = 'block';
+                    profileImg.classList.remove('hidden');
+                    // Profile pictures are displayed as circles in the UI
+                    profileImg.style.borderRadius = '50%';
+                    profileImg.style.objectFit = 'cover';
+                    if (profileDiv) {
+                        profileDiv.style.display = 'none';
+                        profileDiv.classList.add('hidden');
+                    }
+                } else if (profileDiv) {
+                    // Convert placeholder div to img
+                    const newImg = document.createElement('img');
+                    newImg.id = 'profile-picture-preview';
+                    newImg.src = previewDataUrl;
+                    newImg.alt = 'Profile';
+                    newImg.className = 'w-24 h-24 rounded-full object-cover border-4';
+                    newImg.style.borderColor = 'rgba(190, 129, 153, 0.3)';
+                    newImg.style.borderRadius = '50%';
+                    newImg.style.objectFit = 'cover';
+                    profileDiv.parentNode.replaceChild(newImg, profileDiv);
+                }
+                
+                // Also update top bar preview immediately
+                updateTopBarProfilePicture(canvas.toDataURL('image/png'));
+                
+                closeProfileCropperModal();
+            }
+        }, 'image/png', 0.9);
+    }
+}
+
+// Function to update top bar and sidebar profile picture
+function updateTopBarProfilePicture(imageSrc) {
+    // Update top bar right side (profile button)
+    const topbarImg = document.getElementById('topbar-profile-picture');
+    const topbarPlaceholder = document.getElementById('topbar-profile-placeholder');
+    
+    if (topbarImg) {
+        topbarImg.src = imageSrc;
+        topbarImg.style.display = 'block';
+        topbarImg.classList.remove('hidden');
+    } else if (topbarPlaceholder) {
+        // Convert placeholder to image
+        const newImg = document.createElement('img');
+        newImg.id = 'topbar-profile-picture';
+        newImg.src = imageSrc;
+        newImg.alt = 'Profile';
+        newImg.className = 'h-8 w-8 rounded-full object-cover border-2 border-white flex-shrink-0';
+        topbarPlaceholder.parentNode.replaceChild(newImg, topbarPlaceholder);
+    }
+    
+    // Update top bar center (next to school name)
+    const topbarCenterImg = document.getElementById('topbar-center-profile-picture');
+    const topbarCenterPlaceholder = document.getElementById('topbar-center-profile-placeholder');
+    
+    if (topbarCenterImg) {
+        topbarCenterImg.src = imageSrc;
+        topbarCenterImg.style.display = 'block';
+        topbarCenterImg.classList.remove('hidden');
+    } else if (topbarCenterPlaceholder) {
+        // Convert placeholder to image
+        const newImg = document.createElement('img');
+        newImg.id = 'topbar-center-profile-picture';
+        newImg.src = imageSrc;
+        newImg.alt = 'Profile';
+        newImg.className = 'h-6 w-6 sm:h-7 sm:w-7 rounded-full object-cover border-2 border-white flex-shrink-0';
+        topbarCenterPlaceholder.parentNode.replaceChild(newImg, topbarCenterPlaceholder);
+    }
+    
+    // Update sidebar
+    const sidebarImg = document.getElementById('sidebar-profile-picture');
+    const sidebarPlaceholder = document.getElementById('sidebar-profile-placeholder');
+    
+    if (sidebarImg) {
+        sidebarImg.src = imageSrc;
+        sidebarImg.style.display = 'block';
+        sidebarImg.classList.remove('hidden');
+    } else if (sidebarPlaceholder) {
+        // Convert placeholder to image
+        const newImg = document.createElement('img');
+        newImg.id = 'sidebar-profile-picture';
+        newImg.src = imageSrc;
+        newImg.alt = 'Profile';
+        newImg.className = 'w-10 h-10 rounded-full object-cover border-2 border-white flex-shrink-0';
+        sidebarPlaceholder.parentNode.replaceChild(newImg, sidebarPlaceholder);
+    }
+}
+</script>
+
+<script>
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        const isOpen = !sidebar.classList.contains('-translate-x-full');
+        
+        if (isOpen) {
+            sidebar.classList.add('-translate-x-full');
+            overlay.classList.add('hidden');
+        } else {
+            sidebar.classList.remove('-translate-x-full');
+            overlay.classList.remove('hidden');
+        }
+    }
+
+    function openProfileModal() {
+        const modal = document.getElementById('profile-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            // Reset to view mode when opening
+            cancelProfileEdit();
+        }
+    }
+    
+    function closeProfileModal() {
+        const modal = document.getElementById('profile-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+            // Reset to view mode when closing
+            cancelProfileEdit();
+        }
+    }
+    
+    function togglePasswordVisibility() {
+        const passwordDisplay = document.getElementById('profile-password-display');
+        const passwordHidden = document.getElementById('profile-password-hidden');
+        const toggleIcon = document.getElementById('password-toggle-icon');
+        
+        if (passwordDisplay && passwordHidden && toggleIcon) {
+            if (passwordDisplay.style.display === 'none') {
+                passwordDisplay.style.display = 'block';
+                passwordHidden.style.display = 'none';
+                toggleIcon.classList.remove('fa-eye');
+                toggleIcon.classList.add('fa-eye-slash');
+            } else {
+                passwordDisplay.style.display = 'none';
+                passwordHidden.style.display = 'block';
+                toggleIcon.classList.remove('fa-eye-slash');
+                toggleIcon.classList.add('fa-eye');
+            }
+        }
+    }
+    
+    function toggleCustomPasswordVisibility() {
+        const passwordDisplay = document.getElementById('profile-custom-password-display');
+        const passwordHidden = document.getElementById('profile-custom-password-hidden');
+        const toggleIcon = document.getElementById('custom-password-toggle-icon');
+        
+        if (passwordDisplay && passwordHidden && toggleIcon) {
+            if (passwordDisplay.style.display === 'none' || passwordDisplay.style.display === '') {
+                passwordDisplay.style.display = 'block';
+                passwordHidden.style.display = 'none';
+                toggleIcon.classList.remove('fa-eye');
+                toggleIcon.classList.add('fa-eye-slash');
+            } else {
+                passwordDisplay.style.display = 'none';
+                passwordHidden.style.display = 'block';
+                toggleIcon.classList.remove('fa-eye-slash');
+                toggleIcon.classList.add('fa-eye');
+            }
+        }
+    }
+    
+    // Make functions globally accessible for topbar dropdown
+    window.openProfileModal = openProfileModal;
+    window.closeProfileModal = closeProfileModal;
+    
+    function enableProfileEdit() {
+        // Make name editable
+        const nameDisplay = document.getElementById('profile-name-display');
+        const nameInput = document.getElementById('profile-name-input');
+        if (nameDisplay && nameInput) {
+            nameDisplay.style.display = 'none';
+            nameInput.style.display = 'block';
+        }
+        
+        // Make email editable
+        const emailDisplay = document.getElementById('profile-email-display');
+        const emailInput = document.getElementById('profile-email-input');
+        if (emailDisplay && emailInput) {
+            emailDisplay.style.display = 'none';
+            emailInput.style.display = 'block';
+        }
+        
+        // Make school ID editable
+        const schoolIdDisplay = document.getElementById('profile-school-id-display');
+        const schoolIdInput = document.getElementById('profile-school-id-input');
+        if (schoolIdDisplay && schoolIdInput) {
+            schoolIdDisplay.style.display = 'none';
+            schoolIdInput.style.display = 'block';
+        }
+        
+        // Show edit inputs - school name
+        const schoolNameInput = document.getElementById('profile-school-name-input');
+        const schoolNameDisplay = document.getElementById('profile-school-name-display');
+        
+        if (schoolNameInput && schoolNameDisplay) {
+            // Hide display, show input
+            schoolNameDisplay.style.display = 'none';
+            schoolNameInput.style.display = 'block';
+            schoolNameInput.style.visibility = 'visible';
+        }
+        
+        // Show profile picture upload button
+        const pictureLabel = document.getElementById('profile-picture-edit-label');
+        if (pictureLabel) {
+            pictureLabel.classList.remove('hidden');
+        }
+        
+        // Enable password button
+        const changePasswordBtn = document.getElementById('profile-change-password-btn');
+        const passwordHint = document.getElementById('profile-password-hint');
+        if (changePasswordBtn) {
+            changePasswordBtn.disabled = false;
+            changePasswordBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+        if (passwordHint) {
+            passwordHint.style.display = 'none';
+        }
+        
+        // Show/hide buttons
+        const editBtn = document.getElementById('profile-edit-btn');
+        const cancelBtn = document.getElementById('profile-cancel-btn');
+        const saveBtn = document.getElementById('profile-save-btn');
+        
+        if (editBtn) editBtn.classList.add('hidden');
+        if (cancelBtn) cancelBtn.classList.remove('hidden');
+        if (saveBtn) saveBtn.classList.remove('hidden');
+    }
+    
+    function togglePasswordSection() {
+        const changePasswordBtn = document.getElementById('profile-change-password-btn');
+        const saveBtn = document.getElementById('profile-save-btn');
+        
+        // Check if edit mode is enabled
+        if (!saveBtn || saveBtn.classList.contains('hidden')) {
+            if (typeof showNotification === 'function') {
+                showNotification('Please click "Edit Profile" first to enable password changes.', 'warning');
+            } else {
+                alert('Please click "Edit Profile" first to enable password changes.');
+            }
+            return;
+        }
+        
+        const passwordSection = document.getElementById('profile-password-section');
+        const passwordLabel = document.getElementById('profile-password-label');
+        const passwordBtnText = document.getElementById('profile-password-btn-text');
+        const hasCustomPassword = '{{ user.custom_password|yesno:"true,false" }}' === 'True';
+        
+        if (passwordSection && changePasswordBtn) {
+            if (passwordSection.style.display === 'none') {
+                passwordSection.style.display = 'block';
+                if (passwordBtnText) {
+                    passwordBtnText.textContent = hasCustomPassword ? 'Cancel Password Change' : 'Cancel Add Password';
+                }
+                changePasswordBtn.classList.remove('text-blue-600', 'border-blue-300', 'hover:bg-blue-50');
+                changePasswordBtn.classList.add('text-gray-600', 'border-gray-300', 'hover:bg-gray-50');
+            } else {
+                passwordSection.style.display = 'none';
+                if (passwordBtnText) {
+                    passwordBtnText.textContent = hasCustomPassword ? 'Change Password' : 'Add Password';
+                }
+                changePasswordBtn.classList.remove('text-gray-600', 'border-gray-300', 'hover:bg-gray-50');
+                changePasswordBtn.classList.add('text-blue-600', 'border-blue-300', 'hover:bg-blue-50');
+                // Clear password fields
+                const currentPassword = document.getElementById('profile-current-password');
+                const newPassword = document.getElementById('profile-new-password');
+                const confirmPassword = document.getElementById('profile-confirm-password');
+                if (currentPassword) currentPassword.value = '';
+                if (newPassword) newPassword.value = '';
+                if (confirmPassword) confirmPassword.value = '';
+            }
+        }
+    }
+    
+    function cancelProfileEdit() {
+        // Hide edit inputs
+        const schoolNameInput = document.getElementById('profile-school-name-input');
+        const schoolNameDisplay = document.getElementById('profile-school-name-display');
+        
+        if (schoolNameInput && schoolNameDisplay) {
+            // Hide input, show display
+            schoolNameInput.style.display = 'none';
+            schoolNameInput.style.visibility = 'hidden';
+            schoolNameDisplay.style.display = 'block';
+            
+            // Reset school name input to original value
+            const originalValue = schoolNameDisplay.getAttribute('data-original-value') || '';
+            schoolNameInput.value = originalValue;
+        }
+        
+        // Hide profile picture upload button
+        const pictureLabel = document.getElementById('profile-picture-edit-label');
+        if (pictureLabel) {
+            pictureLabel.classList.add('hidden');
+        }
+        
+        // Reset profile picture input and preview
+        const pictureInput = document.getElementById('profile_picture_input');
+        if (pictureInput) {
+            pictureInput.value = '';
+        }
+        
+        // Reset profile picture preview to original
+        const preview = document.getElementById('profile-picture-preview');
+        const placeholder = document.getElementById('profile-picture-placeholder');
+        if (preview && placeholder) {
+            // Check if there's an original image
+            const originalSrc = preview.getAttribute('data-original-src');
+            if (originalSrc) {
+                preview.src = originalSrc;
+                preview.style.display = 'block';
+                placeholder.style.display = 'none';
+            } else {
+                preview.style.display = 'none';
+                placeholder.style.display = 'flex';
+            }
+        }
+        
+        // Reset name field
+        const nameDisplay = document.getElementById('profile-name-display');
+        const nameInput = document.getElementById('profile-name-input');
+        if (nameDisplay && nameInput) {
+            const originalValue = nameDisplay.getAttribute('data-original-value');
+            nameInput.value = originalValue || '';
+            nameDisplay.style.display = 'block';
+            nameInput.style.display = 'none';
+        }
+        
+        // Reset email field
+        const emailDisplay = document.getElementById('profile-email-display');
+        const emailInput = document.getElementById('profile-email-input');
+        if (emailDisplay && emailInput) {
+            const originalValue = emailDisplay.getAttribute('data-original-value');
+            emailInput.value = originalValue || '';
+            emailDisplay.style.display = 'block';
+            emailInput.style.display = 'none';
+        }
+        
+        // Reset school ID field
+        const schoolIdDisplay = document.getElementById('profile-school-id-display');
+        const schoolIdInput = document.getElementById('profile-school-id-input');
+        if (schoolIdDisplay && schoolIdInput) {
+            const originalValue = schoolIdDisplay.getAttribute('data-original-value');
+            schoolIdInput.value = originalValue || '';
+            schoolIdDisplay.style.display = 'block';
+            schoolIdInput.style.display = 'none';
+        }
+        
+        // Reset password section
+        const passwordSection = document.getElementById('profile-password-section');
+        const changePasswordBtn = document.getElementById('profile-change-password-btn');
+        const passwordHint = document.getElementById('profile-password-hint');
+        const passwordBtnText = document.getElementById('profile-password-btn-text');
+        const hasCustomPassword = '{{ user.custom_password|yesno:"true,false" }}' === 'True';
+        
+        if (passwordSection && changePasswordBtn) {
+            passwordSection.style.display = 'none';
+            if (passwordBtnText) {
+                passwordBtnText.textContent = hasCustomPassword ? 'Change Password' : 'Add Password';
+            }
+            changePasswordBtn.classList.remove('text-gray-600', 'border-gray-300', 'hover:bg-gray-50');
+            changePasswordBtn.classList.add('text-blue-600', 'border-blue-300', 'hover:bg-blue-50');
+            changePasswordBtn.disabled = true;
+            changePasswordBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            // Clear password fields
+            const currentPassword = document.getElementById('profile-current-password');
+            const newPassword = document.getElementById('profile-new-password');
+            const confirmPassword = document.getElementById('profile-confirm-password');
+            if (currentPassword) currentPassword.value = '';
+            if (newPassword) newPassword.value = '';
+            if (confirmPassword) confirmPassword.value = '';
+        }
+        if (passwordHint) {
+            passwordHint.style.display = 'block';
+        }
+        
+        // Show/hide buttons
+        const editBtn = document.getElementById('profile-edit-btn');
+        const cancelBtn = document.getElementById('profile-cancel-btn');
+        const saveBtn = document.getElementById('profile-save-btn');
+        
+        if (editBtn) editBtn.classList.remove('hidden');
+        if (cancelBtn) cancelBtn.classList.add('hidden');
+        if (saveBtn) saveBtn.classList.add('hidden');
+    }
+    
+    // Make cancelProfileEdit globally accessible
+    window.cancelProfileEdit = cancelProfileEdit;
+    
+    // Handle profile form submission
+    const profileForm = document.getElementById('profileForm');
+    if (profileForm) {
+        profileForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            try {
+                const response = await fetch('{% url "dashboard:admin_update_profile" %}', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Use notification system instead of alert
+                    if (typeof showNotification === 'function') {
+                        showNotification(data.message, 'success');
+                    } else {
+                        alert(data.message);
+                    }
+                    
+                    // Update school name display with new value
+                    const schoolNameInput = document.getElementById('profile-school-name-input');
+                    const schoolNameDisplay = document.getElementById('profile-school-name-display');
+                    if (schoolNameInput && schoolNameDisplay) {
+                        const newValue = schoolNameInput.value.trim();
+                        schoolNameDisplay.textContent = newValue || 'Not Assigned';
+                        schoolNameDisplay.setAttribute('data-original-value', newValue);
+                    }
+                    
+                    // Update profile picture preview if a new picture was uploaded
+                    const pictureInput = document.getElementById('profile_picture_input');
+                    const profilePreview = document.getElementById('profile-picture-preview');
+                    
+                    if (pictureInput && pictureInput.files && pictureInput.files[0]) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            // Update preview in modal
+                            const placeholder = document.getElementById('profile-picture-placeholder');
+                            if (profilePreview) {
+                                profilePreview.src = e.target.result;
+                                profilePreview.style.display = 'block';
+                                profilePreview.classList.remove('hidden');
+                                if (placeholder) {
+                                    placeholder.style.display = 'none';
+                                    placeholder.classList.add('hidden');
+                                }
+                            }
+                            // Update both top bar and sidebar using the shared function
+                            updateTopBarProfilePicture(e.target.result);
+                        };
+                        reader.readAsDataURL(pictureInput.files[0]);
+                    } else if (profilePreview && profilePreview.src && profilePreview.src.startsWith('data:')) {
+                        // If we have a cropped preview, use that
+                        updateTopBarProfilePicture(profilePreview.src);
+                    }
+                    
+                    // Reset to view mode after successful save
+                    cancelProfileEdit();
+                    
+                    // Reset form
+                    profileForm.reset();
+                    
+                    // Reload after notification shows (delay to see the notification)
+                    // Add timestamp to force cache refresh
+                    setTimeout(() => {
+                        window.location.reload(true);
+                    }, 1500);
+                } else {
+                    // Use notification system instead of alert
+                    if (typeof showNotification === 'function') {
+                        showNotification(data.message || 'An error occurred', 'error');
+                    } else {
+                        alert(data.message || 'An error occurred');
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                // Use notification system instead of alert
+                if (typeof showNotification === 'function') {
+                    showNotification('An error occurred while updating profile', 'error');
+                } else {
+                    alert('An error occurred while updating profile');
+                }
+            }
+        });
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('profile-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeProfileModal();
+        }
+    });
+    
+    // Close profile cropper modal when clicking outside
+    document.getElementById('profile-cropper-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeProfileCropperModal();
+        }
+    });
+    
+    // Independent scrolling: sidebar scrolls when cursor is over it
+    const sidebar = document.getElementById('sidebar');
+    const sidebarNav = document.getElementById('sidebar-nav');
+    
+    // Independent scrolling: sidebar scrolls when cursor is over it
+    sidebar.addEventListener('wheel', function(e) {
+        // Only scroll sidebar if cursor is over it
+        if (e.target.closest('#sidebar')) {
+            e.stopPropagation();
+        }
+    });
+</script>
+

@@ -1,0 +1,771 @@
+<!--
+templates folder: library_system/templates/dashboard/courses.html
+-->
+
+{% extends 'dashboard/instructor/teacher.html' %}
+{% load static %}
+{% block title %}Courses & Schedule{% endblock %}
+{% block dashboard_content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    /* Unified Grey Scrollbar Styling */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #f5f5f5;
+        border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 10px;
+        border: 2px solid #f5f5f5;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+    }
+    .content {
+        overflow-y: auto !important;
+        max-height: calc(100vh - 60px);
+    }
+    body.blur-navbar .navbar {
+        filter: blur(5px);
+        transition: filter 0.3s ease;
+        pointer-events: none;
+    }
+    body.blur-sidebar .sidebar {
+        filter: blur(5px);
+        transition: filter 0.3s ease;
+        pointer-events: none;
+    }
+    body.blur-background {
+        overflow: hidden;
+    }
+    .course-card {
+        transition: all 0.3s ease;
+        min-height: 320px;
+    }
+    .course-card:hover {
+        transform: translateY(-4px);
+    }
+    .course-card .inline-actions {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        transform: translateY(-4px);
+    }
+    .course-card:hover .inline-actions {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+    }
+    .course-title {
+        font-size: clamp(1rem, 2.2vw, 1.5rem);
+        line-height: 1.25;
+        word-break: break-word;
+        text-wrap: balance;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    /* Modal Scrollbar Styling - Light Purple */
+    .modal-content {
+        padding: 24px;
+        padding-right: 12px;
+    }
+    .modal-content::-webkit-scrollbar {
+        width: 8px;
+    }
+    .modal-content::-webkit-scrollbar-track {
+        background: #f3f4f6;
+        border-radius: 10px;
+    }
+    .modal-content::-webkit-scrollbar-thumb {
+        background: #c084fc;
+        border-radius: 10px;
+        border: 1px solid #f3f4f6;
+    }
+    .modal-content::-webkit-scrollbar-thumb:hover {
+        background: #a855f7;
+    }
+    /* Input field styling with icons */
+    .input-with-icon {
+        position: relative;
+    }
+    .input-with-icon input[type="time"],
+    .input-with-icon input[type="date"] {
+        padding-right: 45px;
+    }
+    .input-icon {
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        margin-top: 8px;
+        color: #6b7280;
+        pointer-events: none;
+        font-size: 16px;
+    }
+    /* Input field styling */
+    input[type="text"],
+    input[type="time"],
+    input[type="date"] {
+        transition: all 0.2s ease;
+    }
+    input[type="text"]:focus,
+    input[type="time"]:focus,
+    input[type="date"]:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+</style>
+
+<div class="p-4 md:p-8 bg-white lg:bg-gray-50 flex-grow rounded-2xl shadow-inner min-h-full">
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-extrabold text-gray-900">My Course Folders</h1>
+            <p class="text-gray-600 mt-2">
+                Each folder represents a course you teach. Share the <strong>Enrollment Code</strong> with your students for automated attendance systems.
+            </p>
+        </div>
+        <div class="flex gap-3">
+            <a href="{% url 'dashboard:weekly_timetable' %}" class="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition duration-150 shadow-md">
+                <i class="fas fa-calendar mr-2"></i>
+                <span>View Timetable</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" id="courses-grid">
+        <!-- Course cards will be generated here -->
+    </div>
+
+    <!-- Course Form Modal -->
+    <div id="course-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-50 transition-opacity duration-300">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg m-4 transform transition-all duration-300 scale-95 modal-content" style="overflow-y: auto; max-height: 85vh;">
+                <div class="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+                    <h3 id="modal-title" class="text-3xl font-bold text-indigo-700">Add New Course</h3>
+                    <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600 transition-colors">
+                        <i class="fas fa-times text-2xl"></i>
+                    </button>
+                </div>
+                
+                <form id="course-form" class="space-y-5">
+                    <input type="hidden" id="course-id">
+                    
+                    <!-- Course Details Section -->
+                    <div class="space-y-4">
+                        <div>
+                            <label for="course-name" id="course-name-label" class="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+                            <input type="text" id="course-name" name="name" required placeholder="Enter subject name" class="block w-full rounded-lg border-gray-300 shadow-sm p-3 border-2 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900">
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4" id="course-code-room-group">
+                            <div id="course-code-group">
+                                <label for="course-code" class="block text-sm font-medium text-gray-700 mb-2">Course Code (e.g., CS 101)</label>
+                                <input type="text" id="course-code" name="code" placeholder="CS 101" class="block w-full rounded-lg border-gray-300 shadow-sm p-3 border-2 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900">
+                            </div>
+                            <div id="room-group">
+                                <label for="room" class="block text-sm font-medium text-gray-700 mb-2">Room / Location</label>
+                                <input type="text" id="room" name="room" placeholder="Room number" class="block w-full rounded-lg border-gray-300 shadow-sm p-3 border-2 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label for="teacher-name" id="teacher-name-label" class="block text-sm font-medium text-gray-700 mb-2">Teacher</label>
+                            <input type="text" id="teacher-name" name="instructor" required placeholder="Teacher name" class="block w-full rounded-lg border-gray-300 shadow-sm p-3 border-2 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900">
+                        </div>
+                    </div>
+                    
+                    <!-- Class Schedule Time Section -->
+                    <div class="pt-4 border-t border-gray-200">
+                        <h4 class="text-lg font-semibold mb-4 text-indigo-600 flex items-center">
+                            <i class="fas fa-clock mr-2 text-indigo-600"></i>
+                            Class Schedule Time
+                        </h4>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="input-with-icon">
+                                <label for="class-start-time" class="block text-sm font-medium text-gray-700 mb-2">Class Start Time</label>
+                                <input type="time" id="class-start-time" name="classStartTime" required class="block w-full rounded-lg border-gray-300 shadow-sm p-3 border-2 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900">
+                                <i class="fas fa-clock input-icon"></i>
+                            </div>
+                            <div class="input-with-icon">
+                                <label for="class-end-time" class="block text-sm font-medium text-gray-700 mb-2">Class End Time</label>
+                                <input type="time" id="class-end-time" name="classEndTime" required class="block w-full rounded-lg border-gray-300 shadow-sm p-3 border-2 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900">
+                                <i class="fas fa-clock input-icon"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Attendance Window Section -->
+                    <div class="pt-4 border-t border-gray-200">
+                        <h4 class="text-lg font-semibold mb-4 text-indigo-600 flex items-center">
+                            <i class="fas fa-sunrise mr-2 text-indigo-600"></i>
+                            Attendance Window
+                        </h4>
+                        <p class="text-xs text-gray-500 mb-4">Attendance will automatically close at the assigned End Time (for biometric/QR system).</p>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="input-with-icon">
+                                <label for="attendance-time-in" class="block text-sm font-medium text-gray-700 mb-2">Time In (Earliest Check-In)</label>
+                                <input type="time" id="attendance-time-in" name="attendanceTimeIn" required class="block w-full rounded-lg border-gray-300 shadow-sm p-3 border-2 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900">
+                                <i class="fas fa-clock input-icon"></i>
+                            </div>
+                            <div class="input-with-icon">
+                                <label for="attendance-time-end" class="block text-sm font-medium text-gray-700 mb-2">Time End (Auto-Close)</label>
+                                <input type="time" id="attendance-time-end" name="attendanceTimeEnd" required class="block w-full rounded-lg border-gray-300 shadow-sm p-3 border-2 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900">
+                                <i class="fas fa-clock input-icon"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Days of the Week -->
+                    <div class="pt-4 border-t border-gray-200">
+                        <label class="block text-sm font-medium text-gray-700 mb-3">Days of the Week</label>
+                        <div class="flex flex-wrap gap-2" id="day-checkboxes">
+                            <label class="day-label"><input type="checkbox" name="days" value="M" class="hidden"> <span class="checkbox-span">Mon</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="T" class="hidden"> <span class="checkbox-span">Tue</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="W" class="hidden"> <span class="checkbox-span">Wed</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="Th" class="hidden"> <span class="checkbox-span">Thu</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="F" class="hidden"> <span class="checkbox-span">Fri</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="S" class="hidden"> <span class="checkbox-span">Sat</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="Su" class="hidden"> <span class="checkbox-span">Sun</span></label>
+                        </div>
+                        <style>
+                            .checkbox-span {
+                                display: block;
+                                padding: 10px 18px;
+                                border: 2px solid #e5e7eb;
+                                border-radius: 20px;
+                                cursor: pointer;
+                                transition: all 0.2s;
+                                font-weight: 500;
+                                color: #4b5563;
+                                background-color: #f9fafb;
+                            }
+                            input[type="checkbox"]:checked + .checkbox-span {
+                                background-color: #6366f1;
+                                color: white;
+                                border-color: #6366f1;
+                                box-shadow: 0 2px 4px rgba(99, 102, 241, 0.3);
+                            }
+                        </style>
+                    </div>
+                    
+                    <!-- Appearance Section -->
+                    <div class="pt-4 border-t border-gray-200">
+                        <h4 class="text-lg font-semibold mb-3 text-indigo-600">Appearance</h4>
+                        <div id="color-section">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Select Color Theme</label>
+                            <div id="color-selector" class="flex flex-wrap gap-3">
+                                <!-- Color options will be generated here -->
+                            </div>
+                            <input type="hidden" id="course-color" value="#6366f1">
+                        </div>
+                    </div>
+
+                    <!-- Attendance Period Section -->
+                    <div class="pt-4 border-t border-gray-200">
+                        <h4 class="text-lg font-semibold mb-4 text-indigo-600 flex items-center">
+                            <i class="fas fa-calendar mr-2 text-indigo-600"></i>
+                            Attendance Period
+                        </h4>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="input-with-icon">
+                                <label for="start-date" class="block text-sm font-medium text-gray-700 mb-2">Semester Start</label>
+                                <input type="date" id="start-date" name="startDate" required class="block w-full rounded-lg border-gray-300 shadow-sm p-3 border-2 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900">
+                                <i class="fas fa-calendar input-icon"></i>
+                            </div>
+                            <div class="input-with-icon">
+                                <label for="end-date" class="block text-sm font-medium text-gray-700 mb-2">Semester End</label>
+                                <input type="date" id="end-date" name="endDate" required class="block w-full rounded-lg border-gray-300 shadow-sm p-3 border-2 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900">
+                                <i class="fas fa-calendar input-icon"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Enrollment Code Section -->
+                    <div class="pt-4 border-t border-gray-200">
+                        <div class="p-4 bg-yellow-50 rounded-xl border border-yellow-200">
+                            <label class="block text-sm font-medium text-yellow-800 mb-1">Enrollment Code</label>
+                            <p class="text-xs text-yellow-700 mb-3">Used for biometric/QR attendance system setup.</p>
+                            <div class="flex items-center space-x-2 mb-2">
+                                <i class="fas fa-hashtag text-yellow-700"></i>
+                                <input type="text" id="enrollment-code" readonly class="flex-grow rounded-lg border-gray-300 shadow-sm p-3 border-2 font-mono font-bold bg-white cursor-not-allowed text-lg text-gray-900">
+                            </div>
+                            <div class="flex justify-end">
+                                <button type="button" id="regenerate-code-btn" class="text-indigo-600 hover:text-indigo-800 text-sm font-semibold">
+                                    Regenerate Code
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200 mt-6">
+                        <button type="button" id="cancel-btn" class="px-5 py-2.5 text-gray-700 bg-gray-200 font-semibold rounded-lg hover:bg-gray-300 transition duration-150">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-6 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-md">
+                            Save Course
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div class="text-center">
+                <i class="fas fa-trash-alt text-red-500 text-5xl mb-4"></i>
+                <h3 id="confirm-title" class="text-xl font-bold text-gray-900 mb-2">Confirm Course Deletion</h3>
+                <p id="confirm-message" class="text-sm text-gray-600 mb-6"></p>
+            </div>
+            <div class="flex justify-between space-x-3">
+                <button id="confirm-cancel-btn" class="flex-grow px-4 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button id="confirm-delete-btn" class="flex-grow px-4 py-2 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 transition duration-150 shadow-md">
+                    Yes, Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const COURSES_KEY = 'schedule_manager_courses_v1';
+        const COLOR_OPTIONS = [
+            { value: '#0f172a', name: 'Midnight' },
+            { value: '#1d4ed8', name: 'Royal Blue' },
+            { value: '#2563eb', name: 'Ocean Blue' },
+            { value: '#4169e1', name: 'Azure' },
+            { value: '#0ea5e9', name: 'Sky' },
+            { value: '#06b6d4', name: 'Cyan' },
+            { value: '#14b8a6', name: 'Teal' },
+            { value: '#10b981', name: 'Emerald' },
+            { value: '#22c55e', name: 'Jade' },
+            { value: '#2e8b57', name: 'Sea Green' },
+            { value: '#84cc16', name: 'Lime' },
+            { value: '#a3e635', name: 'Chartreuse' },
+            { value: '#c3d825', name: 'Wasabi' },
+            { value: '#faff00', name: 'Lemon' },
+            { value: '#f0e68c', name: 'Khaki' },
+            { value: '#d2b48c', name: 'Tan' },
+            { value: '#cd853f', name: 'Peru' },
+            { value: '#facc15', name: 'Sunflower' },
+            { value: '#f97316', name: 'Tangerine' },
+            { value: '#ea580c', name: 'Burnt Orange' },
+            { value: '#ff8c00', name: 'Amber' },
+            { value: '#ef4444', name: 'Crimson' },
+            { value: '#dc2626', name: 'Scarlet' },
+            { value: '#b91c1c', name: 'Burgundy' },
+            { value: '#ec4899', name: 'Rose' },
+            { value: '#f472b6', name: 'Blush' },
+            { value: '#fb7185', name: 'Coral' },
+            { value: '#a855f7', name: 'Violet' },
+            { value: '#7c3aed', name: 'Grape' },
+            { value: '#4c1d95', name: 'Plum' },
+            { value: '#8b5cf6', name: 'Lavender' },
+            { value: '#6366f1', name: 'Indigo' },
+            { value: '#6b7280', name: 'Slate' },
+            { value: '#2f4f4f', name: 'Dark Slate' },
+            { value: '#111827', name: 'Charcoal' }
+        ];
+
+        let allCourses = [];
+        let currentSchoolType = "{{ initial_school_type }}";
+        let courseToDelete = null;
+        const isHighSchool = "{{ education_level }}" === "high_senior";
+
+        // DOM Elements
+        const coursesGrid = document.getElementById('courses-grid');
+        const addCourseBtn = document.getElementById('add-course-btn');
+        const courseModal = document.getElementById('course-modal');
+        const courseForm = document.getElementById('course-form');
+        const modalTitle = document.getElementById('modal-title');
+        const courseIdInput = document.getElementById('course-id');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmTitle = document.getElementById('confirm-title');
+        const confirmMessage = document.getElementById('confirm-message');
+        const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+        const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+        const enrollmentCodeInput = document.getElementById('enrollment-code');
+        const regenerateCodeBtn = document.getElementById('regenerate-code-btn');
+        const colorSelector = document.getElementById('color-selector');
+        const colorInput = document.getElementById('course-color');
+
+        // Utility Functions
+        function generateCode() {
+            return Math.random().toString(36).substring(2, 10).toUpperCase();
+        }
+
+        function getColorClass(hex) {
+            const colorMap = {
+                '#6366f1': 'indigo',
+                '#10b981': 'green',
+                '#ef4444': 'red',
+                '#a855f7': 'purple',
+                '#f59e0b': 'amber',
+                '#06b6d4': 'cyan',
+            };
+            return colorMap[hex] || 'indigo';
+        }
+
+        function getStudentCount(courseId) {
+            // Mock student count - in real implementation, fetch from backend
+            return Math.floor(Math.random() * 50) + 1;
+        }
+
+        // Course Management
+        const CourseManager = {
+            initStorage() {
+                try {
+                    const coursesJson = localStorage.getItem(COURSES_KEY);
+                    allCourses = coursesJson ? JSON.parse(coursesJson) : [];
+                } catch (error) {
+                    console.error("Error initializing storage:", error);
+                    allCourses = [];
+                }
+            },
+
+            saveAllCourses() {
+                try {
+                    localStorage.setItem(COURSES_KEY, JSON.stringify(allCourses));
+                } catch (e) {
+                    console.error("Error saving to localStorage:", e);
+                }
+            },
+
+            renderCourses() {
+                const filteredCourses = allCourses.filter(c => c.schoolType === currentSchoolType);
+                
+                if (filteredCourses.length === 0) {
+                    coursesGrid.innerHTML = `
+                        <div class="col-span-full text-center p-12 bg-gray-50 rounded-xl border border-gray-200">
+                            <i class="fas fa-book-open text-6xl text-gray-400 mb-4"></i>
+                            <p class="text-lg font-semibold text-gray-600">No courses yet</p>
+                            <p class="text-sm text-gray-500 mt-2">Click "Add New Course" to get started</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                coursesGrid.innerHTML = filteredCourses.map(course => {
+                    const colors = getColorClass(course.themeColor || '#6366f1');
+                    const bgClass = `bg-${colors}-500`;
+                    const shadowClass = `shadow-${colors}-300`;
+                    const studentsCount = getStudentCount(course.id);
+                    // Convert days for display
+                    const dayMap = { 'M': 'Mon', 'T': 'Tue', 'W': 'Wed', 'Th': 'Thu', 'F': 'Fri', 'S': 'Sat', 'Su': 'Sun' };
+                    const displayDays = (course.days || []).map(d => dayMap[d] || d);
+                    const timeDisplay = (course.classStartTime || course.startTime || '') + '-' + (course.classEndTime || course.endTime || '');
+                    const schedule = `${timeDisplay} | ${displayDays.join(', ')}`;
+
+                    return `
+                        <div class="course-card group relative p-6 ${bgClass} text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 cursor-pointer" 
+                             style="box-shadow: 0 10px 20px -5px rgba(99, 102, 241, 0.3);"
+                             onclick="CourseManager.viewStudents('${course.id}')">
+                            <div class="flex justify-between items-start mb-4">
+                                <i class="fas fa-book-open text-3xl opacity-70"></i>
+                                <div class="flex space-x-2 inline-actions">
+                                    <button onclick="event.stopPropagation(); CourseManager.editCourse('${course.id}')" 
+                                            class="p-2 rounded-full bg-white/20 hover:bg-white/40 transition"
+                                            aria-label="Edit Course">
+                                        <i class="fas fa-edit text-white text-sm"></i>
+                                    </button>
+                                    <button onclick="event.stopPropagation(); CourseManager.deleteCourse('${course.id}')"
+                                            class="p-2 rounded-full bg-red-600/60 hover:bg-red-700 transition"
+                                            aria-label="Delete Course">
+                                        <i class="fas fa-trash text-white text-sm"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <h3 class="course-title font-bold mb-1">${course.name}</h3>
+                            <p class="text-sm font-medium opacity-80 mb-2 flex items-center">
+                                <i class="fas fa-map-marker-alt mr-1"></i> ${course.room}
+                            </p>
+                            <p class="text-xs font-semibold opacity-90 flex items-center">
+                                <i class="fas fa-clock mr-1"></i> ${schedule}
+                            </p>
+                            <div class="flex items-center justify-between mt-4 pt-4 border-t border-white/30">
+                                <div>
+                                    <p class="text-xs font-semibold uppercase opacity-80">Students</p>
+                                    <p class="text-xl font-extrabold">${studentsCount}</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-xs font-semibold uppercase opacity-80">Enroll Code</p>
+                                    <div class="text-xl font-mono font-extrabold bg-white text-gray-800 px-3 py-1 rounded-lg shadow-md">
+                                        ${course.enrollmentCode || generateCode()}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            },
+
+            viewStudents(courseId) {
+                // Redirect to students page with course filter
+                window.location.href = `{% url 'dashboard:students' %}?course=${courseId}`;
+            },
+
+            editCourse(courseId) {
+                const course = allCourses.find(c => c.id === courseId);
+                if (!course) return;
+
+                modalTitle.textContent = 'Edit Course Details';
+                courseIdInput.value = course.id;
+                
+                // Update form fields based on education level
+                this.updateFormFields();
+                
+                // Populate form - handle both formats
+                document.getElementById('course-name').value = course.name || course.courseName || '';
+                document.getElementById('course-code').value = course.code || '';
+                document.getElementById('room').value = course.room || '';
+                document.getElementById('teacher-name').value = course.instructor || course.teacherName || '';
+                document.getElementById('class-start-time').value = course.classStartTime || course.startTime || '';
+                document.getElementById('class-end-time').value = course.classEndTime || course.endTime || '';
+                document.getElementById('attendance-time-in').value = course.attendanceTimeIn || '';
+                document.getElementById('attendance-time-end').value = course.attendanceTimeEnd || '';
+                document.getElementById('start-date').value = course.startDate || '';
+                document.getElementById('end-date').value = course.endDate || '';
+                enrollmentCodeInput.value = course.enrollmentCode || generateCode();
+                colorInput.value = course.themeColor || course.color || '#6366f1';
+
+                // Set days
+                document.querySelectorAll('input[name="days"]').forEach(cb => {
+                    cb.checked = (course.days || []).includes(cb.value);
+                });
+
+                // Set color
+                renderColorSelector(course.themeColor || '#6366f1');
+                
+                CourseModal.show();
+            },
+
+            deleteCourse(courseId) {
+                const course = allCourses.find(c => c.id === courseId);
+                if (!course) return;
+
+                courseToDelete = course;
+                confirmTitle.textContent = 'Confirm Course Deletion';
+                confirmMessage.textContent = `Are you sure you want to delete "${course.code} - ${course.name}"? This action cannot be undone and will affect ${getStudentCount(courseId)} enrolled student(s).`;
+                confirmModal.classList.remove('hidden');
+            },
+
+            confirmDelete() {
+                if (!courseToDelete) return;
+                
+                allCourses = allCourses.filter(c => c.id !== courseToDelete.id);
+                this.saveAllCourses();
+                this.renderCourses();
+                confirmModal.classList.add('hidden');
+                courseToDelete = null;
+            },
+
+            addCourse() {
+                modalTitle.textContent = 'Add New Course';
+                courseIdInput.value = '';
+                courseForm.reset();
+                enrollmentCodeInput.value = generateCode();
+                colorInput.value = '#6366f1';
+                renderColorSelector('#6366f1');
+                
+                // Update form fields based on education level
+                this.updateFormFields();
+                
+                // Set default days
+                document.querySelectorAll('input[name="days"]').forEach(cb => {
+                    if (['M', 'W', 'F'].includes(cb.value)) {
+                        cb.checked = true;
+                    }
+                });
+
+                // Set default dates
+                const today = new Date();
+                const endDate = new Date(today);
+                endDate.setMonth(endDate.getMonth() + 4);
+                document.getElementById('start-date').value = today.toISOString().split('T')[0];
+                document.getElementById('end-date').value = endDate.toISOString().split('T')[0];
+
+                CourseModal.show();
+            },
+
+            updateFormFields() {
+                const courseNameLabel = document.getElementById('course-name-label');
+                const teacherNameLabel = document.getElementById('teacher-name-label');
+                const courseCodeGroup = document.getElementById('course-code-group');
+                const roomGroup = document.getElementById('room-group');
+                const courseCodeRoomGroup = document.getElementById('course-code-room-group');
+                const courseCodeInput = document.getElementById('course-code');
+                const roomInput = document.getElementById('room');
+
+                if (isHighSchool) {
+                    // High School: Show only Subject and Teacher
+                    courseNameLabel.textContent = 'Subject';
+                    teacherNameLabel.textContent = 'Teacher';
+                    courseCodeRoomGroup.classList.add('hidden');
+                    courseCodeInput.removeAttribute('required');
+                    roomInput.removeAttribute('required');
+                } else {
+                    // University/College: Show all fields
+                    courseNameLabel.textContent = 'Course Name / Subject';
+                    teacherNameLabel.textContent = 'Teacher / Instructor Name';
+                    courseCodeRoomGroup.classList.remove('hidden');
+                    courseCodeInput.setAttribute('required', 'required');
+                    roomInput.setAttribute('required', 'required');
+                }
+            },
+
+            saveCourse(courseData) {
+                const courseId = courseIdInput.value;
+                
+                // Convert course data to match timetable format
+                // For High School: code and room are empty strings
+                const courseObj = {
+                    id: courseId || Date.now().toString(36) + Math.random().toString(36).substring(2),
+                    courseName: courseData.name,
+                    code: isHighSchool ? '' : (courseData.code || ''),
+                    room: isHighSchool ? '' : (courseData.room || ''),
+                    teacherName: courseData.instructor,
+                    startTime: courseData.classStartTime,
+                    endTime: courseData.classEndTime,
+                    attendanceTimeIn: courseData.attendanceTimeIn,
+                    attendanceTimeEnd: courseData.attendanceTimeEnd,
+                    days: courseData.days,
+                    color: courseData.themeColor,
+                    themeColor: courseData.themeColor,
+                    schoolType: currentSchoolType,
+                    startDate: courseData.startDate,
+                    endDate: courseData.endDate,
+                    enrollmentCode: courseData.enrollmentCode,
+                    // Keep backward compatibility fields
+                    name: courseData.name,
+                    instructor: courseData.instructor,
+                    classStartTime: courseData.classStartTime,
+                    classEndTime: courseData.classEndTime,
+                };
+
+                const existingIndex = allCourses.findIndex(c => c.id === courseObj.id);
+                if (existingIndex !== -1) {
+                    allCourses[existingIndex] = courseObj;
+                } else {
+                    allCourses.push(courseObj);
+                }
+
+                this.saveAllCourses();
+                this.renderCourses();
+                CourseModal.hide();
+            }
+        };
+
+        function renderColorSelector(defaultColor) {
+            colorSelector.innerHTML = COLOR_OPTIONS.map(color => `
+                <label class="cursor-pointer p-1 rounded-full border-2 border-transparent hover:border-gray-400 transition">
+                    <input type="radio" name="color-select" value="${color.value}" class="hidden">
+                    <span title="${color.name}" class="inline-block w-8 h-8 rounded-full border-4 border-white shadow-md"
+                          style="background-color: ${color.value};"></span>
+                </label>
+            `).join('');
+            
+            const update = (v) => {
+                colorInput.value = v;
+                colorSelector.querySelectorAll('input[name="color-select"]').forEach(i => {
+                    const label = i.closest('label');
+                    if (i.value === v) {
+                        i.checked = true;
+                        label.classList.add('ring-2', 'ring-indigo-500');
+                    } else {
+                        i.checked = false;
+                        label.classList.remove('ring-2', 'ring-indigo-500');
+                    }
+                });
+            };
+            update(defaultColor || COLOR_OPTIONS[0].value);
+            colorSelector.querySelectorAll('input[name="color-select"]').forEach(i => i.addEventListener('change', e => update(e.target.value)));
+        }
+
+
+        const CourseModal = {
+            show() {
+                document.body.classList.add('blur-navbar', 'blur-sidebar', 'blur-background');
+                courseModal.classList.remove('hidden');
+            },
+            hide() {
+                document.body.classList.remove('blur-navbar', 'blur-sidebar', 'blur-background');
+                courseModal.classList.add('hidden');
+            }
+        };
+
+        // Event Listeners
+        addCourseBtn.addEventListener('click', () => CourseManager.addCourse());
+        closeModalBtn.addEventListener('click', () => CourseModal.hide());
+        cancelBtn.addEventListener('click', () => CourseModal.hide());
+        regenerateCodeBtn.addEventListener('click', () => {
+            enrollmentCodeInput.value = generateCode();
+        });
+        confirmCancelBtn.addEventListener('click', () => {
+            confirmModal.classList.add('hidden');
+            courseToDelete = null;
+        });
+        confirmDeleteBtn.addEventListener('click', () => CourseManager.confirmDelete());
+
+        courseForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const selectedDays = Array.from(document.querySelectorAll('input[name="days"]:checked')).map(cb => cb.value);
+            if (selectedDays.length === 0) {
+                alert("Please select at least one day of the week.");
+                return;
+            }
+
+            const courseData = {
+                name: document.getElementById('course-name').value.trim(),
+                code: isHighSchool ? '' : document.getElementById('course-code').value.trim(),
+                room: isHighSchool ? '' : document.getElementById('room').value.trim(),
+                instructor: document.getElementById('teacher-name').value.trim(),
+                classStartTime: document.getElementById('class-start-time').value,
+                classEndTime: document.getElementById('class-end-time').value,
+                attendanceTimeIn: document.getElementById('attendance-time-in').value,
+                attendanceTimeEnd: document.getElementById('attendance-time-end').value,
+                days: selectedDays,
+                themeColor: colorInput.value,
+                startDate: document.getElementById('start-date').value,
+                endDate: document.getElementById('end-date').value,
+                enrollmentCode: enrollmentCodeInput.value,
+            };
+
+            CourseManager.saveCourse(courseData);
+        });
+
+        courseModal.addEventListener('click', (e) => {
+            if (e.target === courseModal) CourseModal.hide();
+        });
+
+        // Initialize
+        window.onload = () => {
+            CourseManager.initStorage();
+            CourseManager.renderCourses();
+            renderColorSelector('#6366f1');
+            // Set initial form field visibility based on education level
+            CourseManager.updateFormFields();
+        };
+
+        window.CourseManager = CourseManager;
+    </script>
+</div>
+{% endblock %}
+

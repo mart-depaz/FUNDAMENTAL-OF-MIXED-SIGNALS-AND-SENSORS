@@ -1,0 +1,274 @@
+{% load dashboard_filters %}
+<div class="space-y-6">
+    <!-- Hero -->
+    <section class="bg-gradient-to-r from-rose-400 via-orange-300 to-sky-400 rounded-3xl text-white p-6 md:p-8 shadow-2xl relative overflow-hidden">
+        <div class="absolute inset-0 bg-white/10 blur-3xl"></div>
+        <div class="relative z-10 flex flex-col gap-6">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                <div class="flex items-center gap-5">
+                    <div class="w-24 h-24 rounded-full bg-white/20 border-2 border-white/60 overflow-hidden flex items-center justify-center text-3xl font-semibold uppercase shadow-xl">
+                        {% if user.profile_picture %}
+                            <img src="{{ user.profile_picture.url }}" alt="{{ user.full_name|default:user.username }}" class="w-full h-full object-cover">
+                        {% else %}
+                            <span>{{ user.full_name|default:user.username|first|upper }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="flex flex-col">
+                        <p class="uppercase text-xs tracking-[0.35em] text-white/70 font-semibold mb-1">Student Dashboard</p>
+                        <h1 class="text-xl md:text-2xl font-extrabold truncate max-w-full lg:max-w-2xl" title="{{ user.full_name|default:user.username }}">
+                            Hello, {{ user.full_name|default:user.username }}
+                        </h1>
+                        <p class="text-white/90 mt-2 text-sm md:text-base max-w-2xl">
+                            Track your classes, attendance, and academic progress all in one place.
+                        </p>
+                    </div>
+                </div>
+                <div class="rounded-2xl px-6 py-4 backdrop-blur-md border border-white/10 shadow-lg text-sm text-white" style="background: linear-gradient(135deg, #1a1b1f 0%, #341428 35%, #55104b 65%, #7a2d68 100%);">
+                    <p class="font-semibold text-white/80 uppercase tracking-wide text-xs">Daily Overview</p>
+                    <div class="flex items-center gap-6 mt-2 text-white">
+                        <div>
+                            <p class="text-3xl font-bold">{{ total_enrolled|default:0 }}</p>
+                            <p class="text-xs uppercase tracking-wide text-white/70">Enrolled Courses</p>
+                        </div>
+                        <div>
+                            <p class="text-3xl font-bold">{{ upcoming_classes|length|default:0 }}</p>
+                            <p class="text-xs uppercase tracking-wide text-white/70">Upcoming Classes</p>
+                        </div>
+                        <div>
+                            <p class="text-3xl font-bold">{{ unread_notifications|default:0 }}</p>
+                            <p class="text-xs uppercase tracking-wide text-white/70">Notifications</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <a href="{% url 'dashboard:student_todays_status' %}" class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 transition px-4 py-2 rounded-xl text-sm font-semibold">
+                    <i class="fas fa-calendar-check text-white"></i> My Attendance
+                </a>
+                <a href="{% url 'dashboard:enroll_course' %}" class="inline-flex items-center gap-2 bg-white text-indigo-600 hover:bg-gray-100 transition px-4 py-2 rounded-xl text-sm font-semibold shadow">
+                    <i class="fas fa-plus-circle"></i> Enroll in Course
+                </a>
+                <a href="{% url 'dashboard:weekly_timetable' %}" class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 transition px-4 py-2 rounded-xl text-sm font-semibold">
+                    <i class="fas fa-calendar-week text-white"></i> Timetable
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stat Cards -->
+    <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #6281DC 0%, #9F80E8 100%);">
+            <div class="w-12 h-12 rounded-full bg-white/30 text-white flex items-center justify-center text-xl shadow inner-shadow">
+                <i class="fas fa-book"></i>
+            </div>
+            <div class="text-white">
+                <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Courses</p>
+                <p class="text-2xl font-bold">{{ total_enrolled|default:0 }}</p>
+                <p class="text-xs opacity-80">Currently enrolled</p>
+            </div>
+        </div>
+        <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #42B2CB 0%, #7DC9DD 100%);">
+            <div class="w-12 h-12 rounded-full bg-white/30 text-white flex items-center justify-center text-xl shadow inner-shadow">
+                <i class="fas fa-calendar-check"></i>
+            </div>
+            <div class="text-white">
+                <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Upcoming</p>
+                <p class="text-2xl font-bold">{{ upcoming_classes|length|default:0 }}</p>
+                <p class="text-xs opacity-80">Classes this week</p>
+            </div>
+        </div>
+        <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #FEEBC8 0%, #F3C7A6 100%);">
+            <div class="w-12 h-12 rounded-full bg-white/50 text-amber-700 flex items-center justify-center text-xl shadow inner-shadow">
+                <i class="fas fa-bell"></i>
+            </div>
+            <div class="text-amber-900">
+                <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Alerts</p>
+                <p class="text-2xl font-bold">{{ unread_notifications|default:0 }}</p>
+                <p class="text-xs opacity-70">New notifications</p>
+            </div>
+        </div>
+        <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #1B2D52 0%, #4D608E 100%);">
+            <div class="w-12 h-12 rounded-full bg-white/30 text-white flex items-center justify-center text-xl shadow inner-shadow">
+                <i class="fas fa-user-graduate"></i>
+            </div>
+            <div class="text-white">
+                <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Status</p>
+                <p class="text-2xl font-bold">Active</p>
+                <p class="text-xs opacity-80">Student account</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Detailed Columns -->
+    <section class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <!-- Upcoming Classes -->
+        <div class="rounded-3xl border border-transparent shadow p-6 space-y-4" style="background: linear-gradient(135deg, #A4DCF2 0%, #FEFAF7 100%);">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold text-gray-900">Upcoming Classes</h3>
+                <span class="text-xs text-gray-500 uppercase tracking-wide">This Week</span>
+            </div>
+            <div class="space-y-2">
+                {% if upcoming_classes %}
+                    {% for entry in upcoming_classes|slice:":5" %}
+                    <a href="{% url 'dashboard:student_todays_status' %}?course={{ entry.id }}" class="flex items-center justify-between p-3 rounded-xl border hover:border-indigo-300 hover:bg-indigo-50/40 transition border-gray-200 no-underline hover:no-underline">
+                        <div class="min-w-0">
+                            {% if entry.section %}
+                            <p class="mb-1">
+                                <span class="px-2 py-0.5 rounded-full font-bold text-[10px] text-white" style="background-color: {{ entry.color|default:'#3C4770' }};">Section {{ entry.section }}</span>
+                            </p>
+                            {% endif %}
+                            <p class="text-sm font-semibold text-gray-900 truncate">{{ entry.code }} • {{ entry.name }}</p>
+                            <p class="text-[11px] text-gray-600 uppercase tracking-wide mt-0.5 truncate">{{ entry.date_label }} • {{ entry.time_label }}</p>
+                        </div>
+                        {% if entry.status == 'live' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 uppercase">Live</span>
+                        {% elif entry.status == 'starting_today' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 uppercase">Starting Today</span>
+                        {% elif entry.status == 'tomorrow' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 uppercase">Tomorrow</span>
+                        {% elif entry.status == 'upcoming' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700 uppercase">Upcoming</span>
+                        {% elif entry.status == 'soon' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 uppercase">Soon</span>
+                        {% elif entry.status == 'ongoing' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 uppercase">Ongoing</span>
+                        {% else %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-600 uppercase">Finished</span>
+                        {% endif %}
+                    </a>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-calendar-times text-3xl mb-2"></i>
+                        <p class="text-sm">No upcoming classes</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Courses -->
+        <div class="xl:col-span-2 rounded-3xl border border-transparent shadow p-6 space-y-4" style="background: linear-gradient(135deg, #FEFAF7 0%, #E8F4F8 100%);">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold text-gray-900">Recent Courses</h3>
+                <a href="{% url 'dashboard:enroll_course' %}" class="text-xs text-indigo-600 hover:text-indigo-700 font-semibold">View All →</a>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {% if recent_courses %}
+                    {% for enrollment in recent_courses %}
+                    <div class="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 cursor-pointer" onclick="showCourseDetails({{ enrollment.course.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}', '{{ enrollment.course.program.code|escapejs }}', '{{ enrollment.course.program.name|escapejs }}', {{ enrollment.course.year_level }}, '{{ enrollment.course.semester|escapejs }}', '{{ enrollment.course.school_year|escapejs }}', '{{ enrollment.course.instructor.full_name|default:enrollment.course.instructor.username|escapejs }}', '{{ enrollment.course.room|default:"TBA"|escapejs }}', '{{ enrollment.enrolled_at|date:"F d, Y"|escapejs }}')">
+                        <div class="flex items-start gap-3">
+                            <div class="w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow" style="background: linear-gradient(135deg, {{ enrollment.course.color|default:'#3C4770' }} 0%, {{ enrollment.course.color|default:'#447294' }} 100%);">
+                                {{ enrollment.course.code|first|upper }}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h4 class="font-semibold text-gray-900 text-sm truncate">{{ enrollment.course.code }}</h4>
+                                <p class="text-xs text-gray-600 mt-1 line-clamp-2">{{ enrollment.course.name }}</p>
+                                <div class="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                                    <span><i class="fas fa-graduation-cap"></i> {{ enrollment.course.program.code }}</span>
+                                    <span><i class="fas fa-user"></i> {{ enrollment.course.year_level|ordinal_year }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="col-span-2 text-center py-8 text-gray-500">
+                        <i class="fas fa-book-open text-3xl mb-2"></i>
+                        <p class="text-sm mb-3">No enrolled courses yet</p>
+                        <a href="{% url 'dashboard:enroll_course' %}" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-semibold">
+                            <i class="fas fa-plus"></i> Enroll in Course
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+</div>
+
+<!-- Course Details Modal -->
+<div id="courseDetailsModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h2 class="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                <i class="fas fa-book"></i>
+                <span id="modal-course-code">Course Details</span>
+            </h2>
+            <button onclick="closeCourseDetails()" class="text-gray-400 hover:text-gray-600 transition">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <h3 class="text-lg font-bold text-gray-900" id="modal-course-name"></h3>
+                <p class="text-sm text-gray-600 mt-1" id="modal-course-code-full"></p>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Program</p>
+                    <p class="text-sm font-semibold text-gray-900" id="modal-program"></p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Year Level</p>
+                    <p class="text-sm font-semibold text-gray-900" id="modal-year-level"></p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Semester</p>
+                    <p class="text-sm font-semibold text-gray-900" id="modal-semester"></p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">School Year</p>
+                    <p class="text-sm font-semibold text-gray-900" id="modal-school-year"></p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Instructor</p>
+                    <p class="text-sm font-semibold text-gray-900" id="modal-instructor"></p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Room</p>
+                    <p class="text-sm font-semibold text-gray-900" id="modal-room"></p>
+                </div>
+            </div>
+            <div>
+                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Enrolled On</p>
+                <p class="text-sm font-semibold text-gray-900" id="modal-enrolled-date"></p>
+            </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 flex justify-end">
+            <button onclick="closeCourseDetails()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function showCourseDetails(courseId, code, name, programCode, programName, yearLevel, semester, schoolYear, instructor, room, enrolledDate) {
+    document.getElementById('modal-course-code').textContent = code;
+    document.getElementById('modal-course-name').textContent = name;
+    document.getElementById('modal-course-code-full').textContent = code;
+    document.getElementById('modal-program').textContent = programCode + ' - ' + programName;
+    document.getElementById('modal-year-level').textContent = formatYearLabel(yearLevel);
+    document.getElementById('modal-semester').textContent = semester === '1st' ? '1st Semester' : semester === '2nd' ? '2nd Semester' : semester;
+    document.getElementById('modal-school-year').textContent = schoolYear;
+    document.getElementById('modal-instructor').textContent = instructor;
+    document.getElementById('modal-room').textContent = room;
+    document.getElementById('modal-enrolled-date').textContent = enrolledDate;
+    document.getElementById('courseDetailsModal').classList.remove('hidden');
+}
+
+function closeCourseDetails() {
+    document.getElementById('courseDetailsModal').classList.add('hidden');
+}
+
+function formatYearLabel(yearLevel) {
+    const numericValue = parseInt(yearLevel, 10);
+    if (isNaN(numericValue)) return yearLevel ? `${yearLevel}` : 'N/A';
+    const mod100 = numericValue % 100;
+    let suffix = 'th';
+    if (mod100 < 11 || mod100 > 13) {
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}[numericValue % 10] || 'th';
+    }
+    return `${numericValue}${suffix} Year`;
+}
+</script>
+

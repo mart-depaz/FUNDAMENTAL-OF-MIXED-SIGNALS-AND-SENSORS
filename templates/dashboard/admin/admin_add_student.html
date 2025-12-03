@@ -1,0 +1,575 @@
+<!-- templates/dashboard/admin_add_student.html -->
+{% extends 'partials/base.html' %}
+{% load static %}
+{% block title %}Admin Dashboard - Add Student{% endblock %}
+{% block navigation %}
+<!-- Override default navigation - no top bar for admin -->
+{% endblock %}
+{% block content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<style>
+    body { 
+        font-family: 'Inter', sans-serif; 
+        background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);
+    }
+</style>
+
+<!-- Admin Top Bar -->
+{% include 'dashboard/admin/admin_topbar.html' %}
+
+<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+    <!-- Sidebar -->
+    {% include 'dashboard/admin/admin_sidebar.html' %}
+
+    <main id="main-content" class="flex-grow p-4 lg:p-6 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+        <div class="p-4 md:p-8 bg-white lg:bg-gray-50 flex-grow rounded-2xl shadow-inner min-h-full">
+            <div class="flex items-center mb-6">
+                {% if request.GET.program %}
+                <a href="{% url 'dashboard:admin_program_users' selected_program.id %}" class="mr-4 text-gray-600 hover:text-gray-800">
+                    <i class="fas fa-arrow-left text-xl"></i>
+                </a>
+                {% else %}
+                <a href="{% url 'dashboard:admin_user_management' %}" class="mr-4 text-gray-600 hover:text-gray-800">
+                    <i class="fas fa-arrow-left text-xl"></i>
+                </a>
+                {% endif %}
+                <h1 class="text-3xl font-extrabold text-gray-900 flex items-center">
+                    <i class="fas fa-user-graduate w-8 h-8 mr-3" style="color: #3C4770;"></i> Add New Student
+                </h1>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-lg p-6 md:p-8">
+                <form id="add-student-form" method="POST">
+                    {% csrf_token %}
+                    <div class="space-y-6">
+                        <!-- Basic Information -->
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4" style="color: #3C4770;">Basic Information</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="id_full_name" class="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                                    <input type="text" name="full_name" id="id_full_name" required
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                           value="{{ form.full_name.value|default:'' }}">
+                                    {% if form.full_name.errors %}
+                                    <p class="text-red-500 text-sm mt-1">{{ form.full_name.errors.0 }}</p>
+                                    {% endif %}
+                                </div>
+                                
+                                <div>
+                                    <label for="id_email" class="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                                    <input type="email" name="email" id="id_email" required
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                           value="{{ form.email.value|default:'' }}">
+                                    {% if form.email.errors %}
+                                    <p class="text-red-500 text-sm mt-1">{{ form.email.errors.0 }}</p>
+                                    {% endif %}
+                                </div>
+                                
+                                <div>
+                                    <label for="id_school_id" class="block text-sm font-medium text-gray-700 mb-2">ID Number *</label>
+                                    <input type="text" name="school_id" id="id_school_id" required
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                           value="{{ form.school_id.value|default:'' }}">
+                                    {% if form.school_id.errors %}
+                                    <p class="text-red-500 text-sm mt-1">{{ form.school_id.errors.0 }}</p>
+                                    {% endif %}
+                                </div>
+                                
+                                <div>
+                                    <label for="id_education_level" class="block text-sm font-medium text-gray-700 mb-2">Education Level *</label>
+                                    {% if user.education_level %}
+                                    <!-- Admin has specific education level - show as read-only -->
+                                    <input type="hidden" name="education_level" value="{{ user.education_level }}">
+                                    <input type="text" 
+                                           value="{% if user.education_level == 'university_college' %}University/College{% else %}High/Senior High{% endif %}" 
+                                           readonly
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-xl bg-gray-100 text-gray-600">
+                                    <p class="text-xs text-gray-500 mt-1">Your school level: {% if user.education_level == 'university_college' %}University/College{% else %}High/Senior High{% endif %}</p>
+                                    {% else %}
+                                    <!-- Admin doesn't have specific level - show dropdown -->
+                                    <select name="education_level" id="id_education_level" required
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                            onchange="toggleProgramFields()">
+                                        <option value="">Select...</option>
+                                        {% for value, label in form.education_level.field.choices %}
+                                        <option value="{{ value }}" {% if form.education_level.value == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    {% endif %}
+                                    {% if form.education_level.errors %}
+                                    <p class="text-red-500 text-sm mt-1">{{ form.education_level.errors.0 }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Department and Academic Information (Side by Side) -->
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4" style="color: #3C4770;">Department & Academic Information</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <!-- Department (Always Visible) -->
+                                <div>
+                                    <label for="id_department" class="block text-sm font-medium text-gray-700 mb-2">Department *</label>
+                                    <input type="text" name="department" id="id_department" required
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                           value="{{ form.department.value|default:'' }}">
+                                    {% if form.department.errors %}
+                                    <p class="text-red-500 text-sm mt-1">{{ form.department.errors.0 }}</p>
+                                    {% endif %}
+                                </div>
+                                
+                                <!-- Program (for University/College) -->
+                                <div id="program-section" style="display: none;">
+                                    <label for="id_program" class="block text-sm font-medium text-gray-700 mb-2">Program/Major *</label>
+                                    <select name="program" id="id_program" 
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                            style="min-width: 100%; max-width: 100%;">
+                                        <option value="">Select Program...</option>
+                                        {% for program in programs %}
+                                        <option value="{{ program.id }}" {% if form.program.value == program.id|stringformat:"s" or selected_program and selected_program.id == program.id %}selected{% endif %} title="{{ program.code }} - {{ program.name }}">
+                                            {{ program.code }} - {{ program.name }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                    <style>
+                                        #id_program {
+                                            white-space: normal;
+                                            word-wrap: break-word;
+                                        }
+                                        #id_program option {
+                                            white-space: normal;
+                                            padding: 8px;
+                                        }
+                                    </style>
+                                    {% if form.program.errors %}
+                                    <p class="text-red-500 text-sm mt-1">{{ form.program.errors.0 }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            
+                            <!-- Year Level and Section (for University/College) -->
+                            <div id="year-section-section" style="display: none;" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div>
+                                    <label for="id_year_level" class="block text-sm font-medium text-gray-700 mb-2">Year Level *</label>
+                                    <select name="year_level" id="id_year_level"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                                        <option value="">Select Year Level...</option>
+                                        {% for value, label in form.year_level.field.choices %}
+                                        <option value="{{ value }}" {% if form.year_level.value == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    {% if form.year_level.errors %}
+                                    <p class="text-red-500 text-sm mt-1">{{ form.year_level.errors.0 }}</p>
+                                    {% endif %}
+                                </div>
+                                
+                                <div>
+                                    <label for="id_section" class="block text-sm font-medium text-gray-700 mb-2">Section *</label>
+                                    <input type="text" name="section" id="id_section"
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                           placeholder="e.g., A, B, 1, 2"
+                                           value="{{ form.section.value|default:'' }}">
+                                    {% if form.section.errors %}
+                                    <p class="text-red-500 text-sm mt-1">{{ form.section.errors.0 }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {% if form.school_name %}
+                        <input type="hidden" name="school_name" value="{{ form.school_name.value|default:user.school_name }}">
+                        {% endif %}
+                        
+                        <div id="form-message" class="hidden p-4 rounded-xl mb-4"></div>
+                        
+                        <div class="flex justify-end space-x-4 pt-4 border-t">
+                            <a href="{% if request.GET.program %}{% url 'dashboard:admin_program_users' selected_program.id %}{% else %}{% url 'dashboard:admin_user_management' %}{% endif %}" 
+                               class="px-6 py-2 bg-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-300 transition">
+                                Cancel
+                            </a>
+                            <button type="submit" 
+                                    class="px-6 py-2 text-white font-semibold rounded-xl transition shadow-md"
+                                    style="background-color: #10b981;" onmouseover="this.style.backgroundColor='#059669';" onmouseout="this.style.backgroundColor='#10b981';">
+                                <i class="fas fa-user-graduate mr-2"></i> Add Student
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+    // Handle form submission - ensure DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+        function toggleProgramFields() {
+            const educationLevelSelect = document.getElementById('id_education_level');
+            if (!educationLevelSelect) return; // Hidden field case
+            
+            const educationLevel = educationLevelSelect.value;
+            const programSection = document.getElementById('program-section');
+            const yearSectionSection = document.getElementById('year-section-section');
+            const programField = document.getElementById('id_program');
+            const yearLevelField = document.getElementById('id_year_level');
+            const sectionField = document.getElementById('id_section');
+            
+            if (!programSection || !programField || !yearLevelField || !sectionField) return;
+            
+            if (educationLevel === 'university_college') {
+                programSection.style.display = 'block';
+                if (yearSectionSection) yearSectionSection.style.display = 'grid';
+                programField.required = true;
+                yearLevelField.required = true;
+                sectionField.required = true;
+            } else {
+                programSection.style.display = 'none';
+                if (yearSectionSection) yearSectionSection.style.display = 'none';
+                programField.required = false;
+                yearLevelField.required = false;
+                sectionField.required = false;
+                programField.value = '';
+                yearLevelField.value = '';
+                sectionField.value = '';
+            }
+        }
+        
+        // Check on page load
+        {% if user.education_level == 'university_college' %}
+        // Admin is college-only, show program section
+        const programSection = document.getElementById('program-section');
+        const yearSectionSection = document.getElementById('year-section-section');
+        if (programSection) {
+            programSection.style.display = 'block';
+            if (yearSectionSection) yearSectionSection.style.display = 'grid';
+            const programField = document.getElementById('id_program');
+            const yearLevelField = document.getElementById('id_year_level');
+            const sectionField = document.getElementById('id_section');
+            if (programField) programField.required = true;
+            if (yearLevelField) yearLevelField.required = true;
+            if (sectionField) sectionField.required = true;
+        }
+        {% elif user.education_level == 'high_senior' %}
+        // Admin is high school only, hide program section
+        const programSection = document.getElementById('program-section');
+        const yearSectionSection = document.getElementById('year-section-section');
+        if (programSection) {
+            programSection.style.display = 'none';
+            if (yearSectionSection) yearSectionSection.style.display = 'none';
+        }
+        {% else %}
+        // Admin doesn't have specific level, check selected value
+        toggleProgramFields();
+        const educationLevelSelect = document.getElementById('id_education_level');
+        if (educationLevelSelect) {
+            educationLevelSelect.addEventListener('change', toggleProgramFields);
+        }
+        {% endif %}
+        
+        // Pre-select program if coming from program card
+        {% if selected_program %}
+        const programSection = document.getElementById('program-section');
+        const yearSectionSection = document.getElementById('year-section-section');
+        if (programSection) {
+            programSection.style.display = 'block';
+            if (yearSectionSection) yearSectionSection.style.display = 'grid';
+            const programField = document.getElementById('id_program');
+            const yearLevelField = document.getElementById('id_year_level');
+            const sectionField = document.getElementById('id_section');
+            if (programField) {
+                programField.required = true;
+                programField.value = '{{ selected_program.id }}';
+            }
+            if (yearLevelField) yearLevelField.required = true;
+            if (sectionField) sectionField.required = true;
+        }
+        {% endif %}
+        
+        // Get form element
+        const form = document.getElementById('add-student-form');
+        if (!form) {
+            console.error('Add student form not found!');
+            return;
+        }
+        
+        console.log('Add student form found, attaching submit handler...');
+        
+        // Attach click handler to submit button as primary handler
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton) {
+            submitButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Submit button clicked - handling submission');
+                handleFormSubmission(form);
+            });
+        }
+        
+        // Also attach form submit handler as backup
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Form submit event triggered');
+            handleFormSubmission(form);
+        });
+    });
+    
+    // Prevent duplicate submissions
+    let isSubmitting = false;
+    
+    function handleFormSubmission(form) {
+        console.log('Handling form submission...');
+        
+        // Prevent duplicate submissions
+        if (isSubmitting) {
+            console.log('Form submission already in progress, ignoring...');
+            return;
+        }
+        
+        // Validate required fields before submission
+        const fullName = form.querySelector('#id_full_name');
+        const email = form.querySelector('#id_email');
+        const schoolId = form.querySelector('#id_school_id');
+        const department = form.querySelector('#id_department');
+        const program = form.querySelector('#id_program');
+        const yearLevel = form.querySelector('#id_year_level');
+        const section = form.querySelector('#id_section');
+        const programSection = document.getElementById('program-section');
+        const yearSectionSection = document.getElementById('year-section-section');
+        
+        // Check if program section is visible (university/college)
+        const isProgramSectionVisible = programSection && programSection.style.display !== 'none';
+        
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const messageDiv = document.getElementById('form-message');
+        
+        // Validate basic fields
+        if (!fullName || !fullName.value.trim()) {
+            isSubmitting = false;
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Please enter Full Name', 'error');
+            } else {
+                alert('Please enter Full Name');
+            }
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+            }
+            return;
+        }
+        
+        if (!email || !email.value.trim()) {
+            isSubmitting = false;
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Please enter Email', 'error');
+            } else {
+                alert('Please enter Email');
+            }
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+            }
+            return;
+        }
+        
+        if (!schoolId || !schoolId.value.trim()) {
+            isSubmitting = false;
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Please enter ID Number', 'error');
+            } else {
+                alert('Please enter ID Number');
+            }
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+            }
+            return;
+        }
+        
+        // Validate department
+        if (!department || !department.value.trim()) {
+            isSubmitting = false;
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Please enter Department', 'error');
+            } else {
+                alert('Please enter Department');
+            }
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+            }
+            return;
+        }
+        
+        // Validate program, year level, and section if program section is visible
+        if (isProgramSectionVisible) {
+            if (!program || !program.value) {
+                isSubmitting = false;
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification('Please select a Program/Major', 'error');
+                } else {
+                    alert('Please select a Program/Major');
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+                }
+                return;
+            }
+            
+            if (!yearLevel || !yearLevel.value) {
+                isSubmitting = false;
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification('Please select a Year Level', 'error');
+                } else {
+                    alert('Please select a Year Level');
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+                }
+                return;
+            }
+            
+            if (!section || !section.value.trim()) {
+                isSubmitting = false;
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification('Please enter Section', 'error');
+                } else {
+                    alert('Please enter Section');
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+                }
+                return;
+            }
+        }
+        
+        // Set submitting flag
+        isSubmitting = true;
+        
+        const formData = new FormData(form);
+        
+        // Disable submit button during submission
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Adding...';
+        }
+        
+        console.log('Sending AJAX request...');
+        
+        fetch('{% url "dashboard:admin_add_student" %}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => {
+                console.log('Response received:', response.status);
+                if (!response.ok) {
+                    throw new Error('Network response was not ok: ' + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    // Use notification system
+                    if (typeof window.showNotification === 'function') {
+                        window.showNotification(data.message, 'success');
+                    } else if (typeof showNotification === 'function') {
+                        showNotification(data.message, 'success');
+                    } else if (messageDiv) {
+                        messageDiv.classList.remove('hidden');
+                        messageDiv.className = 'p-4 rounded-xl mb-4 bg-green-100 text-green-800 border border-green-300';
+                        messageDiv.innerHTML = '<i class="fas fa-check-circle mr-2"></i>' + data.message;
+                    }
+                    
+                    // Add download button if user_id and password are available
+                    if (data.user_id && data.temp_password && messageDiv) {
+                        const downloadUrl = `{% url 'dashboard:admin_download_user_document' 0 %}`.replace('0', data.user_id) + `?password=${encodeURIComponent(data.temp_password)}`;
+                        const downloadHtml = `<div class="mt-4">
+                            <a href="${downloadUrl}" 
+                               class="inline-flex items-center px-4 py-2 text-white font-semibold rounded-xl transition shadow-md hover:opacity-90"
+                               style="background-color: #3C4770;">
+                                <i class="fas fa-file-word mr-2"></i> Download User Document (Word)
+                            </a>
+                        </div>`;
+                        if (messageDiv) {
+                            messageDiv.innerHTML += downloadHtml;
+                        }
+                    }
+                    
+                    setTimeout(() => {
+                        {% if request.GET.program %}
+                        window.location.href = '{% url "dashboard:admin_program_users" selected_program.id %}';
+                        {% else %}
+                        window.location.href = '{% url "dashboard:admin_user_management" %}';
+                        {% endif %}
+                    }, 800);
+                } else {
+                    // Use notification system for errors
+                    isSubmitting = false;
+                    let errorMsg = data.message || 'An error occurred.';
+                    if (data.errors) {
+                        const errorList = [];
+                        for (const [field, error] of Object.entries(data.errors)) {
+                            errorList.push(`${field}: ${error}`);
+                        }
+                        errorMsg = errorMsg + '\n' + errorList.join('\n');
+                    }
+                    
+                    if (typeof window.showNotification === 'function') {
+                        window.showNotification(errorMsg, 'error');
+                    } else if (typeof showNotification === 'function') {
+                        showNotification(errorMsg, 'error');
+                    } else if (messageDiv) {
+                        messageDiv.classList.remove('hidden');
+                        messageDiv.className = 'p-4 rounded-xl mb-4 bg-red-100 text-red-800 border border-red-300';
+                        let errorHtml = '<i class="fas fa-exclamation-circle mr-2"></i>' + (data.message || 'An error occurred.');
+                        if (data.errors) {
+                            errorHtml += '<ul class="mt-2 list-disc list-inside">';
+                            for (const [field, error] of Object.entries(data.errors)) {
+                                errorHtml += `<li>${field}: ${error}</li>`;
+                            }
+                            errorHtml += '</ul>';
+                        }
+                        messageDiv.innerHTML = errorHtml;
+                    }
+                    
+                    // Re-enable submit button
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                isSubmitting = false;
+                const errorMsg = 'Network error. Please try again.';
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification(errorMsg, 'error');
+                } else if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                } else if (messageDiv) {
+                    messageDiv.classList.remove('hidden');
+                    messageDiv.className = 'p-4 rounded-xl mb-4 bg-red-100 text-red-800 border border-red-300';
+                    messageDiv.innerHTML = '<i class="fas fa-exclamation-circle mr-2"></i>' + errorMsg;
+                }
+                
+                // Re-enable submit button
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+                }
+            });
+    }
+</script>
+{% endblock %}
+

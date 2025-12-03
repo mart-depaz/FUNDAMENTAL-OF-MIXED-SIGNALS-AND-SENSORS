@@ -1,0 +1,670 @@
+{% extends 'dashboard/student/student.html' %}
+{% load dashboard_filters %}
+{% block title %}Enroll Course{% endblock %}
+{% block dashboard_content %}
+<style>
+    /* Ensure consistent card heights and layout */
+    #enrolledCoursesList > div {
+        display: flex;
+        flex-direction: column;
+        min-height: 280px;
+    }
+    
+    /* Ensure text doesn't overflow */
+    .course-card-title {
+        word-break: break-word;
+        overflow-wrap: break-word;
+        hyphens: auto;
+    }
+    
+    /* Consistent spacing for course details */
+    .course-details-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+</style>
+<div class="max-w-4xl mx-auto">
+    <h2 class="text-2xl font-bold mb-6" style="color: #3C4770;">Enroll in Course</h2>
+    
+    <!-- Enrollment Form -->
+    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+        <h3 class="text-lg font-semibold mb-4 text-gray-800">Enter Course Code</h3>
+        <form id="enrollmentForm" class="space-y-4">
+            {% csrf_token %}
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Course Enrollment Code <span class="text-red-500">*</span></label>
+                <input type="text" id="enrollment_code" name="enrollment_code" required 
+                       class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-lg font-mono text-center tracking-widest uppercase"
+                       placeholder="Enter 8-character code" maxlength="8" autocomplete="off">
+                <p class="text-xs text-gray-500 mt-1">Enter the enrollment code provided by your instructor</p>
+            </div>
+            <button type="button" onclick="verifyEnrollmentCode()" 
+                    class="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition shadow-md hover:shadow-lg">
+                <i class="fas fa-search mr-2"></i> Verify Code
+            </button>
+        </form>
+    </div>
+    
+    <!-- Course Information (Hidden until code is verified) -->
+    <div id="courseInfoSection" class="bg-white rounded-xl shadow-lg p-6 mb-6 hidden">
+        <h3 class="text-lg font-semibold mb-4 text-gray-800">Course Information</h3>
+        <div id="courseInfoContent" class="space-y-3"></div>
+    </div>
+    
+    <!-- Student Information Form (Hidden until code is verified) -->
+    <div id="studentInfoSection" class="bg-white rounded-xl shadow-lg p-6 mb-6 hidden">
+        <h3 class="text-lg font-semibold mb-4 text-gray-800">Your Information</h3>
+        <form id="studentInfoForm" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" id="course_id" name="course_id">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Full Name <span class="text-red-500">*</span></label>
+                    <input type="text" id="full_name" name="full_name" required 
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                           placeholder="Enter your full name">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Year Level <span class="text-red-500">*</span></label>
+                    <select id="year_level" name="year_level" required 
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <option value="">Select Year Level</option>
+                        <option value="1">1st Year</option>
+                        <option value="2">2nd Year</option>
+                        <option value="3">3rd Year</option>
+                        <option value="4">4th Year</option>
+                        <option value="5">5th Year</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Section <span class="text-red-500">*</span></label>
+                    <input type="text" id="section" name="section" required 
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white uppercase"
+                           placeholder="e.g., A, B, 1, 2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">School Email <span class="text-red-500">*</span></label>
+                    <input type="email" id="email" name="email" required 
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                           placeholder="your.email@school.edu">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Student ID <span class="text-red-500">*</span></label>
+                    <input type="text" id="student_id" name="student_id" required 
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                           placeholder="Enter your student ID number">
+                </div>
+            </div>
+            <button type="button" onclick="submitEnrollment()" 
+                    class="w-full px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition shadow-md hover:shadow-lg">
+                <i class="fas fa-check mr-2"></i> Enroll in Course
+            </button>
+        </form>
+    </div>
+    
+    <!-- Enrolled Courses -->
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h3 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <i class="fas fa-book-open text-indigo-600"></i>
+                My Enrolled Courses
+            </h3>
+            <span class="px-3 py-1 bg-indigo-100 text-indigo-700 text-sm font-semibold rounded-full">
+                {{ enrolled_courses|length|default:0 }} course{{ enrolled_courses|length|default:0|pluralize }}
+            </span>
+        </div>
+        <div id="enrolledCoursesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% if enrolled_courses %}
+                {% for enrollment in enrolled_courses %}
+                <div class="bg-gradient-to-br from-white to-gray-50 rounded-xl p-5 shadow-md hover:shadow-xl transition-all duration-300 border border-gray-200 cursor-pointer transform hover:-translate-y-1 flex flex-col h-full" 
+                     onclick="showEnrolledCourseDetails({{ enrollment.course.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}', '{{ enrollment.course.program.code|escapejs }}', '{{ enrollment.course.program.name|escapejs }}', {{ enrollment.course.year_level }}, '{{ enrollment.course.semester|escapejs }}', '{{ enrollment.course.school_year|escapejs }}', '{{ enrollment.course.instructor.full_name|default:enrollment.course.instructor.username|escapejs }}', '{{ enrollment.course.room|default:"TBA"|escapejs }}', '{{ enrollment.enrolled_at|date:"F d, Y"|escapejs }}', '{{ enrollment.section|default:"N/A"|escapejs }}', '{{ enrollment.course.color|default:"#3C4770"|escapejs }}')">
+                    <!-- Course Header -->
+                    <div class="flex items-start gap-3 mb-4 flex-shrink-0">
+                        <div class="w-14 h-14 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg flex-shrink-0" 
+                             style="background: linear-gradient(135deg, {{ enrollment.course.color|default:'#3C4770' }} 0%, {{ enrollment.course.color|default:'#447294' }} 100%);">
+                            {{ enrollment.course.code|first|upper }}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h4 class="font-bold text-gray-900 text-base mb-1 truncate" title="{{ enrollment.course.code }}">
+                                {{ enrollment.course.code }}
+                            </h4>
+                            <p class="text-xs text-gray-600 line-clamp-2 min-h-[2.5rem] course-card-title" title="{{ enrollment.course.name }}">
+                                {{ enrollment.course.name }}
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <!-- Course Details -->
+                    <div class="space-y-2.5 pt-3 border-t border-gray-200 flex-1 flex flex-col course-details-section">
+                        <div class="flex items-center gap-2 text-xs text-gray-600">
+                            <i class="fas fa-graduation-cap text-indigo-500 w-4 flex-shrink-0"></i>
+                            <span class="truncate" title="{{ enrollment.course.program.code }} - {{ enrollment.course.program.name }}">
+                                {{ enrollment.course.program.code }}
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-gray-600 flex-wrap">
+                            <i class="fas fa-user text-blue-500 w-4 flex-shrink-0"></i>
+                            <span class="flex-shrink-0">{{ enrollment.course.year_level|ordinal_year }}</span>
+                            {% if enrollment.section %}
+                            <span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-semibold text-[10px] flex-shrink-0">Sec {{ enrollment.section|upper }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-gray-600">
+                            <i class="fas fa-calendar text-purple-500 w-4 flex-shrink-0"></i>
+                            <span class="flex-shrink-0">
+                                {% if enrollment.course.semester == '1st' %}1st{% elif enrollment.course.semester == '2nd' %}2nd{% else %}{{ enrollment.course.semester }}{% endif %} Sem
+                                {% if enrollment.course.school_year %} • {{ enrollment.course.school_year }}{% endif %}
+                            </span>
+                        </div>
+                        <div class="pt-2 mt-auto">
+                            <p class="text-[10px] text-gray-500 leading-relaxed">
+                                <span class="font-medium">Code:</span> <span class="font-mono">{{ enrollment.course.enrollment_code|default:'N/A' }}</span>
+                            </p>
+                            <p class="text-[10px] text-gray-500 leading-relaxed mt-1">
+                                <span class="font-medium">Enrolled:</span> {{ enrollment.enrolled_at|date:"M d, Y" }}
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <!-- Unenroll Button -->
+                    <div class="pt-3 mt-3 border-t border-gray-200 flex-shrink-0">
+                        <button onclick="event.stopPropagation(); showUnenrollModal({{ enrollment.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}')" 
+                                class="w-full px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition">
+                            <i class="fas fa-times mr-1"></i> Unenroll
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="col-span-full text-center py-12 text-gray-500">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+                        <i class="fas fa-book-open text-2xl text-gray-400"></i>
+                    </div>
+                    <p class="text-base font-semibold text-gray-700">No enrolled courses yet</p>
+                    <p class="text-sm text-gray-500 mt-1">Enter a course code above to enroll</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Schedule Conflict Modal -->
+<div id="scheduleConflictModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[60] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="bg-gradient-to-r from-yellow-500 to-orange-500 px-6 py-4 flex justify-between items-center">
+            <h3 class="text-xl font-bold text-white flex items-center">
+                <i class="fas fa-exclamation-triangle w-6 h-6 mr-2"></i> Schedule Conflict Detected
+            </h3>
+            <button onclick="closeScheduleConflictModal()" class="text-white hover:text-gray-200 transition">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="p-6 overflow-y-auto flex-1">
+            <div class="mb-4">
+                <p class="text-gray-700 font-semibold mb-2">The course you're trying to enroll in has schedule conflicts with your existing enrolled courses:</p>
+                <div id="conflictCourseInfo" class="mb-4 p-3 rounded-lg border-l-4" style="border-left-color: #3C4770;">
+                    <!-- Course info will be inserted here -->
+                </div>
+            </div>
+            <div class="space-y-3">
+                <h4 class="font-semibold text-gray-800 mb-2">Conflicts:</h4>
+                <div id="conflictsList" class="space-y-3">
+                    <!-- Conflicts will be inserted here -->
+                </div>
+            </div>
+            <div class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p class="text-sm text-yellow-800">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    <strong>Note:</strong> If you proceed with enrollment, both courses will appear in your timetable with overlapping schedules. 
+                    You may need to coordinate with your instructors or consider dropping one of the courses.
+                </p>
+            </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+            <button onclick="closeScheduleConflictModal()" class="px-5 py-2.5 text-gray-700 bg-gray-200 font-semibold rounded-lg hover:bg-gray-300 transition">
+                Cancel
+            </button>
+            <button onclick="forceEnrollWithConflicts()" class="px-5 py-2.5 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition shadow-md">
+                <i class="fas fa-check mr-2"></i> Force Enroll Anyway
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Invalid Code Modal -->
+<div id="invalidCodeModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-red-600">
+                <i class="fas fa-exclamation-circle w-6 h-6 mr-2"></i> Invalid Enrollment Code
+            </h3>
+            <button onclick="closeInvalidCodeModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="text-gray-800 font-medium" id="invalidCodeMessage">No course found with this enrollment code.</p>
+            </div>
+            <div class="text-sm text-gray-600 space-y-2">
+                <p><strong>Please check:</strong></p>
+                <ul class="list-disc list-inside space-y-1 ml-2">
+                    <li>The code is correct (8 characters)</li>
+                    <li>You entered it correctly (no spaces or typos)</li>
+                    <li>The course is still active</li>
+                    <li>You received the code from your instructor</li>
+                </ul>
+            </div>
+        </div>
+        <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200 mt-6">
+            <button onclick="closeInvalidCodeModal()" class="px-5 py-2.5 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150 shadow-sm hover:shadow-md">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function showInvalidCodeModal(message) {
+    const modal = document.getElementById('invalidCodeModal');
+    const messageEl = document.getElementById('invalidCodeMessage');
+    if (modal && messageEl) {
+        messageEl.textContent = message || 'No course found with this enrollment code.';
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeInvalidCodeModal() {
+    const modal = document.getElementById('invalidCodeModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+// Close modal when clicking outside
+document.getElementById('invalidCodeModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeInvalidCodeModal();
+    }
+});
+function verifyEnrollmentCode() {
+    const code = document.getElementById('enrollment_code').value.trim().toUpperCase();
+    if (!code) {
+        alert('Please enter an enrollment code');
+        return;
+    }
+    
+    const button = document.querySelector('button[onclick="verifyEnrollmentCode()"]');
+    const originalText = button ? button.innerHTML : '';
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Verifying...';
+    }
+    
+    fetch('{% url "dashboard:verify_enrollment_code" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({ enrollment_code: code })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalText;
+        }
+        
+        if (data.success) {
+            // Check for schedule conflicts
+            if (data.has_conflicts && data.conflicts && data.conflicts.length > 0) {
+                // Show conflict modal
+                showScheduleConflictModal(data.course, data.conflicts);
+            } else {
+                // No conflicts, show course info and student form
+                showCourseInfo(data.course);
+            }
+        } else {
+            // Show modal for invalid enrollment code
+            showInvalidCodeModal(data.message || 'Invalid enrollment code. Please check and try again.');
+        }
+    })
+    .catch(error => {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalText;
+        }
+        console.error('Error:', error);
+        showInvalidCodeModal('An error occurred while verifying the code. Please try again.');
+    });
+}
+
+// Force Section to uppercase as the user types
+document.addEventListener('DOMContentLoaded', function() {
+    const sectionInput = document.getElementById('section');
+    if (sectionInput) {
+        sectionInput.addEventListener('input', function() {
+            const pos = this.selectionStart;
+            this.value = this.value.toUpperCase();
+            this.setSelectionRange(pos, pos);
+        });
+    }
+});
+
+let currentConflicts = null;
+let currentCourse = null;
+
+function showScheduleConflictModal(course, conflicts) {
+    currentConflicts = conflicts;
+    currentCourse = course;
+    
+    const modal = document.getElementById('scheduleConflictModal');
+    const courseInfo = document.getElementById('conflictCourseInfo');
+    const conflictsList = document.getElementById('conflictsList');
+    
+    // Display course info
+    courseInfo.innerHTML = `
+        <h4 class="font-bold text-gray-900 mb-1">${course.code} - ${course.name}</h4>
+        <p class="text-sm text-gray-600">Program: ${course.program_code || ''} - ${course.program_name || ''}</p>
+    `;
+    
+    // Display conflicts
+    conflictsList.innerHTML = '';
+    conflicts.forEach((conflict, index) => {
+        const conflictItem = document.createElement('div');
+        conflictItem.className = 'p-4 bg-red-50 border border-red-200 rounded-lg';
+        conflictItem.innerHTML = `
+            <div class="flex items-start gap-3">
+                <div class="flex-shrink-0 w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center font-bold text-sm">
+                    ${index + 1}
+                </div>
+                <div class="flex-1">
+                    <h5 class="font-semibold text-red-900 mb-2">Conflict with: ${conflict.conflicting_course_code} - ${conflict.conflicting_course_name}</h5>
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <p class="text-gray-600 font-medium mb-1">Day:</p>
+                            <p class="text-gray-900 font-semibold">${conflict.day}</p>
+                        </div>
+                        <div>
+                            <p class="text-gray-600 font-medium mb-1">New Course Time:</p>
+                            <p class="text-gray-900 font-semibold">${conflict.new_course_time}</p>
+                            <p class="text-xs text-gray-500">Room: ${conflict.new_course_room}</p>
+                        </div>
+                        <div>
+                            <p class="text-gray-600 font-medium mb-1">Conflicting Course Time:</p>
+                            <p class="text-gray-900 font-semibold">${conflict.conflicting_course_time}</p>
+                            <p class="text-xs text-gray-500">Room: ${conflict.conflicting_course_room}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        conflictsList.appendChild(conflictItem);
+    });
+    
+    modal.classList.remove('hidden');
+}
+
+function closeScheduleConflictModal() {
+    const modal = document.getElementById('scheduleConflictModal');
+    modal.classList.add('hidden');
+    currentConflicts = null;
+    currentCourse = null;
+}
+
+function forceEnrollWithConflicts() {
+    closeScheduleConflictModal();
+    // Show course info and form, then submit with force_enroll flag
+    showCourseInfo(currentCourse);
+    // Store that we should force enroll
+    document.getElementById('studentInfoForm').setAttribute('data-force-enroll', 'true');
+}
+
+function showCourseInfo(course) {
+    // Show course info and student form
+    document.getElementById('courseInfoSection').classList.remove('hidden');
+    document.getElementById('studentInfoSection').classList.remove('hidden');
+    
+    document.getElementById('course_id').value = course.id;
+    
+    // Display course information
+    document.getElementById('courseInfoContent').innerHTML = `
+        <div class="p-4 rounded-lg border-l-4" style="background: linear-gradient(90deg, ${course.color || '#3C4770'}15 0%, #FFFFFF 100%); border-left-color: ${course.color || '#3C4770'};">
+            <h4 class="text-lg font-bold mb-2" style="color: ${course.color || '#3C4770'};">${course.code} - ${course.name}</h4>
+            <div class="grid grid-cols-2 gap-2 text-sm text-gray-700">
+                <div><strong>Program:</strong> ${course.program_code || ''} - ${course.program_name || ''}</div>
+                <div><strong>Year Level:</strong> ${course.year_level || 'N/A'}</div>
+                <div><strong>Semester:</strong> ${course.semester === '1st' ? '1st Semester' : course.semester === '2nd' ? '2nd Semester' : course.semester || 'N/A'}</div>
+                <div><strong>School Year:</strong> ${course.school_year || 'N/A'}</div>
+                <div><strong>Instructor:</strong> ${course.instructor_name || 'N/A'}</div>
+                <div><strong>Room:</strong> ${course.room || 'N/A'}</div>
+            </div>
+        </div>
+    `;
+    
+    // Pre-fill student info if available
+    {% if user.full_name %}
+    document.getElementById('full_name').value = '{{ user.full_name }}';
+    {% endif %}
+    {% if user.year_level %}
+    document.getElementById('year_level').value = '{{ user.year_level }}';
+    {% endif %}
+    {% if user.section %}
+    document.getElementById('section').value = '{{ user.section }}';
+    {% endif %}
+    {% if user.email %}
+    document.getElementById('email').value = '{{ user.email }}';
+    {% endif %}
+    {% if user.school_id %}
+    document.getElementById('student_id').value = '{{ user.school_id }}';
+    {% endif %}
+}
+
+function submitEnrollment() {
+    const form = document.getElementById('studentInfoForm');
+    const formData = new FormData(form);
+    
+    // Add enrollment code to form data
+    const enrollmentCode = document.getElementById('enrollment_code').value.trim().toUpperCase();
+    formData.append('enrollment_code', enrollmentCode);
+    
+    // Check if force enrollment is needed
+    const forceEnroll = form.getAttribute('data-force-enroll') === 'true';
+    if (forceEnroll) {
+        formData.append('force_enroll', 'true');
+    }
+    
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Enrolling...';
+    
+    fetch('{% url "dashboard:enroll_course" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        button.disabled = false;
+        button.innerHTML = originalText;
+        
+        if (data.success) {
+            alert('Successfully enrolled in the course!');
+            window.location.reload();
+        } else {
+            if (data.has_conflicts && data.conflicts) {
+                // Show conflict modal again
+                showScheduleConflictModal(currentCourse || data.course, data.conflicts);
+            } else {
+                alert(data.message || 'Failed to enroll. Please try again.');
+            }
+        }
+    })
+    .catch(error => {
+        button.disabled = false;
+        button.innerHTML = originalText;
+        console.error('Error:', error);
+        alert('An error occurred. Please try again.');
+    });
+}
+
+// Close conflict modal when clicking outside
+document.getElementById('scheduleConflictModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeScheduleConflictModal();
+    }
+});
+
+function showUnenrollModal(enrollmentId, courseCode, courseName) {
+    document.getElementById('unenroll-enrollment-id').value = enrollmentId;
+    document.getElementById('unenroll-course-name').textContent = `${courseCode} - ${courseName}`;
+    document.getElementById('unenrollModal').classList.remove('hidden');
+}
+
+function closeUnenrollModal() {
+    document.getElementById('unenrollModal').classList.add('hidden');
+    document.getElementById('unenroll-enrollment-id').value = '';
+    document.getElementById('unenroll-course-name').textContent = '';
+}
+
+function confirmUnenroll() {
+    const enrollmentId = document.getElementById('unenroll-enrollment-id').value;
+    if (!enrollmentId) {
+        closeUnenrollModal();
+        return;
+    }
+    
+    closeUnenrollModal();
+    
+    fetch(`{% url "dashboard:unenroll_course" 0 %}`.replace('0', enrollmentId), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification('Successfully unenrolled from the course.', 'success');
+            } else {
+                alert('Successfully unenrolled from the course.');
+            }
+            setTimeout(() => window.location.reload(), 800);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Failed to unenroll. Please try again.', 'error');
+            } else {
+                alert(data.message || 'Failed to unenroll. Please try again.');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        } else {
+            alert('An error occurred. Please try again.');
+        }
+    });
+}
+
+// Allow Enter key to verify code
+document.getElementById('enrollment_code').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        verifyEnrollmentCode();
+    }
+});
+
+function showEnrolledCourseDetails(courseId, code, name, programCode, programName, yearLevel, semester, schoolYear, instructor, room, enrolledAt, section, color) {
+    let modal = document.getElementById('enrolledCourseDetailsModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'enrolledCourseDetailsModal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-40 hidden z-50 flex items-center justify-center p-4 backdrop-blur-sm';
+        modal.innerHTML = `
+            <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                        <i class="fas fa-book"></i>
+                        <span id="modal-course-code">Course Details</span>
+                    </h2>
+                    <button onclick="closeEnrolledCourseDetails()" class="text-gray-400 hover:text-gray-600 transition">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-4" id="modal-course-content">
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    const ordinalYear = yearLevel === 1 ? '1st Year' : yearLevel === 2 ? '2nd Year' : yearLevel === 3 ? '3rd Year' : yearLevel === 4 ? '4th Year' : yearLevel + 'th Year';
+    const semesterDisplay = semester === '1st' ? '1st Semester' : semester === '2nd' ? '2nd Semester' : semester || 'N/A';
+    
+    document.getElementById('modal-course-code').textContent = code + ' - ' + name;
+    document.getElementById('modal-course-content').innerHTML = `
+        <div class="p-4 rounded-xl border-l-4" style="background: linear-gradient(90deg, ${color}15 0%, #FFFFFF 100%); border-left-color: ${color};">
+            <h4 class="text-lg font-bold mb-2" style="color: ${color};">${code} - ${name}</h4>
+            <div class="grid grid-cols-2 gap-2 text-sm text-gray-700">
+                <div><strong>Program:</strong> ${programCode} - ${programName}</div>
+                <div><strong>Year Level:</strong> ${ordinalYear}</div>
+                <div><strong>Semester:</strong> ${semesterDisplay}</div>
+                <div><strong>School Year:</strong> ${schoolYear || 'N/A'}</div>
+                <div><strong>Section:</strong> ${section || 'N/A'}</div>
+                <div><strong>Instructor:</strong> ${instructor || 'N/A'}</div>
+                <div><strong>Room:</strong> ${room || 'TBA'}</div>
+                <div><strong>Enrolled on:</strong> ${enrolledAt}</div>
+            </div>
+        </div>
+    `;
+    modal.classList.remove('hidden');
+}
+
+function closeEnrolledCourseDetails() {
+    const modal = document.getElementById('enrolledCourseDetailsModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+</script>
+
+<!-- Unenroll Confirmation Modal -->
+<div id="unenrollModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-red-600">
+                <i class="fas fa-user-minus w-6 h-6 mr-2"></i> Unenroll from Course
+            </h3>
+            <button onclick="closeUnenrollModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <p class="text-gray-700 font-semibold">Are you sure you want to unenroll from this course?</p>
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="font-semibold text-red-800" id="unenroll-course-name"></p>
+            </div>
+            <p class="text-sm text-gray-600">This action cannot be undone. You will need to re-enroll using the enrollment code.</p>
+            <input type="hidden" id="unenroll-enrollment-id">
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="closeUnenrollModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                    Cancel
+                </button>
+                <button onclick="confirmUnenroll()" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm">
+                    <i class="fas fa-user-minus mr-2"></i> Unenroll
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

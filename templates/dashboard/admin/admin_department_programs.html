@@ -1,0 +1,751 @@
+<!-- templates/dashboard/admin_department_programs.html -->
+{% extends 'partials/base.html' %}
+{% load static %}
+{% block title %}Admin Dashboard - Department Programs{% endblock %}
+{% block navigation %}
+<!-- Override default navigation - no top bar for admin -->
+{% endblock %}
+{% block content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<!-- Cropper.js for image cropping -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+<style>
+    body { 
+        font-family: 'Inter', sans-serif; 
+        background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);
+    }
+    
+    /* Ensure input fields show typed text even for long names */
+    input[type="text"] {
+        min-width: 0;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+    
+    input[type="text"]:focus {
+        overflow-x: auto;
+    }
+    .cropper-container {
+        max-width: 100%;
+        max-height: 500px;
+        min-height: 300px;
+        position: relative;
+        background-color: transparent;
+    }
+    
+    /* Ensure crop box is visible - overlay only outside crop area */
+    .cropper-container .cropper-crop-box {
+        border: 2px solid #3b82f6 !important;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5) !important;
+        background-color: transparent !important;
+    }
+    
+    /* Make sure the image area doesn't have grey background */
+    .cropper-container .cropper-canvas {
+        background-color: transparent !important;
+    }
+    
+    .cropper-container .cropper-view-box {
+        outline: 1px solid rgba(59, 130, 246, 0.5) !important;
+        background-color: transparent !important;
+    }
+    
+    /* Background overlay for the entire cropper container (outside the image) */
+    .cropper-container::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #f3f4f6;
+        z-index: -1;
+    }
+    
+    /* Make all crop box handles more visible */
+    .cropper-container .cropper-crop-box .cropper-point {
+        width: 10px !important;
+        height: 10px !important;
+        background-color: #3b82f6 !important;
+        border: 2px solid #ffffff !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+    }
+    
+    .cropper-container .cropper-crop-box .cropper-point:hover {
+        background-color: #2563eb !important;
+        transform: scale(1.15);
+        transition: all 0.2s;
+    }
+</style>
+
+<!-- Admin Top Bar -->
+{% include 'dashboard/admin/admin_topbar.html' %}
+
+<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+    <!-- Sidebar -->
+    {% include 'dashboard/admin/admin_sidebar.html' %}
+
+    <main id="main-content" class="flex-grow p-2 lg:p-3 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+        <div class="p-2 md:p-3 bg-white lg:bg-gray-50 flex-grow rounded-lg shadow-inner min-h-full">
+            <!-- Back Button - Top Left Corner -->
+            <div class="mb-3">
+                <a href="{% url 'dashboard:admin_institutional_setup' %}" 
+                   class="inline-flex items-center p-2 rounded-lg bg-white shadow-md border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 hover:shadow-lg transition-all duration-200"
+                   title="Back to Academics">
+                    <i class="fas fa-arrow-left text-base"></i>
+                </a>
+            </div>
+            
+            <!-- Department Header - Top Center -->
+            <div class="flex flex-col items-center justify-center mb-6 py-4 bg-white rounded-xl shadow-sm border border-gray-200">
+                <div class="flex items-center gap-4 mb-2">
+                    {% if department.icon %}
+                    <img src="{{ department.icon.url }}" alt="{{ department.code }}" class="w-16 h-16 object-contain rounded flex-shrink-0">
+                    {% else %}
+                    <div class="w-16 h-16 rounded flex items-center justify-center flex-shrink-0" style="background-color: #3C4770; color: white;">
+                        <i class="fas fa-building text-2xl"></i>
+                    </div>
+                    {% endif %}
+                    <div class="text-center">
+                        <h2 class="text-2xl font-bold text-gray-900">
+                            {% if department.code %}{{ department.code }}{% else %}N/A{% endif %}
+                        </h2>
+                        <p class="text-lg text-gray-600 mt-1">{{ department.name }}</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-graduation-cap text-blue-600 text-sm"></i>
+                    <h1 class="text-lg font-bold text-gray-900 flex items-center">
+                        Programs
+                    </h1>
+                </div>
+                <button onclick="openProgramModal({{ department.id }}, '{{ department.name|escapejs }}', '{{ department.code|escapejs }}')" 
+                        class="px-3 py-1.5 text-white text-sm font-semibold rounded-lg transition duration-150 shadow-sm" 
+                        style="background-color: #3C4770;" 
+                        onmouseover="this.style.backgroundColor='#447294';" 
+                        onmouseout="this.style.backgroundColor='#3C4770';">
+                    <i class="fas fa-plus-circle mr-1 text-xs"></i> Add Program
+                </button>
+            </div>
+            
+            <!-- Programs Grid (Larger Size) -->
+            {% if program_data %}
+            <div id="programs-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {% for pd in program_data %}
+                {% with program=pd.program %}
+                <div class="program-card bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 transition hover:shadow-xl" 
+                     data-code="{{ program.code|lower }}"
+                     data-name="{{ program.name|lower }}"
+                     data-program-id="{{ program.id }}"
+                     onclick="viewProgramUsers({{ program.id }})"
+                     style="cursor: pointer;">
+                    <!-- Program Icon Section -->
+                    <div class="h-32 flex items-center justify-center" style="background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);">
+                        {% if program.icon %}
+                        <img src="{{ program.icon.url }}" alt="{{ program.code }}" class="w-20 h-20 object-contain rounded">
+                        {% else %}
+                        <div class="w-20 h-20 rounded flex items-center justify-center" style="background-color: #3C4770; color: white;">
+                            <i class="fas fa-graduation-cap text-4xl"></i>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Program Info Section -->
+                    <div class="p-5">
+                        <div class="flex justify-between items-start mb-3">
+                            <div class="flex-1 flex items-center gap-3">
+                                {% if program.icon %}
+                                <img src="{{ program.icon.url }}" alt="{{ program.code }}" class="w-12 h-12 object-contain rounded flex-shrink-0">
+                                {% else %}
+                                <div class="w-12 h-12 rounded flex items-center justify-center flex-shrink-0" style="background-color: #3C4770; color: white;">
+                                    <i class="fas fa-graduation-cap text-lg"></i>
+                                </div>
+                                {% endif %}
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-xl font-bold text-gray-800">{{ program.code }}</h4>
+                                    <p class="text-sm text-gray-600 mt-1">{{ program.name }}</p>
+                                </div>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="event.stopPropagation(); editProgram({{ program.id }}, '{{ program.code }}', '{{ program.name|escapejs }}', '{{ program.department|escapejs }}', {% if program.icon %}'{{ program.icon.url|escapejs }}'{% else %}null{% endif %})" 
+                                        class="p-2 rounded-full transition" style="color: #3C4770;" onmouseover="this.style.color='#447294'; this.style.backgroundColor='#DFCFD5';" onmouseout="this.style.color='#3C4770'; this.style.backgroundColor='transparent';">
+                                    <i class="fas fa-edit w-4 h-4"></i>
+                                </button>
+                                <button onclick="event.stopPropagation(); openDeleteModal({{ program.id }}, '{{ program.code }}', '{{ program.name|escapejs }}')" 
+                                        class="p-2 rounded-full text-red-500 hover:bg-red-50 transition">
+                                    <i class="fas fa-trash w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-3">
+                            <i class="fas fa-users mr-1"></i>{{ pd.user_count }} user{{ pd.user_count|pluralize }}
+                        </p>
+                    </div>
+                </div>
+                {% endwith %}
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center p-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+                <i class="fas fa-graduation-cap text-6xl text-gray-400 mb-4"></i>
+                <p class="text-xl text-gray-600 mb-2">No programs yet</p>
+                <p class="text-gray-500 mb-4">Click "Add Program" to create the first program in this department.</p>
+                <button onclick="openProgramModal({{ department.id }}, '{{ department.name|escapejs }}', '{{ department.code|escapejs }}')" 
+                        class="px-6 py-3 text-white font-semibold rounded-xl transition duration-150 shadow-md" 
+                        style="background-color: #3C4770;" 
+                        onmouseover="this.style.backgroundColor='#447294';" 
+                        onmouseout="this.style.backgroundColor='#3C4770';">
+                    <i class="fas fa-plus-circle mr-2"></i> Add Program
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+
+<!-- Program Modal -->
+<div id="program-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center" style="color: #3C4770;">
+                <i class="fas fa-graduation-cap w-6 h-6 mr-2"></i> <span id="program-modal-title">Add New Program</span>
+            </h3>
+            <button onclick="closeProgramModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <form id="program-form" class="space-y-4" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="hidden" id="program-department-id" name="department_id" value="{{ department.id }}">
+            <div class="bg-gray-50 p-3 rounded-lg mb-4">
+                <p class="text-sm text-gray-600"><strong>Department:</strong> <span id="department-name-display">{{ department.name }}</span></p>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Program Code *</label>
+                    <input type="text" id="program-code" name="code" required 
+                           placeholder="e.g., BSCpE"
+                           class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 uppercase font-mono">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Program Name *</label>
+                    <input type="text" id="program-name" name="name" required 
+                           placeholder="e.g., Bachelor of Science in Computer Engineering"
+                           class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500"
+                           style="min-width: 0; overflow-x: auto; text-overflow: ellipsis;">
+                </div>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Program Icon/Picture</label>
+                <input type="file" id="program-icon" name="icon" accept="image/*" 
+                       class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                <p class="text-xs text-gray-500 mt-1">Upload an icon or picture to display on the program folder</p>
+                <div id="program-icon-preview" class="mt-2 hidden">
+                    <img id="program-icon-preview-img" src="" alt="Preview" class="w-20 h-20 object-contain rounded-lg border border-gray-300">
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button type="button" onclick="closeProgramModal()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button type="submit" class="px-6 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                    <i class="fas fa-graduation-cap mr-2"></i> <span id="program-submit-text">Create Program</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Image Cropper Modal -->
+<div id="image-cropper-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 p-6 md:p-8 border-2 border-gray-200">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center" style="color: #3C4770;">
+                <i class="fas fa-crop w-6 h-6 mr-2"></i> Crop Image
+            </h3>
+            <button onclick="closeCropperModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <div class="mb-4">
+            <div id="cropper-container-wrapper" class="cropper-container" style="max-height: 500px; min-height: 300px; position: relative;">
+                <img id="cropper-image" src="" alt="Crop" style="max-width: 100%; display: block;">
+            </div>
+            <!-- Cropped Preview -->
+            <div id="cropped-preview-container" class="mt-4 hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Cropped Preview:</label>
+                <div class="flex justify-center">
+                    <img id="cropped-preview-img" src="" alt="Cropped Preview" class="w-32 h-32 object-contain rounded-lg border-2 border-gray-300 shadow-md">
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200 bg-gray-50 -mx-6 md:-mx-8 -mb-6 md:-mb-8 px-6 md:px-8 pb-6 md:pb-8 rounded-b-2xl">
+            <button type="button" onclick="closeCropperModal()" class="px-5 py-2.5 text-gray-700 bg-white border-2 border-gray-300 font-semibold rounded-xl hover:bg-gray-50 hover:border-gray-400 transition duration-150 shadow-sm hover:shadow-md">
+                Done
+            </button>
+            <button type="button" id="continue-edit-btn" onclick="continueEditCrop()" class="px-6 py-2.5 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg hidden border-2 border-blue-600" style="background-color: #3b82f6;" onmouseover="this.style.backgroundColor='#2563eb'; this.style.borderColor='#1d4ed8';" onmouseout="this.style.backgroundColor='#3b82f6'; this.style.borderColor='#2563eb';">
+                <i class="fas fa-edit mr-2"></i> Continue Edit
+            </button>
+            <button type="button" id="apply-crop-btn" onclick="applyCrop()" class="px-6 py-2.5 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg border-2 border-green-600" style="background-color: #10b981;" onmouseover="this.style.backgroundColor='#059669'; this.style.borderColor='#047857';" onmouseout="this.style.backgroundColor='#10b981'; this.style.borderColor='#059669';">
+                <i class="fas fa-check mr-2"></i> Save Crop
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Program Modal -->
+<div id="delete-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-red-600">
+                <i class="fas fa-exclamation-triangle w-6 h-6 mr-2"></i> Delete Program
+            </h3>
+            <button onclick="closeDeleteModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <div class="space-y-4">
+            <p class="text-gray-700">Are you sure you want to delete this program?</p>
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="font-semibold text-red-800" id="delete-program-name"></p>
+            </div>
+            <p class="text-sm text-gray-600">All linked courses and students must be removed first. This action cannot be undone.</p>
+            
+            <input type="hidden" id="delete-program-id">
+            
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="closeDeleteModal()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button onclick="deleteProgram()" class="px-6 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md bg-red-600 hover:bg-red-700">
+                    <i class="fas fa-trash mr-2"></i> Delete Program
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function viewProgramUsers(programId) {
+        // Navigate to program users page with academics context
+        window.location.href = '/dashboard/admin-dashboard/programs/' + programId + '/users/?from=academics';
+    }
+    
+    let editingProgramId = null;
+    
+    function editProgram(programId, code, name, department, iconUrl) {
+        editingProgramId = programId;
+        document.getElementById('program-modal').classList.remove('hidden');
+        document.getElementById('program-code').value = code || '';
+        document.getElementById('program-name').value = name || '';
+        document.getElementById('program-modal-title').textContent = 'Edit Program';
+        document.getElementById('program-submit-text').textContent = 'Update Program';
+        
+        // Display existing icon if available
+        if (iconUrl) {
+            const previewImg = document.getElementById('program-icon-preview-img');
+            const previewContainer = document.getElementById('program-icon-preview');
+            if (previewImg && previewContainer) {
+                previewImg.src = iconUrl;
+                previewImg.style.borderRadius = '';
+                previewImg.style.objectFit = 'contain';
+                previewContainer.classList.remove('hidden');
+            }
+        } else {
+            document.getElementById('program-icon-preview').classList.add('hidden');
+        }
+        
+        // Clear file input to allow selecting a new file
+        const iconInput = document.getElementById('program-icon');
+        if (iconInput) {
+            iconInput.value = '';
+        }
+    }
+    
+    function openDeleteModal(programId, code, name) {
+        document.getElementById('delete-modal').classList.remove('hidden');
+        document.getElementById('delete-program-id').value = programId;
+        document.getElementById('delete-program-name').textContent = code + ' - ' + name;
+    }
+    
+    function closeDeleteModal() {
+        document.getElementById('delete-modal').classList.add('hidden');
+    }
+    
+    function deleteProgram() {
+        const programId = document.getElementById('delete-program-id').value;
+        
+        fetch(`/dashboard/admin-dashboard/programs/${programId}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message || 'Program deleted successfully!', 'success');
+                } else {
+                    alert(data.message || 'Program deleted successfully!');
+                }
+                closeDeleteModal();
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                if (typeof showNotification === 'function') {
+                    showNotification('Error: ' + (data.message || 'Failed to delete program.'), 'error');
+                } else {
+                    alert('Error: ' + (data.message || 'Failed to delete program.'));
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            if (typeof showNotification === 'function') {
+                showNotification('An error occurred while deleting the program.', 'error');
+            } else {
+                alert('An error occurred while deleting the program.');
+            }
+        });
+    }
+    
+    function openProgramModal(departmentId, departmentName, departmentCode) {
+        editingProgramId = null;
+        document.getElementById('program-modal').classList.remove('hidden');
+        document.getElementById('program-department-id').value = departmentId;
+        document.getElementById('department-name-display').textContent = departmentName;
+        document.getElementById('program-modal-title').textContent = 'Add New Program';
+        document.getElementById('program-submit-text').textContent = 'Create Program';
+        document.getElementById('program-form').reset();
+        document.getElementById('program-icon-preview').classList.add('hidden');
+    }
+    
+    function closeProgramModal() {
+        document.getElementById('program-modal').classList.add('hidden');
+        // Don't reset the form if there's a cropped image - keep it for next time
+        // Only reset if no icon is selected
+        const iconInput = document.getElementById('program-icon');
+        if (!iconInput || !iconInput.files || iconInput.files.length === 0) {
+            document.getElementById('program-form').reset();
+            document.getElementById('program-icon-preview').classList.add('hidden');
+        }
+        editingProgramId = null;
+    }
+    
+    // Image cropper instance
+    let departmentCropper = null;
+    let currentIconInput = null;
+    
+    // Function to handle icon file selection and open cropper
+    function handleIconFileSelect(file, inputId) {
+        if (!file) return;
+        
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            if (typeof showNotification === 'function') {
+                showNotification('Please select a valid image file.', 'error');
+            } else {
+                alert('Please select a valid image file.');
+            }
+            const input = document.getElementById(inputId);
+            if (input) input.value = '';
+            return;
+        }
+        
+        // Validate file size (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            if (typeof showNotification === 'function') {
+                showNotification('Image size must be less than 10MB.', 'error');
+            } else {
+                alert('Image size must be less than 10MB.');
+            }
+            const input = document.getElementById(inputId);
+            if (input) input.value = '';
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            // Open cropper modal
+            currentIconInput = inputId;
+            document.getElementById('cropper-image').src = e.target.result;
+            document.getElementById('image-cropper-modal').classList.remove('hidden');
+            
+            // Initialize cropper
+            setTimeout(() => {
+                const image = document.getElementById('cropper-image');
+                if (departmentCropper) {
+                    departmentCropper.destroy();
+                }
+                departmentCropper = new Cropper(image, {
+                    aspectRatio: 1, // Square crop
+                    viewMode: 1,
+                    dragMode: 'move',
+                    autoCropArea: 0.8,
+                    restore: false,
+                    guides: true,
+                    center: true,
+                    highlight: false,
+                    cropBoxMovable: true,
+                    cropBoxResizable: true,
+                    toggleDragModeOnDblclick: false,
+                });
+            }, 100);
+        };
+        reader.readAsDataURL(file);
+    }
+    
+    // Use event delegation for icon inputs (works even if modals are hidden)
+    document.addEventListener('change', function(e) {
+        if (e.target && e.target.id === 'program-icon') {
+            handleIconFileSelect(e.target.files[0], 'program-icon');
+        }
+    });
+    
+    function closeCropperModal() {
+        document.getElementById('image-cropper-modal').classList.add('hidden');
+        hideContinueEditOption();
+        
+        // Reset cropper display
+        const cropperWrapper = document.getElementById('cropper-container-wrapper');
+        const croppedContainer = document.getElementById('cropped-preview-container');
+        if (cropperWrapper) {
+            cropperWrapper.style.display = 'block';
+        }
+        if (croppedContainer) {
+            croppedContainer.classList.add('hidden');
+        }
+        
+        if (departmentCropper) {
+            departmentCropper.destroy();
+            departmentCropper = null;
+        }
+        // Don't reset file input - keep the cropped file for form submission
+        currentIconInput = null;
+    }
+    
+    function showContinueEditOption() {
+        const continueEditBtn = document.getElementById('continue-edit-btn');
+        const applyCropBtn = document.getElementById('apply-crop-btn');
+        if (continueEditBtn) {
+            continueEditBtn.classList.remove('hidden');
+        }
+        if (applyCropBtn) {
+            applyCropBtn.classList.add('hidden');
+        }
+    }
+    
+    function hideContinueEditOption() {
+        const continueEditBtn = document.getElementById('continue-edit-btn');
+        const applyCropBtn = document.getElementById('apply-crop-btn');
+        if (continueEditBtn) {
+            continueEditBtn.classList.add('hidden');
+        }
+        if (applyCropBtn) {
+            applyCropBtn.classList.remove('hidden');
+        }
+    }
+    
+    function continueEditCrop() {
+        // Reopen the cropper with the current image
+        const container = document.getElementById('cropper-container-wrapper');
+        if (!container) return;
+        
+        const img = document.getElementById('cropper-image');
+        if (!img || !img.src) return;
+        
+        // Hide cropped preview and show cropper again
+        const croppedContainer = document.getElementById('cropped-preview-container');
+        if (croppedContainer) {
+            croppedContainer.classList.add('hidden');
+        }
+        container.style.display = 'block';
+        
+        // Hide continue edit button
+        hideContinueEditOption();
+        
+        // Reinitialize cropper
+        setTimeout(() => {
+            if (departmentCropper) {
+                departmentCropper.destroy();
+            }
+            departmentCropper = new Cropper(img, {
+                aspectRatio: 1, // Square crop only
+                viewMode: 1,
+                dragMode: 'move',
+                autoCropArea: 0.8,
+                restore: false,
+                guides: true,
+                center: true,
+                highlight: false,
+                cropBoxMovable: true,
+                cropBoxResizable: true,
+                toggleDragModeOnDblclick: false,
+            });
+        }, 100);
+    }
+    
+    function applyCrop() {
+        if (!departmentCropper) {
+            closeCropperModal();
+            return;
+        }
+        
+        // Get cropped canvas - square crop only
+        const canvas = departmentCropper.getCroppedCanvas({
+            width: 400,
+            height: 400,
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: 'high',
+        });
+        
+        if (canvas) {
+            // Convert canvas to blob
+            canvas.toBlob(function(blob) {
+                if (blob) {
+                    // Create a new File from the blob
+                    const file = new File([blob], 'cropped-icon.png', { type: 'image/png' });
+                    
+                    // Create a new FileList-like object
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    
+                    // Update the file input
+                    const previewDataUrl = canvas.toDataURL('image/png');
+                    
+                    // Update file input with cropped image
+                    if (currentIconInput === 'program-icon') {
+                        const input = document.getElementById('program-icon');
+                        input.files = dataTransfer.files;
+                        
+                        // Update preview in modal
+                        const croppedPreview = document.getElementById('cropped-preview-img');
+                        const croppedContainer = document.getElementById('cropped-preview-container');
+                        if (croppedPreview && croppedContainer) {
+                            croppedPreview.src = previewDataUrl;
+                            croppedContainer.classList.remove('hidden');
+                        }
+                        
+                        // Update preview in form immediately (even if form modal is closed, it will show when opened)
+                        const previewImg = document.getElementById('program-icon-preview-img');
+                        const previewContainer = document.getElementById('program-icon-preview');
+                        if (previewImg && previewContainer) {
+                            previewImg.src = previewDataUrl;
+                            previewImg.style.borderRadius = '';
+                            previewImg.style.objectFit = 'contain';
+                            previewContainer.classList.remove('hidden');
+                            
+                            // Also update the preview in the program modal if it's open
+                            const programModal = document.getElementById('program-modal');
+                            if (programModal && !programModal.classList.contains('hidden')) {
+                                // Force a visual update
+                                previewImg.style.display = 'block';
+                            }
+                        }
+                    }
+                    
+                    // Hide cropper and show preview, show continue edit option
+                    const cropperWrapper = document.getElementById('cropper-container-wrapper');
+                    if (cropperWrapper) {
+                        cropperWrapper.style.display = 'none';
+                    }
+                    
+                    // Show continue edit option instead of closing immediately
+                    showContinueEditOption();
+                }
+            }, 'image/png', 0.9);
+        }
+    }
+    
+    // Close cropper modal when clicking outside
+    document.getElementById('image-cropper-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeCropperModal();
+        }
+    });
+    
+    // Close delete program modal when clicking outside
+    document.getElementById('delete-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeDeleteModal();
+        }
+    });
+    
+    // Program form submission
+    document.addEventListener('DOMContentLoaded', function() {
+        const programForm = document.getElementById('program-form');
+        if (programForm) {
+            programForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const submitBtn = e.target.querySelector('button[type="submit"]');
+                const originalText = submitBtn.innerHTML;
+                submitBtn.disabled = true;
+                const isEditing = editingProgramId !== null;
+                submitBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> ${isEditing ? 'Updating...' : 'Creating...'}`;
+                
+                try {
+                    const url = isEditing 
+                        ? `/dashboard/admin-dashboard/programs/${editingProgramId}/update/`
+                        : '/dashboard/admin-dashboard/programs/add/';
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: formData,
+                        credentials: 'same-origin'
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        if (typeof showNotification === 'function') {
+                            showNotification(data.message, 'success');
+                        } else {
+                            alert(data.message);
+                        }
+                        closeProgramModal();
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        if (typeof showNotification === 'function') {
+                            showNotification(data.message || 'An error occurred.', 'error');
+                        } else {
+                            alert(data.message || 'An error occurred.');
+                        }
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalText;
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    if (typeof showNotification === 'function') {
+                        showNotification('Network error. Please try again.', 'error');
+                    } else {
+                        alert('Network error. Please try again.');
+                    }
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
+                }
+            });
+        }
+        
+        // Search functionality removed - users can scroll to find programs
+    });
+</script>
+
+{% endblock %}
+

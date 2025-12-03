@@ -1,0 +1,64 @@
+<!-- templates/dashboard/admin_reports.html -->
+{% extends 'partials/base.html' %}
+{% load static %}
+{% block title %}Admin Dashboard - Reports{% endblock %}
+{% block navigation %}
+<!-- Override default navigation - no top bar for admin -->
+{% endblock %}
+{% block content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<style>
+    body { 
+        font-family: 'Inter', sans-serif; 
+        background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);
+    }
+</style>
+
+<!-- Admin Top Bar -->
+{% include 'dashboard/admin/admin_topbar.html' %}
+
+<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+    <!-- Sidebar -->
+    {% include 'dashboard/admin/admin_sidebar.html' %}
+
+    <main id="main-content" class="flex-grow p-4 lg:p-6 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+        <div class="p-4 md:p-8 bg-white lg:bg-gray-50 flex-grow rounded-2xl shadow-inner min-h-full">
+            <h1 class="text-3xl font-extrabold text-gray-900 mb-6 flex items-center">
+                <i class="fas fa-chart-pie w-8 h-8 mr-3" style="color: #3C4770;"></i> Attendance Reports
+            </h1>
+            <p class="text-gray-600 mb-8">Generate detailed and summarized reports on student attendance for auditing and disciplinary action.</p>
+            
+            <div class="bg-white p-6 rounded-xl shadow-lg space-y-4">
+                <h3 class="text-xl font-bold text-gray-800">Report Generation Tool</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <select class="p-3 border rounded-xl bg-white">
+                        <option>Select Report Type</option>
+                        <option>Summary by Program</option>
+                        <option>Individual Student Audit</option>
+                        <option>Course Absence Frequency</option>
+                    </select>
+                    <input type="date" class="p-3 border rounded-xl" value="{{ 'now'|date:'Y-m-d' }}">
+                </div>
+                <div class="pt-4 text-center">
+                    <button class="px-6 py-3 text-white rounded-xl font-semibold shadow-md transition" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                        Generate Report
+                    </button>
+                </div>
+            </div>
+            
+            <div class="mt-8 bg-white p-6 rounded-xl shadow-lg">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">Recent Reports</h3>
+                <ul class="space-y-2 text-gray-700">
+                    <li class="p-2 border-b flex justify-between">
+                        <span>Report generation feature coming soon</span>
+                        <span class="text-sm cursor-pointer transition" style="color: #3C4770;" onmouseover="this.style.color='#447294'; this.style.textDecoration='underline';" onmouseout="this.style.color='#3C4770'; this.style.textDecoration='none';">Download</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}
+

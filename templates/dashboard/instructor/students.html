@@ -1,0 +1,1184 @@
+{% extends 'dashboard/instructor/teacher.html' %}
+{% load dashboard_filters %}
+{% block title %}Students Management{% endblock %}
+{% block dashboard_content %}
+<!-- Notification System -->
+{% include 'dashboard/shared/notification_system.html' %}
+
+<style>
+    /* Course Card Animations - Match Manage Courses */
+    .course-card-wrapper {
+        animation: fadeInScale 0.4s ease-out;
+        animation-fill-mode: both;
+    }
+    .course-card-wrapper:nth-child(1) { animation-delay: 0.05s; }
+    .course-card-wrapper:nth-child(2) { animation-delay: 0.1s; }
+    .course-card-wrapper:nth-child(3) { animation-delay: 0.15s; }
+    .course-card-wrapper:nth-child(4) { animation-delay: 0.2s; }
+    .course-card-wrapper:nth-child(5) { animation-delay: 0.25s; }
+    .course-card-wrapper:nth-child(6) { animation-delay: 0.3s; }
+    .course-card-wrapper:nth-child(n+7) { animation-delay: 0.35s; }
+    
+    @keyframes fadeInScale {
+        from {
+            opacity: 0;
+            transform: scale(0.95) translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+    }
+    
+    /* Glow animation for multi-section courses */
+    @keyframes glowPulse {
+        0%   { box-shadow: 0 0 0px rgba(255,255,255,0.0), 0 0 0px var(--course-color-end, #ffffff00); }
+        50%  { box-shadow: 0 0 18px rgba(255,255,255,0.35), 0 0 28px var(--course-color-end, #ffffff55); }
+        100% { box-shadow: 0 0 0px rgba(255,255,255,0.0), 0 0 0px var(--course-color-end, #ffffff00); }
+    }
+    .multi-section-glow::after {
+        content: "";
+        position: absolute;
+        inset: -2px;
+        border-radius: 1.25rem; /* match rounded-2xl */
+        animation: glowPulse 2.2s ease-in-out infinite;
+        pointer-events: none;
+    }
+    
+    /* Twinkling star overlay - Match Manage Courses */
+    @keyframes twinkle {
+        0%, 45%, 55%, 100% {
+            opacity: 0.1;
+            transform: scale(0.9);
+        }
+        50% {
+            opacity: 1.0;
+            transform: scale(1.1);
+        }
+    }
+    .multi-stars-field {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        border-radius: 1rem; /* close to rounded-2xl */
+        mix-blend-mode: screen;
+    }
+    .star-dot {
+        position: absolute;
+        background-color: #ffffff;
+        border-radius: 50%;
+        box-shadow: 0 0 5px #a0c3ff, 0 0 10px #ffffff;
+        animation: twinkle linear infinite;
+    }
+    
+    /* Course Card Block Styling - Match Manage Courses */
+    .course-card-block {
+        position: relative;
+        transform-style: preserve-3d;
+        background: linear-gradient(135deg, var(--course-color-start, #3C4770) 0%, var(--course-color-end, #447294) 100%);
+    }
+    .course-card-block:hover {
+        transform: translateY(-8px) scale(1.02);
+    }
+    .course-card-block::before {
+        content: '';
+        position: absolute;
+        inset: -2px;
+        border-radius: inherit;
+        padding: 2px;
+        background: linear-gradient(135deg, rgba(255,255,255,0.3), rgba(255,255,255,0.1));
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+    }
+    .course-card-block:hover::before {
+        opacity: 1;
+    }
+    
+    /* Course Card Title Styling - Match Manage Courses */
+    .course-card-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: white;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        hyphens: auto;
+    }
+</style>
+
+<div class="p-4 md:p-8 bg-gradient-to-br from-gray-50 via-white to-gray-50 flex-grow rounded-2xl min-h-full" style="background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 50%, #f0f4f8 100%);">
+    {% if selected_course %}
+    <!-- View Dropped Students Button (Outside Container) -->
+    <div class="mb-4 flex justify-end">
+        <button onclick="window.openDroppedStudentsModal({{ selected_course.id }})" 
+                class="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-semibold border border-red-700 hover:bg-red-700 transition flex items-center gap-2 shadow-md hover:shadow-lg">
+            <i class="fas fa-user-slash mr-2"></i>View Dropped Students
+            {% if selected_course.dropped_count %}
+            <span class="px-2 py-0.5 bg-white text-red-600 text-xs font-bold rounded-full">{{ selected_course.dropped_count }}</span>
+            {% endif %}
+        </button>
+    </div>
+    
+    <!-- Selected Course Detail -->
+    <div class="bg-white rounded-2xl shadow-xl border border-gray-200 mb-6 overflow-hidden">
+        <div class="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 px-6 py-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+                <p class="text-xs tracking-widest uppercase text-white/80 font-semibold mb-2">Course Overview</p>
+
+                <h1 class="text-2xl md:text-3xl font-bold text-white drop-shadow flex flex-wrap items-center gap-2 truncate" title="{{ selected_course.code }} • {{ selected_course.name }}">{{ selected_course.code }} <span class="text-white/70 text-2xl">•</span> {{ selected_course.name }}</h1>
+                <div class="flex flex-wrap items-center gap-3 text-sm text-white/80 mt-2">
+                    <span class="flex items-center gap-1"><i class="fas fa-graduation-cap text-xs"></i>{{ selected_course.program.code }} - {{ selected_course.program.name }}</span>
+                    <span class="flex items-center gap-1"><i class="fas fa-calendar text-xs"></i>{% if selected_course.semester == '1st' %}1st Semester{% elif selected_course.semester == '2nd' %}2nd Semester{% else %}{{ selected_course.semester }}{% endif %}</span>
+                    <span class="flex items-center gap-1"><i class="fas fa-calendar-alt text-xs"></i>{{ selected_course.school_year }}</span>
+                    {% if selected_course.enrollment_code %}
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="flex items-center gap-2">
+                            <i class="fas fa-key text-xs"></i>
+                            <span>Enrollment Code: <strong>{{ selected_course.enrollment_code }}</strong></span>
+                            <button onclick="window.copyEnrollmentCode('{{ selected_course.enrollment_code }}')" 
+                                    class="ml-2 px-2 py-1 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold rounded-lg transition border border-white/30 flex items-center gap-1"
+                                    title="Copy enrollment code">
+                                <i class="fas fa-copy text-xs"></i> Copy
+                            </button>
+                        </span>
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-white/80 font-semibold">Status:</label>
+                            <select id="enrollmentStatusSelect-{{ selected_course.id }}" 
+                                    data-previous-value="{{ selected_course.enrollment_status|default:'open' }}"
+                                    onfocus="this.dataset.previousValue = this.value"
+                                    onchange="window.updateEnrollmentStatus({{ selected_course.id }}, this.value)"
+                                    class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-gray-900 font-semibold">
+                                <option value="open" {% if selected_course.enrollment_status == 'open' or not selected_course.enrollment_status %}selected{% endif %}>Open</option>
+                                <option value="closed" {% if selected_course.enrollment_status == 'closed' %}selected{% endif %}>Closed</option>
+                            </select>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                <div id="selected-course-empty-message" class="hidden text-center py-10 text-gray-500 border border-dashed border-gray-200 rounded-2xl bg-white mt-4">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+                        <i class="fas fa-info text-2xl text-gray-400"></i>
+                    </div>
+                    <p class="text-base font-semibold">No students for this section yet.</p>
+                    <p class="text-sm mt-1 text-gray-500">Select another section to continue exploring.</p>
+                </div>
+            </div>
+                <div class="flex flex-wrap items-center gap-2">
+                <a href="{% url 'dashboard:students' %}" class="px-4 py-2 bg-white/20 text-white rounded-xl text-sm font-semibold border border-white/30 hover:bg-white/30 transition">
+                    <i class="fas fa-arrow-left mr-2"></i>Back to Courses
+                </a>
+                <a href="{% url 'dashboard:instructor_courses' %}" class="px-4 py-2 bg-white text-indigo-600 rounded-xl text-sm font-semibold shadow-md hover:shadow-lg transition">
+                    <i class="fas fa-cog mr-2"></i>Manage Courses
+                </a>
+                {% if selected_course.instructor == user %}
+                <button onclick="openQRRegistrationModal({{ selected_course.id }})" class="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 transition shadow-md">
+                    <i class="fas fa-qrcode mr-2"></i>Register QR Code
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Section Filter -->
+        {% if selected_course_section_options|length > 1 %}
+        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <div class="flex items-center gap-4">
+                <label for="selected-course-section-filter" class="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold mt-1 block">Section</label>
+                <select id="selected-course-section-filter" data-mode="switch"
+                        class="flex-1 max-w-xs px-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-gray-900 font-semibold">
+                    <option value="">Select Section</option>
+                    {% for option in selected_course_section_options %}
+                    <option value="{{ option.id }}" {% if selected_course.id == option.id %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Enrolled Students List -->
+        <div class="p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                <i class="fas fa-users mr-2 text-indigo-600"></i> Enrolled Students
+                <span class="ml-2 px-2 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full">{{ selected_course_enrollments|length }}</span>
+            </h2>
+            {% if selected_course_enrollments %}
+            <div id="selected-course-student-list" class="space-y-3">
+                {% for enrollment in selected_course_enrollments %}
+                <div class="student-card flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-indigo-300 transition cursor-pointer group" 
+                     data-student-section="{{ enrollment.section_display }}"
+                     onclick="if (!event.target.closest('button') && !event.target.closest('a')) { window.showStudentDetails({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}', '{{ enrollment.email|escapejs }}', '{{ enrollment.student_id_number|escapejs }}', '{{ enrollment.section_display|default:'N/A'|escapejs }}', {{ enrollment.year_level }}, '{{ enrollment.enrolled_at|date:'F d, Y g:i A'|escapejs }}', {% if enrollment.student.profile_picture %}'{{ enrollment.student.profile_picture.url }}'{% else %}null{% endif %}); }">
+                    <div class="flex items-center gap-4 flex-grow min-w-0">
+                        <div class="flex-shrink-0">
+                            {% if enrollment.student.profile_picture %}
+                            <img src="{{ enrollment.student.profile_picture.url }}?v={{ enrollment.student.id }}" alt="{{ enrollment.full_name }}" class="w-14 h-14 rounded-full object-cover border-4 border-white shadow-lg">
+                            {% else %}
+                            <div class="w-14 h-14 rounded-full flex items-center justify-center font-bold text-lg text-white shadow-lg" style="background: linear-gradient(135deg, #3C4770, #447294);">
+                                {{ enrollment.full_name|first|upper }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="flex-grow min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap mb-1">
+                                <h3 class="text-base font-semibold text-gray-900 truncate">{{ enrollment.full_name }}</h3>
+                                {% if enrollment.section_display %}
+                                <span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">Sec {{ enrollment.section_display }}</span>
+                                {% endif %}
+                                <span class="px-3 py-1 text-xs font-semibold rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">{{ enrollment.year_level|ordinal_year }}</span>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-gray-600 mt-1">
+                                <span class="flex items-center gap-1"><i class="fas fa-envelope text-xs"></i><span class="truncate max-w-[8rem]" title="{{ enrollment.email }}">{{ enrollment.email }}</span></span>
+                                <span class="flex items-center gap-1"><i class="fas fa-id-card text-xs"></i>{{ enrollment.student_id_number }}</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1 flex items-center gap-1"><i class="fas fa-clock"></i>Enrolled: {{ enrollment.enrolled_at|date:"F d, Y g:i A" }}</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            {% if selected_course.instructor == user %}
+                            <button onclick="event.stopPropagation(); openQRRegistrationModal({{ selected_course.id }}, '{{ enrollment.student_id_number }}')" class="px-3 py-1.5 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition flex items-center gap-2" title="Register QR for this student">
+                                <i class="fas fa-qrcode text-xs"></i>
+                                <span>Register</span>
+                            </button>
+                            {% endif %}
+                            <button onclick="event.stopPropagation(); window.showDropStudentModal({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" 
+                                    class="px-3 py-1.5 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 transition flex items-center gap-2" 
+                                    title="Drop student from course">
+                                <i class="fas fa-user-minus text-xs"></i>
+                                <span>Drop</span>
+                            </button>
+                            <div class="text-indigo-500 group-hover:text-indigo-600 transition">
+                                <i class="fas fa-chevron-right"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-12 text-gray-500 border border-dashed border-gray-200 rounded-2xl bg-white">
+                <div class="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                    <i class="fas fa-user-slash text-3xl text-gray-400"></i>
+                </div>
+                <p class="text-lg font-semibold">No students enrolled yet</p>
+                <p class="text-sm mt-1">Students will appear here once they enroll in this course</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-gradient-to-r from-rose-400 via-orange-300 to-sky-400 rounded-2xl shadow-2xl mb-6 p-6 md:p-8 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full -mr-32 -mt-32"></div>
+        <div class="absolute bottom-0 left-0 w-48 h-48 bg-white opacity-10 rounded-full -ml-24 -mb-24"></div>
+        <div class="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h1 class="text-3xl md:text-4xl font-bold text-white mb-2 drop-shadow-lg flex items-center gap-3">
+                    <i class="fas fa-users text-3xl"></i>
+                    Students Management
+                </h1>
+                <p class="text-white/90 text-base font-medium">Select a course to view all enrolled students</p>
+            </div>
+            <div class="bg-white/20 border border-white/30 rounded-2xl px-6 py-4 text-white text-center shadow-lg">
+                <p class="text-xs uppercase tracking-wide text-white/70 font-semibold">Total Courses</p>
+                <p class="text-3xl font-bold">{{ instructor_courses|length }}</p>
+            </div>
+        </div>
+    </div>
+    {% if instructor_courses %}
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5">
+        {% for course in instructor_courses %}
+        <div class="course-card-wrapper relative {% if course.is_multi or course.sibling_sections and course.sibling_sections|length > 1 %}multi-section-glow{% endif %}" data-course-id="{{ course.id }}">
+            <!-- Beautiful Course Card with Enhanced Styling (Same as Manage Courses) -->
+            <div class="course-card-block group rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-center py-8 px-4 min-h-[140px] flex flex-col justify-center items-center relative overflow-hidden border-2 border-white/20 cursor-pointer"
+                 {% if course.display_gradient %} data-gradient="{{ course.display_gradient }}" {% endif %}
+                 onclick="window.location.href='?selected_course={{ course.id }}'"
+                 style="{% if not course.display_gradient %}background: linear-gradient(135deg, {{ course.color|default:'#3C4770' }} 0%, {{ course.color|default:'#447294' }} 100%);{% endif %}">
+                <!-- Decorative Pattern Overlay -->
+                <div class="absolute inset-0 opacity-10">
+                    <div class="absolute top-0 right-0 w-20 h-20 bg-white rounded-full -mr-10 -mt-10"></div>
+                    <div class="absolute bottom-0 left-0 w-16 h-16 bg-white rounded-full -ml-8 -mb-8"></div>
+                </div>
+                
+                {% if course.is_multi or course.sibling_sections and course.sibling_sections|length > 1 %}
+                <!-- Twinkling star overlay -->
+                <div class="multi-stars-field" data-star-count="60"></div>
+                {% endif %}
+                
+                <!-- Course Name with Better Typography -->
+                <div class="relative z-10 w-full">
+                    <h3 class="course-card-title text-white leading-tight px-2 text-center line-clamp-3" title="{{ course.name }}">
+                        {{ course.name }}
+                    </h3>
+                </div>
+
+                <!-- Hover Effect Indicator -->
+                <div class="absolute bottom-0 left-0 right-0 h-1 bg-white/30 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
+            </div>
+            
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-16 bg-white rounded-2xl shadow-lg border border-gray-200">
+        <div class="w-24 h-24 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+            <i class="fas fa-book-open text-4xl text-gray-400"></i>
+        </div>
+        <p class="text-xl font-semibold text-gray-700">No courses yet</p>
+        <p class="text-sm text-gray-500 mt-2">Add courses in "Manage Courses" to start managing students</p>
+        <a href="{% url 'dashboard:instructor_courses' %}" class="mt-4 inline-block px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition">
+            <i class="fas fa-plus mr-2"></i>Go to Manage Courses
+        </a>
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+{% include 'dashboard/partials/qr_registration_modal.html' %}
+
+<!-- Student Details Modal -->
+<div id="studentDetailModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-indigo-600">
+                <i class="fas fa-user w-6 h-6 mr-2"></i> Student Details
+            </h3>
+            <button onclick="window.closeStudentDetails()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div class="flex justify-center mb-4">
+                <div id="modal-profile-pic" class="w-24 h-24 rounded-full border-2 border-gray-200 shadow mb-4 flex items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-600">
+                    <span class="text-3xl font-bold text-white">?</span>
+                </div>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs uppercase tracking-wide text-gray-500 font-semibold">Full Name</label>
+                    <p id="modal-full-name" class="text-lg font-semibold text-gray-900 mt-1"></p>
+                </div>
+                <div>
+                    <label class="text-xs uppercase tracking-wide text-gray-500 font-semibold">Email</label>
+                    <p id="modal-email" class="text-base text-gray-700 mt-1"></p>
+                </div>
+                <div>
+                    <label class="text-xs uppercase tracking-wide text-gray-500 font-semibold">Student ID</label>
+                    <p id="modal-student-id" class="text-base text-gray-700 mt-1"></p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-xs uppercase tracking-wide text-gray-500 font-semibold">Section</label>
+                        <p id="modal-section" class="text-base text-gray-700 mt-1"></p>
+                    </div>
+                    <div>
+                        <label class="text-xs uppercase tracking-wide text-gray-500 font-semibold">Year Level</label>
+                        <p id="modal-year-level" class="text-base text-gray-700 mt-1"></p>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs uppercase tracking-wide text-gray-500 font-semibold">Enrolled Date</label>
+                    <p id="modal-enrolled-date" class="text-base text-gray-700 mt-1"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Drop Student Modal -->
+<div id="dropStudentModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-red-600">
+                <i class="fas fa-user-minus w-6 h-6 mr-2"></i> Drop Student
+            </h3>
+            <button onclick="window.closeDropStudentModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <p class="text-gray-700 font-semibold">Are you sure you want to drop this student from the course?</p>
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="font-semibold text-red-800" id="drop-student-name"></p>
+            </div>
+            <p class="text-sm text-gray-600">This will move the enrollment to trash. You can restore it within 30 days.</p>
+            <input type="hidden" id="drop-enrollment-id">
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="window.closeDropStudentModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                    Cancel
+                </button>
+                <button onclick="confirmDropStudent()" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm">
+                    <i class="fas fa-user-minus mr-2"></i> Drop Student
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Undrop Student Modal -->
+<div id="undropStudentModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[150] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-green-600">
+                <i class="fas fa-undo w-6 h-6 mr-2"></i> Restore Student
+            </h3>
+            <button onclick="window.closeUndropStudentModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <p class="text-gray-700 font-semibold">Are you sure you want to restore this student?</p>
+            <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                <p class="font-semibold text-green-800" id="undrop-student-name"></p>
+            </div>
+            <p class="text-sm text-gray-600">This will re-enroll the student in the course and restore their access.</p>
+            <input type="hidden" id="undrop-enrollment-id">
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="window.closeUndropStudentModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                    Cancel
+                </button>
+                <button onclick="window.confirmUndropStudent()" class="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-sm">
+                    <i class="fas fa-undo mr-2"></i> Restore
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Permanent Drop Modal -->
+<div id="permanentDropModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[150] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-red-600">
+                <i class="fas fa-trash w-6 h-6 mr-2"></i> Permanent Drop
+            </h3>
+            <button onclick="window.closePermanentDropModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <p class="text-gray-700 font-semibold">Are you sure you want to permanently delete this enrollment?</p>
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="font-semibold text-red-800" id="permanent-drop-student-name"></p>
+            </div>
+            <p class="text-sm text-red-600 font-semibold">⚠️ WARNING: This action cannot be undone. The enrollment will be permanently deleted.</p>
+            <input type="hidden" id="permanent-drop-enrollment-id">
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="window.closePermanentDropModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                    Cancel
+                </button>
+                <button onclick="window.confirmPermanentDrop()" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm">
+                    <i class="fas fa-trash mr-2"></i> Permanent Delete
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enrollment Status Modal -->
+<div id="enrollmentStatusModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-yellow-600">
+                <i class="fas fa-user-lock w-6 h-6 mr-2"></i> Change Enrollment Status
+            </h3>
+            <button onclick="closeEnrollmentStatusModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <p class="text-gray-700 font-semibold" id="enrollmentStatusModalMessage">Change enrollment status for this course?</p>
+            <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
+                <p class="text-sm text-yellow-800" id="enrollmentStatusModalAction"></p>
+            </div>
+            <input type="hidden" id="enrollment-status-course-id">
+            <input type="hidden" id="enrollment-status-new-value">
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="closeEnrollmentStatusModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                    Cancel
+                </button>
+                <button onclick="confirmEnrollmentStatusChange()" class="px-4 py-2 bg-yellow-600 text-white font-semibold rounded-lg hover:bg-yellow-700 transition duration-150 shadow-sm">
+                    <i class="fas fa-check mr-2"></i> Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Dropped Students Modal -->
+<div id="droppedStudentsModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="flex justify-between items-center p-6 border-b border-gray-200 flex-shrink-0">
+            <h3 class="text-2xl font-bold flex items-center text-red-600">
+                <i class="fas fa-user-slash w-6 h-6 mr-2"></i> Dropped Students
+            </h3>
+            <button onclick="window.closeDroppedStudentsModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div id="dropped-students-content" class="flex-1 overflow-y-auto p-6">
+            <div class="text-center py-12">
+                <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+                    <i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i>
+                </div>
+                <p class="text-gray-600">Loading dropped students...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Apply multi-stop gradients from data attribute (matches Manage Courses)
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.course-card-block[data-gradient]').forEach(el => {
+        const grad = el.getAttribute('data-gradient');
+        if (grad && grad.includes('linear-gradient')) {
+            el.style.background = grad;
+        }
+    });
+    // Generate twinkling stars for multi-section course cards (same logic)
+    (function initStars() {
+        const STAR_COUNT_DEFAULT = 60;
+        const EDGE_BIAS_CHANCE = 0.7;
+        const EDGE_ZONE = 0.12;
+        function createStar(container) {
+            const rect = container.getBoundingClientRect();
+            const width = rect.width || container.clientWidth || 200;
+            const height = rect.height || container.clientHeight || 140;
+            const star = document.createElement('div');
+            star.className = 'star-dot';
+            const isEdge = Math.random() < EDGE_BIAS_CHANCE;
+            let x, y;
+            if (isEdge) {
+                const zone = EDGE_ZONE;
+                const side = Math.floor(Math.random() * 4);
+                if (side === 0) { x = Math.random() * width * zone; y = Math.random() * height; }
+                else if (side === 1) { x = width - Math.random() * width * zone; y = Math.random() * height; }
+                else if (side === 2) { x = Math.random() * width; y = Math.random() * height * zone; }
+                else { x = Math.random() * width; y = height - Math.random() * height * zone; }
+            } else {
+                x = Math.random() * width;
+                y = Math.random() * height;
+            }
+            star.style.left = x + 'px';
+            star.style.top = y + 'px';
+            const size = 2 + Math.random() * 3;
+            star.style.width = size + 'px';
+            star.style.height = size + 'px';
+            const duration = 2 + Math.random() * 4;
+            star.style.animationDuration = duration + 's';
+            star.style.animationDelay = Math.random() * 2 + 's';
+            container.appendChild(star);
+        }
+        document.querySelectorAll('.multi-stars-field').forEach(container => {
+            const count = parseInt(container.getAttribute('data-star-count') || STAR_COUNT_DEFAULT, 10);
+            for (let i = 0; i < count; i++) {
+                createStar(container);
+            }
+        });
+    })();
+});
+
+// Format year label function - must be defined before use
+window.formatYearLabel = function(yearLevel) {
+    const numericValue = parseInt(yearLevel, 10);
+    if (isNaN(numericValue)) {
+        return yearLevel ? `${yearLevel}` : 'N/A';
+    }
+    const mod100 = numericValue % 100;
+    let suffix = 'th';
+    if (mod100 < 11 || mod100 > 13) {
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}[numericValue % 10] || 'th';
+    }
+    return `${numericValue}${suffix} Year`;
+};
+
+window.showStudentDetails = function(enrollmentId, fullName, email, studentId, section, yearLevel, enrolledDate, profilePicUrl) {
+    section = (section || 'N/A').toUpperCase();
+    // Set all modal fields
+    document.getElementById('modal-full-name').textContent = fullName;
+    document.getElementById('modal-email').textContent = email;
+    document.getElementById('modal-student-id').textContent = studentId;
+    document.getElementById('modal-section').textContent = section;
+    document.getElementById('modal-year-level').textContent = window.formatYearLabel(yearLevel);
+    document.getElementById('modal-enrolled-date').textContent = enrolledDate;
+    
+    // Set profile picture
+    const profilePicDiv = document.getElementById('modal-profile-pic');
+    if (profilePicUrl && profilePicUrl !== 'null' && profilePicUrl !== 'None') {
+        profilePicDiv.innerHTML = `<img src="${profilePicUrl}" alt="${fullName}" class="w-full h-full object-cover rounded-full">`;
+        profilePicDiv.className = 'w-24 h-24 rounded-full border-2 border-gray-200 shadow mb-4 flex items-center justify-center overflow-hidden bg-white';
+    } else {
+        const initial = fullName.charAt(0).toUpperCase();
+        profilePicDiv.innerHTML = `<span class="text-3xl font-bold text-white">${initial}</span>`;
+        profilePicDiv.className = 'w-24 h-24 rounded-full border-2 border-gray-200 shadow mb-4 flex items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-600';
+    }
+    
+    // Show modal
+    document.getElementById('studentDetailModal').classList.remove('hidden');
+};
+
+window.closeStudentDetails = function() {
+    document.getElementById('studentDetailModal').classList.add('hidden');
+};
+
+window.showDropStudentModal = function(enrollmentId, studentName) {
+    const modal = document.getElementById('dropStudentModal');
+    document.getElementById('drop-enrollment-id').value = enrollmentId;
+    document.getElementById('drop-student-name').textContent = studentName;
+    modal.classList.remove('hidden');
+};
+
+window.closeDropStudentModal = function() {
+    const modal = document.getElementById('dropStudentModal');
+    modal.classList.add('hidden');
+    document.getElementById('drop-enrollment-id').value = '';
+    document.getElementById('drop-student-name').textContent = '';
+};
+
+function confirmDropStudent() {
+    const enrollmentId = document.getElementById('drop-enrollment-id').value;
+    if (!enrollmentId) {
+        window.closeDropStudentModal();
+        return;
+    }
+    
+    const studentName = document.getElementById('drop-student-name').textContent;
+    window.closeDropStudentModal();
+    
+    fetch('{% url "dashboard:instructor_drop_enrollment" 0 %}'.replace('0', enrollmentId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || `"${studentName}" has been dropped from the course.`, 'success');
+            } else {
+                alert(data.message || `"${studentName}" has been dropped from the course.`);
+            }
+            setTimeout(() => location.reload(), 800);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Error dropping student.', 'error');
+            } else {
+                alert(data.message || 'Error dropping student.');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error dropping student:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred while dropping the student.', 'error');
+        } else {
+            alert('An error occurred while dropping the student.');
+        }
+    });
+}
+
+window.undropStudent = function(enrollmentId, studentName) {
+    // Show confirmation modal instead of browser confirm
+    const modal = document.getElementById('undropStudentModal');
+    if (!modal) {
+        // Fallback to browser confirm if modal doesn't exist
+        if (!confirm(`Are you sure you want to restore "${studentName}"? This will re-enroll them in the course.`)) {
+            return;
+        }
+    } else {
+        document.getElementById('undrop-enrollment-id').value = enrollmentId;
+        document.getElementById('undrop-student-name').textContent = studentName;
+        modal.classList.remove('hidden');
+        return; // Wait for modal confirmation
+    }
+    
+    fetch('{% url "dashboard:instructor_restore_enrollment" 0 %}'.replace('0', enrollmentId), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => response.json().catch(() => {
+        throw new Error('Unable to restore student at the moment.');
+    }))
+    .then(data => {
+        if (!data.success) {
+            throw new Error(data.message || 'Error restoring student.');
+        }
+        if (typeof showNotification === 'function') {
+            showNotification(data.message || `"${studentName}" has been restored to the course.`, 'success');
+        } else {
+            alert(data.message || `"${studentName}" has been restored to the course.`);
+        }
+        setTimeout(() => location.reload(), 800);
+    })
+    .catch(error => {
+        console.error('Error restoring student:', error);
+        if (typeof showNotification === 'function') {
+            showNotification(error.message || 'An error occurred while restoring the student.', 'error');
+        } else {
+            alert(error.message || 'An error occurred while restoring the student.');
+        }
+    });
+}
+
+window.closeUndropStudentModal = function() {
+    const modal = document.getElementById('undropStudentModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        document.getElementById('undrop-enrollment-id').value = '';
+        document.getElementById('undrop-student-name').textContent = '';
+    }
+};
+
+window.confirmUndropStudent = function() {
+    const enrollmentId = document.getElementById('undrop-enrollment-id').value;
+    if (!enrollmentId) {
+        window.closeUndropStudentModal();
+        return;
+    }
+    
+    const studentName = document.getElementById('undrop-student-name').textContent;
+    window.closeUndropStudentModal();
+    
+    // Call the actual undrop function
+    window.undropStudentDirect(enrollmentId, studentName);
+};
+
+window.undropStudentDirect = function(enrollmentId, studentName) {
+    fetch('{% url "dashboard:instructor_restore_enrollment" 0 %}'.replace('0', enrollmentId), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => response.json().catch(() => {
+        throw new Error('Unable to restore student at the moment.');
+    }))
+    .then(data => {
+        if (!data.success) {
+            throw new Error(data.message || 'Error restoring student.');
+        }
+        if (typeof showNotification === 'function') {
+            showNotification(data.message || `"${studentName}" has been restored to the course.`, 'success');
+        } else {
+            alert(data.message || `"${studentName}" has been restored to the course.`);
+        }
+        setTimeout(() => location.reload(), 800);
+    })
+    .catch(error => {
+        console.error('Error restoring student:', error);
+        if (typeof showNotification === 'function') {
+            showNotification(error.message || 'An error occurred while restoring the student.', 'error');
+        } else {
+            alert(error.message || 'An error occurred while restoring the student.');
+        }
+    });
+};
+
+// Dropped Students Modal Functions
+let currentDroppedCourseId = null;
+let currentPermanentDropEnrollmentId = null;
+
+window.openDroppedStudentsModal = function(courseId) {
+    currentDroppedCourseId = courseId;
+    const modal = document.getElementById('droppedStudentsModal');
+    const content = document.getElementById('dropped-students-content');
+    
+    if (!modal || !content) {
+        console.error('Dropped students modal not found');
+        return;
+    }
+    
+    modal.classList.remove('hidden');
+    content.innerHTML = `
+        <div class="text-center py-12">
+            <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+                <i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i>
+            </div>
+            <p class="text-gray-600">Loading dropped students...</p>
+        </div>
+    `;
+    
+    // Fetch dropped students for this course
+    fetch(`{% url 'dashboard:instructor_get_dropped_students' %}?course_id=${courseId}`, {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (data.dropped_students && data.dropped_students.length > 0) {
+                let html = '<div class="space-y-3 max-h-96 overflow-y-auto">';
+                data.dropped_students.forEach(enrollment => {
+                    const profilePic = enrollment.profile_picture ? 
+                        `<img src="${enrollment.profile_picture}?v=${enrollment.student_id}" alt="${enrollment.full_name}" class="w-12 h-12 rounded-full object-cover border-2 border-white shadow">` :
+                        `<div class="w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm text-white shadow" style="background: linear-gradient(135deg, #3C4770, #447294);">${enrollment.full_name.charAt(0).toUpperCase()}</div>`;
+                    
+                    html += `
+                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition">
+                            <div class="flex items-center gap-3 flex-grow">
+                                <div class="flex-shrink-0">${profilePic}</div>
+                                <div class="flex-grow min-w-0">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <h4 class="text-sm font-semibold text-gray-900">${enrollment.full_name}</h4>
+                                        ${enrollment.section && enrollment.section !== 'N/A' ? `<span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">Sec ${enrollment.section}</span>` : ''}
+                                        <span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">${enrollment.year_level || 'N/A'}</span>
+                                    </div>
+                                    <div class="flex items-center gap-3 text-xs text-gray-600 mt-1">
+                                        <span><i class="fas fa-id-card"></i> ${enrollment.student_id_number}</span>
+                                        <span><i class="fas fa-envelope"></i> ${enrollment.email}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2 text-xs text-gray-500 mt-1">
+                                        <span><i class="fas fa-clock"></i> Dropped: ${enrollment.dropped_date}</span>
+                                        ${enrollment.days_left !== null ? `<span class="px-2 py-0.5 bg-yellow-50 text-yellow-700 rounded-full border border-yellow-200"><i class="fas fa-hourglass-half"></i> ${enrollment.days_left} days left</span>` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="window.undropStudent(${enrollment.id}, '${enrollment.full_name.replace(/'/g, "\\'")}')" 
+                                        class="px-4 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-sm flex items-center gap-2">
+                                    <i class="fas fa-undo"></i>
+                                    <span>Undrop</span>
+                                </button>
+                                <button onclick="window.showPermanentDropModal(${enrollment.id}, '${enrollment.full_name.replace(/'/g, "\\'")}')" 
+                                        class="px-4 py-2 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm flex items-center gap-2">
+                                    <i class="fas fa-trash"></i>
+                                    <span>Permanent Drop</span>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                content.innerHTML = html;
+            } else {
+                content.innerHTML = `
+                    <div class="text-center py-12">
+                        <div class="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                            <i class="fas fa-user-slash text-3xl text-gray-400"></i>
+                        </div>
+                        <p class="text-lg font-semibold text-gray-700">No dropped students</p>
+                        <p class="text-sm text-gray-500 mt-1">No students have been dropped from this course.</p>
+                    </div>
+                `;
+            }
+        } else {
+            content.innerHTML = `
+                <div class="text-center py-12">
+                    <p class="text-red-600">Error loading dropped students: ${data.message || 'Unknown error'}</p>
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        console.error('Error fetching dropped students:', error);
+        content.innerHTML = `
+            <div class="text-center py-12">
+                <p class="text-red-600">An error occurred while loading dropped students.</p>
+            </div>
+        `;
+    });
+}
+
+window.closeDroppedStudentsModal = function() {
+    const modal = document.getElementById('droppedStudentsModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    currentDroppedCourseId = null;
+}
+
+window.showPermanentDropModal = function(enrollmentId, studentName) {
+    currentPermanentDropEnrollmentId = enrollmentId;
+    const modal = document.getElementById('permanentDropModal');
+    const nameElement = document.getElementById('permanent-drop-student-name');
+    
+    if (modal && nameElement) {
+        nameElement.textContent = `Are you sure you want to permanently delete this enrollment?`;
+        const warningElement = modal.querySelector('.bg-red-50 p');
+        if (warningElement) {
+            warningElement.textContent = `Student: ${studentName}`;
+        }
+        modal.classList.remove('hidden');
+    }
+};
+
+window.closePermanentDropModal = function() {
+    const modal = document.getElementById('permanentDropModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    currentPermanentDropEnrollmentId = null;
+};
+
+window.confirmPermanentDrop = function() {
+    if (!currentPermanentDropEnrollmentId) {
+        alert('No enrollment selected');
+        return;
+    }
+    
+    fetch('{% url "dashboard:instructor_permanent_delete_enrollment" 0 %}'.replace('0', currentPermanentDropEnrollmentId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => response.json())
+    .then(data => {
+        window.closePermanentDropModal();
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Student permanently dropped.', 'success');
+            } else {
+                alert(data.message || 'Student permanently dropped.');
+            }
+            // Refresh the dropped students list
+            if (currentDroppedCourseId) {
+                window.openDroppedStudentsModal(currentDroppedCourseId);
+            } else {
+                setTimeout(() => location.reload(), 800);
+            }
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Error dropping student.', 'error');
+            } else {
+                alert(data.message || 'Error dropping student.');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        } else {
+            alert('An error occurred. Please try again.');
+        }
+    });
+};
+
+window.copyEnrollmentCode = function(code) {
+    if (!code || code === 'Not generated' || code === '') {
+        if (typeof showNotification === 'function') {
+            showNotification('Enrollment code not available', 'error');
+        } else {
+            alert('Enrollment code not available');
+        }
+        return;
+    }
+    
+    navigator.clipboard.writeText(code).then(() => {
+        if (typeof showNotification === 'function') {
+            showNotification('Enrollment code copied to clipboard!', 'success');
+        } else {
+            alert('Enrollment code copied to clipboard!');
+        }
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        if (typeof showNotification === 'function') {
+            showNotification('Failed to copy code. Please copy manually: ' + code, 'error');
+        } else {
+            alert('Failed to copy code. Please copy manually: ' + code);
+        }
+    });
+};
+
+let enrollmentStatusModalCourseId = null;
+let enrollmentStatusModalNewValue = null;
+
+window.updateEnrollmentStatus = function(courseId, newStatus) {
+    const selectElement = document.getElementById(`enrollmentStatusSelect-${courseId}`);
+    const previousValue = selectElement.dataset.previousValue || 'open';
+    
+    if (newStatus === previousValue) {
+        return; // No change
+    }
+    
+    enrollmentStatusModalCourseId = courseId;
+    enrollmentStatusModalNewValue = newStatus;
+    
+    // Show confirmation modal (matching manage courses style)
+    const courseName = document.querySelector(`[data-course-id="${courseId}"] h3`)?.textContent || 'Course';
+    const currentStatusText = previousValue === 'open' ? 'Open' : 'Closed';
+    const newStatusText = newStatus === 'open' ? 'Open' : 'Closed';
+    
+    document.getElementById('enrollmentStatusModalMessage').textContent = `Change enrollment status for this course?`;
+    document.getElementById('enrollmentStatusModalAction').textContent = `${courseName}\nCurrent: ${currentStatusText} → New: ${newStatusText}`;
+    document.getElementById('enrollment-status-course-id').value = courseId;
+    document.getElementById('enrollment-status-new-value').value = newStatus;
+    document.getElementById('enrollmentStatusModal').classList.remove('hidden');
+};
+
+function closeEnrollmentStatusModal() {
+    const modal = document.getElementById('enrollmentStatusModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    // Revert select to previous value
+    if (enrollmentStatusModalCourseId) {
+        const selectElement = document.getElementById(`enrollmentStatusSelect-${enrollmentStatusModalCourseId}`);
+        if (selectElement) {
+            selectElement.value = selectElement.dataset.previousValue || 'open';
+        }
+    }
+    enrollmentStatusModalCourseId = null;
+    enrollmentStatusModalNewValue = null;
+}
+
+function confirmEnrollmentStatusChange() {
+    const courseId = document.getElementById('enrollment-status-course-id').value;
+    const newStatus = document.getElementById('enrollment-status-new-value').value;
+    
+    if (!courseId || !newStatus) {
+        closeEnrollmentStatusModal();
+        return;
+    }
+    
+    closeEnrollmentStatusModal();
+    
+    fetch(`{% url 'dashboard:instructor_update_enrollment_status' 0 %}`.replace('0', courseId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            'status': newStatus
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Enrollment status updated successfully.', 'success');
+            } else {
+                alert(data.message || 'Enrollment status updated successfully.');
+            }
+            // Update the select element's previous value
+            const selectElement = document.getElementById(`enrollmentStatusSelect-${courseId}`);
+            if (selectElement) {
+                selectElement.dataset.previousValue = newStatus;
+            }
+            setTimeout(() => location.reload(), 800);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Error updating enrollment status.', 'error');
+            } else {
+                alert(data.message || 'Error updating enrollment status.');
+            }
+            // Revert select to previous value on error
+            const selectElement = document.getElementById(`enrollmentStatusSelect-${courseId}`);
+            if (selectElement) {
+                selectElement.value = selectElement.dataset.previousValue || 'open';
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error updating enrollment status:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred while updating enrollment status.', 'error');
+        } else {
+            alert('An error occurred while updating enrollment status.');
+        }
+        // Revert select to previous value on error
+        const selectElement = document.getElementById(`enrollmentStatusSelect-${courseId}`);
+        if (selectElement) {
+            selectElement.value = selectElement.dataset.previousValue || 'open';
+        }
+    });
+}
+
+document.getElementById('studentDetailModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        window.closeStudentDetails();
+    }
+});
+
+document.getElementById('droppedStudentsModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        window.closeDroppedStudentsModal();
+    }
+});
+
+document.getElementById('permanentDropModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        window.closePermanentDropModal();
+    }
+});
+
+const sectionFilterControl = document.getElementById('selected-course-section-filter');
+const selectedCourseList = document.getElementById('selected-course-student-list');
+const emptyState = document.getElementById('selected-course-empty-message');
+
+if (sectionFilterControl) {
+    sectionFilterControl.addEventListener('change', function() {
+        const mode = this.dataset.mode || '';
+        const value = this.value || '';
+        if (mode === 'switch' && value) {
+            // Navigate to the selected section's course id
+            const params = new URLSearchParams(window.location.search);
+            params.set('selected_course', value);
+            window.location.search = params.toString();
+            return;
+        }
+        // Fallback to in-list filtering (when not in overview switch mode)
+        if (selectedCourseList) {
+            const targetSection = value;
+            let visibleCount = 0;
+            selectedCourseList.querySelectorAll('.student-card').forEach(card => {
+                const cardSection = (card.getAttribute('data-student-section') || '').toUpperCase();
+                if (!targetSection || cardSection === targetSection.toUpperCase()) {
+                    card.classList.remove('hidden');
+                    visibleCount += 1;
+                } else {
+                    card.classList.add('hidden');
+                }
+            });
+            if (emptyState) {
+                emptyState.classList.toggle('hidden', visibleCount !== 0);
+            }
+        }
+    });
+    // Do not auto-filter on load in switch mode
+    if (sectionFilterControl.dataset.mode !== 'switch' && selectedCourseList) {
+        sectionFilterControl.dispatchEvent(new Event('change'));
+    }
+}
+</script>
+
+<!-- Load html5-qrcode library BEFORE modal script -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+
+<!-- QR Registration Modal -->
+{% include 'dashboard/partials/qr_registration_modal.html' %}
+
+<!-- Diagnostic: Check if html5-qrcode loaded -->
+<script>
+    setTimeout(() => {
+        console.log('Checking if html5-qrcode library loaded...');
+        if (typeof Html5Qrcode !== 'undefined') {
+            console.log('✓ Html5Qrcode library loaded successfully');
+        } else {
+            console.error('✗ Html5Qrcode library NOT loaded');
+        }
+    }, 500);
+</script>
+
+{% endblock %}
+

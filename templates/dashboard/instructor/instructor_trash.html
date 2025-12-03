@@ -1,0 +1,1549 @@
+{% extends 'dashboard/instructor/teacher.html' %}
+{% block title %}Trash & Archive{% endblock %}
+{% block dashboard_content %}
+<!-- Notification System -->
+{% include 'dashboard/shared/notification_system.html' %}
+<style>
+    @keyframes fadeInSlide {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    .school-year-folder {
+        display: block;
+    }
+    .year-folder {
+        display: block;
+    }
+    .semester-folder {
+        display: block;
+    }
+    .semester-folder[style*="display: none"] {
+        display: none !important;
+    }
+    /* Twinkling stars for multi-section courses */
+    @keyframes twinkle {
+        0%, 45%, 55%, 100% {
+            opacity: 0.1;
+            transform: scale(0.9);
+        }
+        50% {
+            opacity: 1.0;
+            transform: scale(1.1);
+        }
+    }
+    .multi-stars-field {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        border-radius: 1rem;
+        mix-blend-mode: screen;
+    }
+    .star-dot {
+        position: absolute;
+        background-color: #ffffff;
+        border-radius: 50%;
+        box-shadow: 0 0 5px #a0c3ff, 0 0 10px #ffffff;
+        animation: twinkle linear infinite;
+    }
+    .course-card-block {
+        position: relative;
+        transform-style: preserve-3d;
+        background: linear-gradient(135deg, var(--course-color-start, #3C4770) 0%, var(--course-color-end, #447294) 100%);
+    }
+    .multi-section-glow::after {
+        content: "";
+        position: absolute;
+        inset: -2px;
+        border-radius: 1.25rem;
+        animation: glowPulse 2.2s ease-in-out infinite;
+        pointer-events: none;
+    }
+    @keyframes glowPulse {
+        0%   { box-shadow: 0 0 0px rgba(255,255,255,0.0), 0 0 0px var(--course-color-end, #ffffff00); }
+        50%  { box-shadow: 0 0 18px rgba(255,255,255,0.35), 0 0 28px var(--course-color-end, #ffffff55); }
+        100% { box-shadow: 0 0 0px rgba(255,255,255,0.0), 0 0 0px var(--course-color-end, #ffffff00); }
+    }
+</style>
+
+<div class="p-4 md:p-8 bg-gradient-to-br from-gray-50 via-white to-gray-50 flex-grow rounded-2xl min-h-full">
+    <div class="flex justify-between items-center mb-4">
+        <div class="flex items-center gap-4">
+            <div>
+                <h1 class="text-lg font-bold text-gray-900 flex items-center">
+                    {% if mode == 'trash' %}
+                    <i class="fas fa-trash-alt w-5 h-5 mr-2" style="color: #3C4770;"></i> Trash
+                    {% elif mode == 'archive' %}
+                    <i class="fas fa-archive w-5 h-5 mr-2" style="color: #3C4770;"></i> Archive
+                    {% else %}
+                    <i class="fas fa-trash-alt w-5 h-5 mr-2" style="color: #3C4770;"></i> Trash & Archive
+                    {% endif %}
+                </h1>
+                <p class="text-xs text-gray-600 mt-1">
+                    {% if mode == 'trash' %}
+                    Deleted items will be permanently removed after 30 days
+                    {% elif mode == 'archive' %}
+                    Archived items are stored for completed sessions
+                    {% else %}
+                    Deleted items will be permanently removed after 30 days
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+        <!-- Trash/Archive Separation Buttons - Right Corner -->
+        <div class="flex gap-2">
+            <button onclick="filterMode('trash')" id="trash-mode-btn" class="px-4 py-2 text-white text-sm font-semibold rounded-lg transition duration-150 shadow-sm {% if mode == 'trash' or mode == 'all' %}bg-red-600 hover:bg-red-700 ring-2 ring-red-300{% else %}bg-gray-400 hover:bg-gray-500{% endif %}">
+                <i class="fas fa-trash-alt mr-2"></i> Trash
+            </button>
+            <button onclick="filterMode('archive')" id="archive-mode-btn" class="px-4 py-2 text-white text-sm font-semibold rounded-lg transition duration-150 shadow-sm {% if mode == 'archive' %}bg-purple-600 hover:bg-purple-700 ring-2 ring-purple-300{% else %}bg-gray-400 hover:bg-gray-500{% endif %}">
+                <i class="fas fa-archive mr-2"></i> Archive
+            </button>
+            {% if mode == 'all' or mode == 'trash' %}
+            {% if deleted_enrollments %}
+            <button onclick="scrollToStudents()" class="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition duration-150 shadow-sm">
+                <i class="fas fa-users mr-2"></i> Dropped Students ({{ deleted_enrollments|length }})
+            </button>
+            {% endif %}
+            {% endif %}
+        </div>
+        <div class="flex gap-2">
+            <!-- Restore All and Delete All buttons - visibility controlled by JavaScript based on mode -->
+            <button id="restore-all-btn" onclick="showRestoreAllTrashModal()" class="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-sm hidden">
+                <i class="fas fa-undo mr-2"></i> Restore All
+            </button>
+            <button id="delete-all-btn" onclick="showDeleteAllPermanentModal()" class="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm hidden">
+                <i class="fas fa-trash mr-2"></i> Delete All Permanent
+            </button>
+            <button id="restore-all-archive-btn" onclick="restoreAllArchivedCourses()" class="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-sm hidden">
+                <i class="fas fa-undo mr-2"></i> Restore All
+            </button>
+        </div>
+    </div>
+    
+    <!-- Category Tabs Removed - Display as folders only -->
+    
+    <!-- Archive Section -->
+    {% if mode == 'all' or mode == 'archive' %}
+    {% if archived_courses_by_school_year %}
+    <div class="mb-6">
+        <h2 class="text-base font-bold text-gray-800 mb-3 flex items-center">
+            <i class="fas fa-archive mr-2 text-purple-600"></i> Archived Courses
+        </h2>
+        <div class="space-y-3">
+            {% for school_year_key, school_year_data in archived_courses_by_school_year.items %}
+            <div class="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200">
+                <!-- School Year Header -->
+                <div class="bg-gradient-to-r from-purple-50 to-pink-50 px-3 py-2 border-b border-gray-200">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center cursor-pointer hover:from-purple-100 hover:to-pink-100 transition-all w-full" onclick="toggleSchoolYearFolder('archive-school-year-{{ forloop.counter }}')" style="pointer-events: auto;">
+                            <h3 class="text-base font-bold text-gray-900 flex items-center w-full" style="pointer-events: none;">
+                                <i id="archive-school-year-icon-{{ forloop.counter }}" class="fas fa-chevron-down text-xs mr-2 text-gray-600 transition-transform duration-300" style="transform: rotate(-90deg); pointer-events: none;"></i>
+                                <i class="fas fa-calendar-alt mr-2 text-purple-600 text-sm" style="pointer-events: none;"></i>
+                                <span style="pointer-events: none;">{{ school_year_key }}</span>
+                            </h3>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Year Levels within School Year -->
+                <div id="archive-school-year-{{ forloop.counter }}" class="school-year-folder" style="display: none;">
+                    <div class="space-y-3 p-2">
+                        {% for year_key, year_data in school_year_data.items %}
+                        <div class="bg-gray-50 rounded-lg border border-gray-200">
+                            <!-- Year Level Header -->
+                            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 px-3 py-2 border-b border-gray-200">
+                                <div class="flex items-center cursor-pointer hover:from-blue-100 hover:to-indigo-100 transition-all w-full" onclick="toggleYearFolder('archive-year-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="pointer-events: auto;">
+                                    <h4 class="text-sm font-bold text-gray-900 flex items-center w-full" style="pointer-events: none;">
+                                        <i id="archive-year-icon-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="fas fa-chevron-down text-xs mr-2 text-gray-600 transition-transform duration-300" style="transform: rotate(-90deg); pointer-events: none;"></i>
+                                        <i class="fas fa-graduation-cap mr-2 text-blue-600 text-xs" style="pointer-events: none;"></i>
+                                        <span style="pointer-events: none;">{{ year_key }}</span>
+                                    </h4>
+                                </div>
+                            </div>
+                            
+                            <!-- Semesters within Year Level -->
+                            <div id="archive-year-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="year-folder" style="display: none;">
+                                <div class="space-y-2 p-2">
+                                    {% for semester_key, courses_list in year_data.semesters.items %}
+                                    <!-- Semester Header -->
+                                    <div class="mb-2">
+                                        <div class="flex items-center justify-between bg-gradient-to-r from-green-50 to-emerald-50 px-3 py-2 rounded-lg border border-green-200">
+                                            <div class="flex items-center cursor-pointer hover:bg-green-100 transition-all rounded-lg flex-1" onclick="toggleSemesterFolder('archive-semester-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')">
+                                                <h5 class="text-xs font-bold text-gray-800 flex items-center w-full">
+                                                    <i id="archive-semester-icon-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="fas fa-chevron-down text-xs mr-2 text-gray-600 transition-transform duration-300"></i>
+                                                    <i class="fas fa-calendar mr-2 text-green-600 text-xs"></i>
+                                                    <span>{% if semester_key == '1st' %}1st Semester{% elif semester_key == '2nd' %}2nd Semester{% elif semester_key == 'summer' %}Summer{% else %}{{ semester_key }}{% endif %}</span>
+                                                </h5>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Course Containers (Same as Manage Courses) -->
+                                    <div id="archive-semester-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="semester-folder ml-4 pl-2 border-l-2 border-green-200" style="display: none;">
+                                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-2">
+                                            {% for course in courses_list %}
+                                            <div class="course-card-wrapper relative {% if course.sibling_sections and course.sibling_sections|length > 1 %}multi-section-glow{% endif %}" data-course-id="{{ course.id }}">
+                                                <div class="bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-gray-100 group">
+                                                    <!-- Course Card Block (Same as Manage Courses) -->
+                                                    <div class="relative h-32 flex items-center justify-center overflow-hidden course-card-block"
+                                                         {% if course.display_gradient %} data-gradient="{{ course.display_gradient }}" {% endif %}
+                                                         style="{% if not course.display_gradient %}background: linear-gradient(135deg, {{ course.color|default:'#3C4770' }} 0%, {{ course.color|default:'#447294' }} 100%);{% endif %}">
+                                                        <div class="absolute inset-0 opacity-10">
+                                                            <div class="absolute top-0 right-0 w-24 h-24 bg-white rounded-full -mr-12 -mt-12"></div>
+                                                            <div class="absolute bottom-0 left-0 w-20 h-20 bg-white rounded-full -ml-10 -mb-10"></div>
+                                                        </div>
+                                                        {% if course.sibling_sections and course.sibling_sections|length > 1 %}
+                                                        <div class="multi-stars-field" data-star-count="60"></div>
+                                                        {% endif %}
+                                                        <div class="relative z-10 text-center px-4">
+                                                            <h3 class="text-lg font-bold text-white mb-1 leading-tight" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+                                                                {{ course.name }}
+                                                            </h3>
+                                                            <p class="text-sm text-white/90 font-medium">{{ course.code }}</p>
+                                                        </div>
+                                                    </div>
+                                                    <!-- Action Buttons -->
+                                                    <div class="p-3 bg-white">
+                                                        <div class="flex items-center justify-between mb-2">
+                                                            <div class="text-[10px] text-gray-500">
+                                                                Archived: {{ course.updated_at|date:"M d, Y" }}
+                                                            </div>
+                                                        </div>
+                                                        <div class="flex gap-1">
+                                                            <button onclick="viewArchivedCourseStudents({{ course.id }})" class="flex-1 px-2 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition">
+                                                                <i class="fas fa-users"></i> Students
+                                                            </button>
+                                                            <button onclick="restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
+                                                                <i class="fas fa-undo"></i> Restore
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+    
+    <!-- Trash Section (Deleted Courses) -->
+    {% if mode == 'trash' or mode == 'all' %}
+    {% if deleted_courses_by_school_year %}
+    <div class="mb-6">
+        <h2 class="text-base font-bold text-gray-800 mb-3 flex items-center">
+            <i class="fas fa-trash-alt mr-2 text-red-600"></i> Deleted Courses by School Year
+        </h2>
+        <div class="space-y-3">
+            {% for school_year_key, school_year_data in deleted_courses_by_school_year.items %}
+            <div class="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200">
+                <!-- School Year Header -->
+                <div class="bg-gradient-to-r from-purple-50 to-pink-50 px-3 py-2 border-b border-gray-200">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center cursor-pointer hover:from-purple-100 hover:to-pink-100 transition-all w-full" onclick="toggleSchoolYearFolder('trash-school-year-{{ forloop.counter }}')" style="pointer-events: auto;">
+                            <h3 class="text-base font-bold text-gray-900 flex items-center w-full" style="pointer-events: none;">
+                                <i id="trash-school-year-icon-{{ forloop.counter }}" class="fas fa-chevron-down text-xs mr-2 text-gray-600 transition-transform duration-300" style="transform: rotate(-90deg); pointer-events: none;"></i>
+                                <i class="fas fa-calendar-alt mr-2 text-purple-600 text-sm" style="pointer-events: none;"></i>
+                                <span style="pointer-events: none;">{{ school_year_key }}</span>
+                            </h3>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Year Levels within School Year -->
+                <div id="trash-school-year-{{ forloop.counter }}" class="school-year-folder" style="display: none;">
+                    <div class="space-y-3 p-2">
+                        {% for year_key, year_data in school_year_data.items %}
+                        <div class="bg-gray-50 rounded-lg border border-gray-200">
+                            <!-- Year Level Header -->
+                            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 px-3 py-2 border-b border-gray-200">
+                                <div class="flex items-center cursor-pointer hover:from-blue-100 hover:to-indigo-100 transition-all w-full" onclick="toggleYearFolder('trash-year-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="pointer-events: auto;">
+                                    <h4 class="text-sm font-bold text-gray-900 flex items-center w-full" style="pointer-events: none;">
+                                        <i id="trash-year-icon-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="fas fa-chevron-down text-xs mr-2 text-gray-600 transition-transform duration-300" style="transform: rotate(-90deg); pointer-events: none;"></i>
+                                        <i class="fas fa-graduation-cap mr-2 text-blue-600 text-xs" style="pointer-events: none;"></i>
+                                        <span style="pointer-events: none;">{{ year_key }}</span>
+                                    </h4>
+                                </div>
+                            </div>
+                            
+                            <!-- Semesters within Year Level -->
+                            <div id="trash-year-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="year-folder" style="display: none;">
+                                <div class="space-y-2 p-2">
+                                    {% for semester_key, courses_list in year_data.semesters.items %}
+                                    <!-- Semester Header -->
+                                    <div class="mb-2">
+                                        <div class="flex items-center justify-between bg-gradient-to-r from-green-50 to-emerald-50 px-3 py-2 rounded-lg border border-green-200">
+                                            <div class="flex items-center cursor-pointer hover:bg-green-100 transition-all rounded-lg flex-1" onclick="toggleSemesterFolder('trash-semester-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')">
+                                                <h5 class="text-xs font-bold text-gray-800 flex items-center w-full">
+                                                    <i id="trash-semester-icon-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="fas fa-chevron-down text-xs mr-2 text-gray-600 transition-transform duration-300"></i>
+                                                    <i class="fas fa-calendar mr-2 text-green-600 text-xs"></i>
+                                                    <span>{% if semester_key == '1st' %}1st Semester{% elif semester_key == '2nd' %}2nd Semester{% elif semester_key == 'summer' %}Summer{% else %}{{ semester_key }}{% endif %}</span>
+                                                </h5>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Course Containers (Same as Manage Courses) -->
+                                    <div id="trash-semester-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="semester-folder ml-4 pl-2 border-l-2 border-green-200" style="display: none;">
+                                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-2">
+                                            {% for course in courses_list %}
+                                            <div class="course-card-wrapper relative {% if course.sibling_sections and course.sibling_sections|length > 1 %}multi-section-glow{% endif %}" data-course-id="{{ course.id }}">
+                                                <div class="bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-gray-100 group">
+                                                    <!-- Course Card Block (Same as Manage Courses) -->
+                                                    <div class="relative h-32 flex items-center justify-center overflow-hidden course-card-block"
+                                                         {% if course.display_gradient %} data-gradient="{{ course.display_gradient }}" {% endif %}
+                                                         style="{% if not course.display_gradient %}background: linear-gradient(135deg, {{ course.color|default:'#3C4770' }} 0%, {{ course.color|default:'#447294' }} 100%);{% endif %}">
+                                                        <div class="absolute inset-0 opacity-10">
+                                                            <div class="absolute top-0 right-0 w-24 h-24 bg-white rounded-full -mr-12 -mt-12"></div>
+                                                            <div class="absolute bottom-0 left-0 w-20 h-20 bg-white rounded-full -ml-10 -mb-10"></div>
+                                                        </div>
+                                                        {% if course.sibling_sections and course.sibling_sections|length > 1 %}
+                                                        <div class="multi-stars-field" data-star-count="60"></div>
+                                                        {% endif %}
+                                                        <div class="relative z-10 text-center px-4">
+                                                            <h3 class="text-lg font-bold text-white mb-1 leading-tight" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+                                                                {{ course.name }}
+                                                            </h3>
+                                                            <p class="text-sm text-white/90 font-medium">{{ course.code }}</p>
+                                                        </div>
+                                                    </div>
+                                                    <!-- Action Buttons -->
+                                                    <div class="p-3 bg-white">
+                                                        <div class="flex items-center justify-between mb-2">
+                                                            <div class="text-[10px] text-gray-600">
+                                                                <i class="fas fa-clock mr-1"></i> {{ course.days_until_deletion }} days left
+                                                            </div>
+                                                            <div class="text-[10px] text-gray-500">
+                                                                Deleted: {{ course.deleted_at|date:"M d, Y" }}
+                                                            </div>
+                                                        </div>
+                                                        <div class="flex gap-1">
+                                                            <button onclick="restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
+                                                                <i class="fas fa-undo"></i> Restore
+                                                            </button>
+                                                            <button onclick="permanentDeleteCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition">
+                                                                <i class="fas fa-trash"></i> Delete
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <!-- Empty Trash Message -->
+    <div class="bg-white rounded-2xl shadow-xl p-16 text-center border-2 border-dashed border-gray-300 mb-6">
+        <div class="max-w-md mx-auto">
+            <div class="w-24 h-24 mx-auto mb-6 bg-gradient-to-br from-red-100 to-pink-100 rounded-full flex items-center justify-center">
+                <i class="fas fa-trash-alt text-5xl text-red-500"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-gray-800 mb-2">Trash is Empty</h3>
+            <p class="text-gray-600">No deleted courses found. Deleted courses will appear here and will be permanently deleted after 30 days.</p>
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+    
+    <!-- Students (Enrollments) Section - Only in Trash Mode -->
+    {% if mode == 'all' or mode == 'trash' %}
+    {% if deleted_enrollments %}
+    <div id="dropped-students-section" class="mb-6">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-base font-bold text-gray-800 flex items-center">
+                <i class="fas fa-users mr-2 text-blue-600"></i> Dropped Students
+            </h2>
+            <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">{{ deleted_enrollments|length }} student{{ deleted_enrollments|length|pluralize }}</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-xs">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Student Name</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Course</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Student ID</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Deleted</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Days Left</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for enrollment in deleted_enrollments %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-3 py-2 whitespace-nowrap">
+                            <div class="text-xs font-semibold text-gray-900">{{ enrollment.full_name }}</div>
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap">
+                            <div class="text-xs text-gray-600">{{ enrollment.course.code }} - {{ enrollment.course.name }}</div>
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap">
+                            <div class="text-xs text-gray-600">{{ enrollment.student_id_number }}</div>
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap">
+                            <div class="text-xs text-gray-600">{{ enrollment.deleted_at|date:"M d, Y" }}</div>
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap">
+                            <div class="text-xs text-gray-600">
+                                <i class="fas fa-clock mr-1"></i> {{ enrollment.days_until_deletion }} days
+                            </div>
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap">
+                            <div class="flex gap-2">
+                                <button onclick="restoreEnrollment({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" class="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-sm">
+                                    <i class="fas fa-undo mr-1"></i> Restore
+                                </button>
+                                <button onclick="permanentDeleteEnrollment({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" class="px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm">
+                                    <i class="fas fa-trash mr-1"></i> Delete
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+    
+    <!-- Empty State -->
+    {% if mode == 'trash' %}
+        {% if not deleted_courses and not deleted_enrollments %}
+        <!-- Empty message is already shown above in the "Trash is Empty" section (line 362-371) -->
+        {% endif %}
+    {% elif mode == 'archive' %}
+        {% if not archived_courses %}
+        <div class="text-center py-12 text-gray-500 border border-dashed border-gray-200 rounded-2xl bg-white">
+            <div class="w-20 h-20 mx-auto mb-4 bg-purple-100 rounded-full flex items-center justify-center">
+                <i class="fas fa-archive text-3xl text-purple-400"></i>
+            </div>
+            <p class="text-lg font-semibold">Archive is empty</p>
+            <p class="text-sm mt-1">Archived items will appear here</p>
+        </div>
+        {% endif %}
+    {% else %}
+        {% if not deleted_courses and not archived_courses and not deleted_enrollments %}
+        <div class="text-center py-12 text-gray-500 border border-dashed border-gray-200 rounded-2xl bg-white">
+            <div class="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                <i class="fas fa-trash-alt text-3xl text-gray-400"></i>
+            </div>
+            <p class="text-lg font-semibold">Trash & Archive is empty</p>
+            <p class="text-sm mt-1">Deleted and archived items will appear here</p>
+        </div>
+        {% endif %}
+    {% endif %}
+</div>
+
+<!-- Confirmation Modals -->
+<div id="restoreCourseModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <h3 class="text-lg font-bold text-gray-900 mb-4">Restore Course</h3>
+        <p class="text-sm text-gray-600 mb-6" id="restoreCourseMessage"></p>
+        <div class="flex gap-3 justify-end">
+            <button onclick="closeRestoreCourseModal()" class="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onclick="confirmRestoreCourse()" class="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700">Restore</button>
+        </div>
+    </div>
+</div>
+
+<div id="deleteCourseModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <h3 class="text-lg font-bold text-red-600 mb-4">Permanently Delete Course</h3>
+        <p class="text-sm text-gray-600 mb-6" id="deleteCourseMessage"></p>
+        <div class="flex gap-3 justify-end">
+            <button onclick="closeDeleteCourseModal()" class="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onclick="confirmDeleteCourse()" class="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700">Delete Permanently</button>
+        </div>
+    </div>
+</div>
+
+<div id="restoreEnrollmentModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <h3 class="text-lg font-bold text-gray-900 mb-4">Restore Enrollment</h3>
+        <p class="text-sm text-gray-600 mb-6" id="restoreEnrollmentMessage"></p>
+        <div class="flex gap-3 justify-end">
+            <button onclick="closeRestoreEnrollmentModal()" class="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onclick="confirmRestoreEnrollment()" class="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700">Restore</button>
+        </div>
+    </div>
+</div>
+
+<div id="deleteEnrollmentModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <h3 class="text-lg font-bold text-red-600 mb-4">Permanently Delete Enrollment</h3>
+        <p class="text-sm text-gray-600 mb-6" id="deleteEnrollmentMessage"></p>
+        <div class="flex gap-3 justify-end">
+            <button onclick="closeDeleteEnrollmentModal()" class="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onclick="confirmDeleteEnrollment()" class="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700">Delete Permanently</button>
+        </div>
+    </div>
+</div>
+
+<!-- Restore All Archived Courses Modal -->
+<div id="restoreAllArchivedModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <h3 class="text-lg font-bold text-green-600 mb-4">Restore All Archived Courses</h3>
+        <p class="text-sm text-gray-600 mb-6" id="restoreAllArchivedMessage">Are you sure you want to restore ALL archived courses? This will restore all courses including multi-section courses.</p>
+        <div class="flex gap-3 justify-end">
+            <button onclick="closeRestoreAllArchivedModal()" class="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onclick="confirmRestoreAllArchivedCourses()" class="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700">Restore All</button>
+        </div>
+    </div>
+</div>
+
+<!-- Restore All Trash Modal -->
+<div id="restoreAllTrashModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <h3 class="text-lg font-bold text-green-600 mb-4 flex items-center">
+            <i class="fas fa-undo w-5 h-5 mr-2"></i> Restore All Deleted Courses
+        </h3>
+        <p class="text-sm text-gray-600 mb-6" id="restoreAllTrashMessage">Are you sure you want to restore ALL deleted courses? This will restore all courses including multi-section courses.</p>
+        <div class="flex gap-3 justify-end">
+            <button onclick="closeRestoreAllTrashModal()" class="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onclick="confirmRestoreAllTrashCourses()" class="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700">Restore All</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete All Permanent Modal -->
+<div id="deleteAllPermanentModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <h3 class="text-lg font-bold text-red-600 mb-4 flex items-center">
+            <i class="fas fa-exclamation-triangle w-5 h-5 mr-2"></i> Permanently Delete All Courses
+        </h3>
+        <p class="text-sm text-gray-600 mb-6" id="deleteAllPermanentMessage">Are you sure you want to PERMANENTLY DELETE ALL courses? This action cannot be undone and will delete all courses including multi-section courses.</p>
+        <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded mb-4">
+            <p class="text-sm font-semibold text-red-800">Warning: This action is irreversible!</p>
+        </div>
+        <div class="flex gap-3 justify-end">
+            <button onclick="closeDeleteAllPermanentModal()" class="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onclick="confirmDeleteAllPermanentCourses()" class="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700">Delete Permanently</button>
+        </div>
+    </div>
+</div>
+
+<!-- Archived Course Students Modal -->
+<div id="archivedCourseStudentsModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-purple-600">
+                <i class="fas fa-users w-6 h-6 mr-2"></i> Enrolled Students
+            </h3>
+            <button onclick="closeArchivedCourseStudentsModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div class="bg-purple-50 border-l-4 border-purple-500 p-4 rounded">
+                <p class="font-semibold text-purple-800" id="archived-course-name"></p>
+            </div>
+            <div id="archived-section-filter-container" class="hidden">
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Filter by Section:</label>
+                <select id="archived-section-filter" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500" onchange="filterArchivedStudentsBySection()">
+                    <option value="all">All Students</option>
+                </select>
+            </div>
+            <div class="max-h-96 overflow-y-auto">
+                <div id="archived-course-students-list" class="space-y-2">
+                    <p class="text-sm text-gray-500 text-center py-4">Loading students...</p>
+                </div>
+            </div>
+            <input type="hidden" id="archived-course-id">
+            <input type="hidden" id="archived-all-enrollments" value="">
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="closeArchivedCourseStudentsModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Archived Student Details Modal -->
+<div id="archivedStudentDetailModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-[120] flex items-center justify-center p-4 backdrop-blur-sm" onclick="if(event.target === this) closeArchivedStudentDetails();">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-scale-in" onclick="event.stopPropagation();">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h2 class="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                <i class="fas fa-user"></i>
+                <span id="archived-modal-student-name">Student Details</span>
+            </h2>
+            <button onclick="closeArchivedStudentDetails()" class="text-gray-500 hover:text-gray-700 transition">
+                <i class="fas fa-times text-lg"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-6">
+            <div class="flex flex-col sm:flex-row items-center sm:items-start gap-4 text-center sm:text-left">
+                <div id="archived-modal-profile-pic" class="w-24 h-24 rounded-full border-2 border-gray-200 shadow flex items-center justify-center overflow-hidden bg-gray-50"></div>
+                <div class="space-y-1">
+                    <h3 id="archived-modal-full-name" class="text-2xl font-semibold text-gray-900"></h3>
+                    <p id="archived-modal-email" class="text-sm text-gray-500"></p>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="rounded-2xl border border-gray-100 p-4 bg-gray-50">
+                    <p class="text-xs uppercase text-gray-500 font-semibold">Student ID</p>
+                    <p id="archived-modal-student-id" class="text-lg font-semibold text-gray-900 mt-1"></p>
+                </div>
+                <div class="rounded-2xl border border-gray-100 p-4 bg-gray-50">
+                    <p class="text-xs uppercase text-gray-500 font-semibold">Section</p>
+                    <p id="archived-modal-section" class="text-lg font-semibold text-gray-900 mt-1"></p>
+                </div>
+                <div class="rounded-2xl border border-gray-100 p-4 bg-gray-50">
+                    <p class="text-xs uppercase text-gray-500 font-semibold">Enrollment Code</p>
+                    <p id="archived-modal-enrollment-code" class="text-lg font-semibold text-gray-900 mt-1 font-mono"></p>
+                </div>
+                <div class="rounded-2xl border border-gray-100 p-4 bg-gray-50">
+                    <p class="text-xs uppercase text-gray-500 font-semibold">Year Level</p>
+                    <p id="archived-modal-year-level" class="text-lg font-semibold text-gray-900 mt-1"></p>
+                </div>
+                <div class="rounded-2xl border border-gray-100 p-4 bg-gray-50 sm:col-span-2">
+                    <p class="text-xs uppercase text-gray-500 font-semibold">Enrolled Date</p>
+                    <p id="archived-modal-enrolled-date" class="text-lg font-semibold text-gray-900 mt-1"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentCourseId = null;
+let currentEnrollmentId = null;
+
+// Category filtering removed - display as folders only
+function filterMode(mode) {
+    // Reload page with new mode - this ensures buttons are shown/hidden correctly
+    window.location.href = '{% url "dashboard:instructor_trash" %}?mode=' + mode;
+}
+
+// Scroll to dropped students section
+function scrollToStudents() {
+    const studentsSection = document.getElementById('dropped-students-section');
+    if (studentsSection) {
+        studentsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Highlight the section briefly
+        studentsSection.style.transition = 'background-color 0.3s';
+        studentsSection.style.backgroundColor = '#fef3c7';
+        setTimeout(() => {
+            studentsSection.style.backgroundColor = '';
+        }, 2000);
+    }
+}
+
+// Update button styles based on current mode
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    // Default to 'trash' mode if no mode specified (as per user requirement)
+    const currentMode = urlParams.get('mode') || 'trash';
+    const trashBtn = document.getElementById('trash-mode-btn');
+    const archiveBtn = document.getElementById('archive-mode-btn');
+    const restoreAllBtn = document.getElementById('restore-all-btn');
+    const deleteAllBtn = document.getElementById('delete-all-btn');
+    const restoreAllArchiveBtn = document.getElementById('restore-all-archive-btn');
+    
+    // Function to count items in trash/archive
+    function countItems(mode) {
+        let count = 0;
+        
+        if (mode === 'trash') {
+            // Count deleted courses - look for course cards in trash sections
+            // Trash sections have IDs starting with "trash-"
+            const courseCards = document.querySelectorAll('[data-course-id]');
+            courseCards.forEach(card => {
+                // Check if it's in a trash section (ID contains "trash-")
+                const trashParent = card.closest('[id^="trash-"]');
+                const archiveParent = card.closest('[id^="archive-"]');
+                // Only count if it's in trash section and not in archive section
+                if (trashParent && !archiveParent) {
+                    count++;
+                }
+            });
+            // Also count deleted enrollments in trash
+            const deletedEnrollments = document.querySelectorAll('.enrollment-item, [data-enrollment-id]');
+            deletedEnrollments.forEach(enrollment => {
+                const trashParent = enrollment.closest('[id^="trash-"]');
+                const archiveParent = enrollment.closest('[id^="archive-"]');
+                if (trashParent && !archiveParent) {
+                    count++;
+                }
+            });
+        } else if (mode === 'archive') {
+            // Count archived courses - look for course cards in archive sections
+            // Archive sections have IDs starting with "archive-"
+            const courseCards = document.querySelectorAll('[data-course-id]');
+            courseCards.forEach(card => {
+                // Check if it's in an archive section
+                const archiveParent = card.closest('[id^="archive-"]');
+                if (archiveParent) {
+                    count++;
+                }
+            });
+        } else {
+            // 'all' mode - count all items (both trash and archive)
+            const allCourseCards = document.querySelectorAll('[data-course-id]');
+            count = allCourseCards.length;
+            const allEnrollments = document.querySelectorAll('.enrollment-item, [data-enrollment-id]');
+            count += allEnrollments.length;
+        }
+        
+        return count;
+    }
+    
+    // Function to update button visibility based on mode and item count
+    function updateButtonVisibility(mode) {
+        const itemCount = countItems(mode);
+        
+        if (trashBtn && archiveBtn) {
+            if (mode === 'trash') {
+                trashBtn.classList.add('ring-2', 'ring-red-300');
+                archiveBtn.classList.remove('ring-2', 'ring-purple-300');
+                // Show trash buttons only if there are items
+                if (restoreAllBtn) {
+                    if (itemCount > 0) {
+                        restoreAllBtn.classList.remove('hidden');
+                    } else {
+                        restoreAllBtn.classList.add('hidden');
+                    }
+                }
+                if (deleteAllBtn) {
+                    if (itemCount > 0) {
+                        deleteAllBtn.classList.remove('hidden');
+                    } else {
+                        deleteAllBtn.classList.add('hidden');
+                    }
+                }
+                if (restoreAllArchiveBtn) {
+                    restoreAllArchiveBtn.classList.add('hidden');
+                }
+            } else if (mode === 'archive') {
+                archiveBtn.classList.add('ring-2', 'ring-purple-300');
+                trashBtn.classList.remove('ring-2', 'ring-red-300');
+                // Hide trash buttons, show archive restore button only if there are items
+                if (restoreAllBtn) {
+                    restoreAllBtn.classList.add('hidden');
+                }
+                if (deleteAllBtn) {
+                    deleteAllBtn.classList.add('hidden');
+                }
+                if (restoreAllArchiveBtn) {
+                    if (itemCount > 0) {
+                        restoreAllArchiveBtn.classList.remove('hidden');
+                    } else {
+                        restoreAllArchiveBtn.classList.add('hidden');
+                    }
+                }
+            } else {
+                // 'all' mode - show all buttons only if there are items
+                trashBtn.classList.remove('ring-2', 'ring-red-300');
+                archiveBtn.classList.remove('ring-2', 'ring-purple-300');
+                if (restoreAllBtn) {
+                    if (itemCount > 0) {
+                        restoreAllBtn.classList.remove('hidden');
+                    } else {
+                        restoreAllBtn.classList.add('hidden');
+                    }
+                }
+                if (deleteAllBtn) {
+                    if (itemCount > 0) {
+                        deleteAllBtn.classList.remove('hidden');
+                    } else {
+                        deleteAllBtn.classList.add('hidden');
+                    }
+                }
+                if (restoreAllArchiveBtn) {
+                    if (itemCount > 0) {
+                        restoreAllArchiveBtn.classList.remove('hidden');
+                    } else {
+                        restoreAllArchiveBtn.classList.add('hidden');
+                    }
+                }
+            }
+        }
+    }
+    
+    // Update on page load
+    updateButtonVisibility(currentMode);
+});
+
+// Toggle functions for trash folders (same as Manage Courses)
+function toggleSchoolYearFolder(folderId) {
+    const folder = document.getElementById(folderId);
+    let iconId = folderId.replace('trash-school-year-', 'trash-school-year-icon-');
+    if (!document.getElementById(iconId)) {
+        iconId = folderId.replace('archive-school-year-', 'archive-school-year-icon-');
+    }
+    const icon = document.getElementById(iconId);
+    if (folder) {
+        if (folder.style.display === 'none') {
+            folder.style.display = 'block';
+            if (icon) {
+                icon.style.transform = 'rotate(0deg)';
+                icon.style.transition = 'transform 0.3s ease';
+            }
+        } else {
+            folder.style.display = 'none';
+            if (icon) {
+                icon.style.transform = 'rotate(-90deg)';
+                icon.style.transition = 'transform 0.3s ease';
+            }
+        }
+    }
+}
+
+function toggleYearFolder(folderId) {
+    const folder = document.getElementById(folderId);
+    let iconId = folderId.replace('trash-year-', 'trash-year-icon-');
+    if (!document.getElementById(iconId)) {
+        iconId = folderId.replace('archive-year-', 'archive-year-icon-');
+    }
+    const icon = document.getElementById(iconId);
+    if (folder) {
+        if (folder.style.display === 'none') {
+            folder.style.display = 'block';
+            if (icon) {
+                icon.style.transform = 'rotate(0deg)';
+                icon.style.transition = 'transform 0.3s ease';
+            }
+        } else {
+            folder.style.display = 'none';
+            if (icon) {
+                icon.style.transform = 'rotate(-90deg)';
+                icon.style.transition = 'transform 0.3s ease';
+            }
+        }
+    }
+}
+
+function toggleSemesterFolder(folderId) {
+    const folder = document.getElementById(folderId);
+    let iconId = folderId.replace('trash-semester-', 'trash-semester-icon-');
+    if (!document.getElementById(iconId)) {
+        iconId = folderId.replace('archive-semester-', 'archive-semester-icon-');
+    }
+    const icon = document.getElementById(iconId);
+    if (folder) {
+        if (folder.style.display === 'none') {
+            folder.style.display = 'block';
+            folder.style.animation = 'fadeInSlide 0.3s ease forwards';
+            if (icon) {
+                icon.style.transform = 'rotate(0deg)';
+                icon.style.transition = 'transform 0.3s ease';
+            }
+            
+            // Reinitialize stars and gradients when folder opens
+            setTimeout(() => {
+                const starFields = folder.querySelectorAll('.multi-stars-field:not([data-stars-initialized])');
+                starFields.forEach(field => {
+                    if (field.hasAttribute('data-stars-initialized')) return;
+                    field.setAttribute('data-stars-initialized', 'true');
+                    const STAR_COUNT_DEFAULT = 60;
+                    const countAttr = parseInt(field.getAttribute('data-star-count') || `${STAR_COUNT_DEFAULT}`, 10);
+                    const count = isNaN(countAttr) ? STAR_COUNT_DEFAULT : Math.max(20, Math.min(150, countAttr));
+                    
+                    function createStar() {
+                        const rect = field.getBoundingClientRect();
+                        const width = rect.width || field.clientWidth || 200;
+                        const height = rect.height || field.clientHeight || 128;
+                        
+                        const star = document.createElement('div');
+                        star.className = 'star-dot';
+                        const size = Math.random() * 3 + 1;
+                        star.style.width = `${size}px`;
+                        star.style.height = `${size}px`;
+                        
+                        let x, y;
+                        if (Math.random() < 0.7) {
+                            if (Math.floor(Math.random() * 2) === 0) {
+                                const band = Math.random() < 0.5 ? 0.12 : 0.88;
+                                y = band * height + (Math.random() - 0.5) * 0.12 * height;
+                                y = Math.max(0, Math.min(height, y));
+                                x = Math.random() * width;
+                            } else {
+                                const band = Math.random() < 0.5 ? 0.12 : 0.88;
+                                x = band * width + (Math.random() - 0.5) * 0.12 * width;
+                                x = Math.max(0, Math.min(width, x));
+                                y = Math.random() * height;
+                            }
+                        } else {
+                            x = Math.random() * width;
+                            y = Math.random() * height;
+                        }
+                        star.style.left = `${x}px`;
+                        star.style.top = `${y}px`;
+                        const duration = Math.random() * 4 + 2;
+                        star.style.animationDuration = `${duration}s`;
+                        const delay = Math.random() * duration * -1;
+                        star.style.animationDelay = `${delay}s`;
+                        field.appendChild(star);
+                    }
+                    
+                    for (let i = 0; i < count; i++) {
+                        createStar();
+                    }
+                });
+                
+                // Apply gradients
+                folder.querySelectorAll('.course-card-block[data-gradient]').forEach(el => {
+                    const grad = el.getAttribute('data-gradient');
+                    if (grad && grad.includes('linear-gradient')) {
+                        el.style.background = grad;
+                    }
+                });
+            }, 100);
+        } else {
+            folder.style.display = 'none';
+            if (icon) {
+                icon.style.transform = 'rotate(-90deg)';
+                icon.style.transition = 'transform 0.3s ease';
+            }
+        }
+    }
+}
+
+// Show Restore All Trash Modal
+function showRestoreAllTrashModal() {
+    const modal = document.getElementById('restoreAllTrashModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeRestoreAllTrashModal() {
+    const modal = document.getElementById('restoreAllTrashModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+// Confirm Restore All Trash Courses
+function confirmRestoreAllTrashCourses() {
+    fetch('{% url "dashboard:instructor_restore_all_courses" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Clear localStorage to remove permanently deleted courses from cache
+            try {
+                const instructorId = {% if user.is_teacher %}{{ user.id }}{% else %}null{% endif %};
+                if (instructorId) {
+                    const COURSES_KEY = 'schedule_manager_courses_v1_instructor_' + instructorId;
+                    localStorage.removeItem(COURSES_KEY);
+                    console.log('Cleared localStorage after permanent deletion of all courses');
+                }
+            } catch (e) {
+                console.warn('Could not clear localStorage:', e);
+            }
+            
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'success');
+            }
+            closeRestoreAllTrashModal();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'error');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        }
+    });
+}
+
+// Show Delete All Permanent Modal
+function showDeleteAllPermanentModal() {
+    const modal = document.getElementById('deleteAllPermanentModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeDeleteAllPermanentModal() {
+    const modal = document.getElementById('deleteAllPermanentModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+// Confirm Permanently Delete All Courses
+function confirmDeleteAllPermanentCourses() {
+    fetch('{% url "dashboard:instructor_permanent_delete_all_courses" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Clear localStorage to remove permanently deleted courses from cache
+            try {
+                const instructorId = {% if user.is_teacher %}{{ user.id }}{% else %}null{% endif %};
+                if (instructorId) {
+                    const COURSES_KEY = 'schedule_manager_courses_v1_instructor_' + instructorId;
+                    localStorage.removeItem(COURSES_KEY);
+                    console.log('Cleared localStorage after permanent deletion of all courses');
+                }
+            } catch (e) {
+                console.warn('Could not clear localStorage:', e);
+            }
+            
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'success');
+            }
+            closeDeleteAllPermanentModal();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'error');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        }
+    });
+}
+
+// Course functions
+function restoreCourse(courseId, code, name) {
+    currentCourseId = courseId;
+    document.getElementById('restoreCourseMessage').textContent = `Are you sure you want to restore "${code} - ${name}"?`;
+    document.getElementById('restoreCourseModal').classList.remove('hidden');
+}
+
+function closeRestoreCourseModal() {
+    document.getElementById('restoreCourseModal').classList.add('hidden');
+    currentCourseId = null;
+}
+
+function confirmRestoreCourse() {
+    if (!currentCourseId) return;
+    
+    fetch(`{% url 'dashboard:instructor_restore_course' 0 %}`.replace('0', currentCourseId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'success');
+            }
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'error');
+            }
+        }
+        closeRestoreCourseModal();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        }
+        closeRestoreCourseModal();
+    });
+}
+
+function permanentDeleteCourse(courseId, code, name) {
+    currentCourseId = courseId;
+    document.getElementById('deleteCourseMessage').textContent = `Are you sure you want to permanently delete "${code} - ${name}"? This action cannot be undone.`;
+    document.getElementById('deleteCourseModal').classList.remove('hidden');
+}
+
+function closeDeleteCourseModal() {
+    document.getElementById('deleteCourseModal').classList.add('hidden');
+    currentCourseId = null;
+}
+
+function confirmDeleteCourse() {
+    if (!currentCourseId) return;
+    
+    fetch(`{% url 'dashboard:instructor_permanent_delete_course' 0 %}`.replace('0', currentCourseId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Clear localStorage to remove permanently deleted course from cache
+            try {
+                const instructorId = {% if user.is_teacher %}{{ user.id }}{% else %}null{% endif %};
+                if (instructorId) {
+                    const COURSES_KEY = 'schedule_manager_courses_v1_instructor_' + instructorId;
+                    localStorage.removeItem(COURSES_KEY);
+                    console.log('Cleared localStorage after permanent deletion of course');
+                }
+            } catch (e) {
+                console.warn('Could not clear localStorage:', e);
+            }
+            
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'success');
+            }
+            // Reload page to refresh timetable
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'error');
+            }
+        }
+        closeDeleteCourseModal();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        }
+        closeDeleteCourseModal();
+    });
+}
+
+// Enrollment functions
+function restoreEnrollment(enrollmentId, studentName) {
+    currentEnrollmentId = enrollmentId;
+    document.getElementById('restoreEnrollmentMessage').textContent = `Are you sure you want to restore enrollment for "${studentName}"?`;
+    document.getElementById('restoreEnrollmentModal').classList.remove('hidden');
+}
+
+function closeRestoreEnrollmentModal() {
+    document.getElementById('restoreEnrollmentModal').classList.add('hidden');
+    currentEnrollmentId = null;
+}
+
+function confirmRestoreEnrollment() {
+    if (!currentEnrollmentId) return;
+    
+    fetch(`{% url 'dashboard:instructor_restore_enrollment' 0 %}`.replace('0', currentEnrollmentId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'success');
+            }
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'error');
+            }
+        }
+        closeRestoreEnrollmentModal();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        }
+        closeRestoreEnrollmentModal();
+    });
+}
+
+function permanentDeleteEnrollment(enrollmentId, studentName) {
+    currentEnrollmentId = enrollmentId;
+    document.getElementById('deleteEnrollmentMessage').textContent = `Are you sure you want to permanently delete enrollment for "${studentName}"? This action cannot be undone.`;
+    document.getElementById('deleteEnrollmentModal').classList.remove('hidden');
+}
+
+function closeDeleteEnrollmentModal() {
+    document.getElementById('deleteEnrollmentModal').classList.add('hidden');
+    currentEnrollmentId = null;
+}
+
+function confirmDeleteEnrollment() {
+    if (!currentEnrollmentId) return;
+    
+    fetch(`{% url 'dashboard:instructor_permanent_delete_enrollment' 0 %}`.replace('0', currentEnrollmentId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'success');
+            }
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'error');
+            }
+        }
+        closeDeleteEnrollmentModal();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        }
+        closeDeleteEnrollmentModal();
+    });
+}
+
+// View archived course students
+let allArchivedEnrollments = [];
+
+function viewArchivedCourseStudents(courseId) {
+    const modal = document.getElementById('archivedCourseStudentsModal');
+    const courseNameElement = document.getElementById('archived-course-name');
+    const studentsListElement = document.getElementById('archived-course-students-list');
+    const courseIdInput = document.getElementById('archived-course-id');
+    const sectionFilterContainer = document.getElementById('archived-section-filter-container');
+    const sectionFilter = document.getElementById('archived-section-filter');
+    
+    if (!modal || !courseNameElement || !studentsListElement || !courseIdInput) {
+        console.error('Modal elements not found');
+        return;
+    }
+    
+    courseIdInput.value = courseId;
+    studentsListElement.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">Loading students...</p>';
+    courseNameElement.textContent = 'Loading...';
+    sectionFilterContainer.classList.add('hidden');
+    
+    modal.classList.remove('hidden');
+    
+    // Fetch course enrollments
+    fetch(`{% url 'dashboard:instructor_course_enrollments' 0 %}`.replace('0', courseId), {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Enrollments data:', data); // Debug log
+        if (data.success && data.enrollments) {
+            courseNameElement.textContent = `Course: ${data.course_name || 'N/A'}`;
+            
+            // Store all enrollments
+            allArchivedEnrollments = data.enrollments || [];
+            document.getElementById('archived-all-enrollments').value = JSON.stringify(allArchivedEnrollments);
+            
+            // Show section filter if multi-section course
+            console.log('Sections data:', data.sections, 'is_multi_section:', data.is_multi_section, 'sections length:', data.sections ? data.sections.length : 0); // Debug
+            if (data.sections && Array.isArray(data.sections) && data.sections.length > 1) {
+                sectionFilterContainer.classList.remove('hidden');
+                sectionFilter.innerHTML = '<option value="all">All Students</option>';
+                data.sections.forEach(section => {
+                    if (section && section !== 'N/A') {
+                        const option = document.createElement('option');
+                        option.value = section;
+                        option.textContent = `Section ${section}`;
+                        sectionFilter.appendChild(option);
+                    }
+                });
+            } else {
+                sectionFilterContainer.classList.add('hidden');
+            }
+            
+            // Display all students
+            if (allArchivedEnrollments.length > 0) {
+                displayArchivedStudents(allArchivedEnrollments);
+            } else {
+                studentsListElement.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">No students enrolled in this course.</p>';
+            }
+        } else {
+            courseNameElement.textContent = 'Error loading course';
+            studentsListElement.innerHTML = '<p class="text-sm text-red-500 text-center py-4">' + (data.message || 'Failed to load students. Please try again.') + '</p>';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        courseNameElement.textContent = 'Error loading course';
+        studentsListElement.innerHTML = '<p class="text-sm text-red-500 text-center py-4">An error occurred. Please try again.</p>';
+    });
+}
+
+function filterArchivedStudentsBySection() {
+    const sectionFilter = document.getElementById('archived-section-filter');
+    const selectedSection = sectionFilter ? sectionFilter.value : 'all';
+    
+    if (!allArchivedEnrollments || allArchivedEnrollments.length === 0) {
+        // Try to reload from hidden input
+        const stored = document.getElementById('archived-all-enrollments').value;
+        if (stored) {
+            try {
+                allArchivedEnrollments = JSON.parse(stored);
+            } catch (e) {
+                console.error('Error parsing stored enrollments:', e);
+            }
+        }
+    }
+    
+    if (selectedSection === 'all') {
+        displayArchivedStudents(allArchivedEnrollments);
+    } else {
+        const filtered = allArchivedEnrollments.filter(e => {
+            const enrollmentSection = (e.section || '').toString().toUpperCase();
+            const selectedSectionUpper = selectedSection.toString().toUpperCase();
+            return enrollmentSection === selectedSectionUpper;
+        });
+        displayArchivedStudents(filtered, selectedSection);
+    }
+}
+
+function displayArchivedStudents(enrollments, filterSection = null) {
+    const studentsListElement = document.getElementById('archived-course-students-list');
+    
+    if (!enrollments || enrollments.length === 0) {
+        studentsListElement.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">No students found.</p>';
+        return;
+    }
+    
+    // Group by section if showing all
+    let html = '';
+    if (filterSection === null && enrollments.length > 0) {
+        // Group by section
+        const groupedBySection = {};
+        enrollments.forEach(enrollment => {
+            const section = (enrollment.section || 'N/A').toString().toUpperCase();
+            if (!groupedBySection[section]) {
+                groupedBySection[section] = [];
+            }
+            groupedBySection[section].push(enrollment);
+        });
+        
+        // Sort sections
+        const sortedSections = Object.keys(groupedBySection).sort();
+        
+        sortedSections.forEach((section) => {
+            html += `
+                <div class="mb-4">
+                    <h4 class="text-sm font-bold text-purple-700 mb-2 px-2 py-1 bg-purple-50 rounded">
+                        <i class="fas fa-users mr-2"></i>Section ${section} (${groupedBySection[section].length} ${groupedBySection[section].length === 1 ? 'student' : 'students'})
+                    </h4>
+                    <div class="space-y-2">
+            `;
+            
+            groupedBySection[section].forEach((enrollment, index) => {
+                const profilePic = enrollment.profile_picture || null;
+                const initial = (enrollment.full_name || enrollment.student_name || 'N/A').charAt(0).toUpperCase();
+                const enrollmentCode = enrollment.enrollment_code || 'N/A';
+                const sectionDisplay = enrollment.section || 'N/A';
+                
+                html += `
+                    <div class="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition cursor-pointer" onclick="showArchivedStudentDetails(${enrollment.id}, '${(enrollment.full_name || enrollment.student_name || 'N/A').replace(/'/g, "\\'")}', '${(enrollment.email || 'N/A').replace(/'/g, "\\'")}', '${(enrollment.student_id_number || 'N/A').replace(/'/g, "\\'")}', '${sectionDisplay.replace(/'/g, "\\'")}', '${enrollmentCode.replace(/'/g, "\\'")}', ${enrollment.year_level || 'null'}, '${(enrollment.enrolled_at || 'N/A').replace(/'/g, "\\'")}', ${profilePic ? "'" + profilePic.replace(/'/g, "\\'") + "'" : 'null'})">
+                        <div class="flex items-center gap-3 flex-1">
+                            <div class="flex-shrink-0">
+                                ${profilePic ? `
+                                <img src="${profilePic}" alt="${(enrollment.full_name || enrollment.student_name || 'N/A').replace(/"/g, '&quot;')}" class="w-12 h-12 rounded-full object-cover border-2 border-gray-200 shadow">
+                                ` : `
+                                <div class="w-12 h-12 rounded-full flex items-center justify-center font-bold text-white shadow" style="background: linear-gradient(135deg, #3C4770, #447294);">
+                                    ${initial}
+                                </div>
+                                `}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <p class="text-sm font-semibold text-gray-900">${(enrollment.full_name || enrollment.student_name || 'N/A').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                                    <span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-purple-50 text-purple-600 border border-purple-100">Sec ${sectionDisplay}</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-0.5">ID: ${(enrollment.student_id_number || 'N/A').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                                <p class="text-xs text-purple-600 mt-0.5 font-mono">Code: ${enrollmentCode}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+    } else {
+        // Show filtered list (single section)
+        enrollments.forEach((enrollment, index) => {
+            const profilePic = enrollment.profile_picture || null;
+            const initial = (enrollment.full_name || enrollment.student_name || 'N/A').charAt(0).toUpperCase();
+            const enrollmentCode = enrollment.enrollment_code || 'N/A';
+            const sectionDisplay = enrollment.section || 'N/A';
+            
+            html += `
+                <div class="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition cursor-pointer" onclick="showArchivedStudentDetails(${enrollment.id}, '${(enrollment.full_name || enrollment.student_name || 'N/A').replace(/'/g, "\\'")}', '${(enrollment.email || 'N/A').replace(/'/g, "\\'")}', '${(enrollment.student_id_number || 'N/A').replace(/'/g, "\\'")}', '${sectionDisplay.replace(/'/g, "\\'")}', '${enrollmentCode.replace(/'/g, "\\'")}', ${enrollment.year_level || 'null'}, '${(enrollment.enrolled_at || 'N/A').replace(/'/g, "\\'")}', ${profilePic ? "'" + profilePic.replace(/'/g, "\\'") + "'" : 'null'})">
+                    <div class="flex items-center gap-3 flex-1">
+                        <div class="flex-shrink-0">
+                            ${profilePic ? `
+                            <img src="${profilePic}" alt="${(enrollment.full_name || enrollment.student_name || 'N/A').replace(/"/g, '&quot;')}" class="w-12 h-12 rounded-full object-cover border-2 border-gray-200 shadow">
+                            ` : `
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center font-bold text-white shadow" style="background: linear-gradient(135deg, #3C4770, #447294);">
+                                ${initial}
+                            </div>
+                            `}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <p class="text-sm font-semibold text-gray-900">${(enrollment.full_name || enrollment.student_name || 'N/A').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                                <span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-purple-50 text-purple-600 border border-purple-100">Sec ${sectionDisplay}</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-0.5">ID: ${(enrollment.student_id_number || 'N/A').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                            <p class="text-xs text-purple-600 mt-0.5 font-mono">Code: ${enrollmentCode}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+    
+    studentsListElement.innerHTML = html;
+}
+
+function closeArchivedCourseStudentsModal() {
+    const modal = document.getElementById('archivedCourseStudentsModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        allArchivedEnrollments = [];
+        const sectionFilter = document.getElementById('archived-section-filter');
+        if (sectionFilter) {
+            sectionFilter.value = 'all';
+        }
+    }
+}
+
+// Show archived student details
+function showArchivedStudentDetails(enrollmentId, fullName, email, studentId, section, enrollmentCode, yearLevel, enrolledDate, profilePicUrl) {
+    section = (section || 'N/A').toUpperCase();
+    document.getElementById('archived-modal-student-name').textContent = fullName;
+    document.getElementById('archived-modal-full-name').textContent = fullName;
+    document.getElementById('archived-modal-email').textContent = email || 'N/A';
+    document.getElementById('archived-modal-student-id').textContent = studentId || 'N/A';
+    document.getElementById('archived-modal-section').textContent = section;
+    document.getElementById('archived-modal-enrollment-code').textContent = enrollmentCode || 'N/A';
+    function formatYearLabel(year) {
+        if (!year) return 'N/A';
+        const num = parseInt(year);
+        if (isNaN(num)) return year;
+        const mod100 = num % 100;
+        const mod10 = num % 10;
+        let suffix = 'th';
+        if (mod10 === 1 && mod100 !== 11) suffix = 'st';
+        else if (mod10 === 2 && mod100 !== 12) suffix = 'nd';
+        else if (mod10 === 3 && mod100 !== 13) suffix = 'rd';
+        return num + suffix + ' Year';
+    }
+    document.getElementById('archived-modal-year-level').textContent = formatYearLabel(yearLevel);
+    document.getElementById('archived-modal-enrolled-date').textContent = enrolledDate || 'N/A';
+    
+    const profilePicDiv = document.getElementById('archived-modal-profile-pic');
+    if (profilePicUrl && profilePicUrl !== 'null' && profilePicUrl !== '') {
+        profilePicDiv.innerHTML = `<img src="${profilePicUrl}" alt="${fullName}" class="w-full h-full object-cover rounded-full">`;
+        profilePicDiv.className = 'w-24 h-24 rounded-full border-2 border-gray-200 shadow mb-4 flex items-center justify-center overflow-hidden bg-white';
+    } else {
+        const initial = fullName.charAt(0).toUpperCase();
+        profilePicDiv.innerHTML = `<span class="text-3xl font-bold text-white">${initial}</span>`;
+        profilePicDiv.className = 'w-24 h-24 rounded-full border-2 border-gray-200 shadow mb-4 flex items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-600';
+    }
+    document.getElementById('archivedStudentDetailModal').classList.remove('hidden');
+}
+
+function closeArchivedStudentDetails() {
+    document.getElementById('archivedStudentDetailModal').classList.add('hidden');
+}
+
+// Restore all archived courses
+function restoreAllArchivedCourses() {
+    const modal = document.getElementById('restoreAllArchivedModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeRestoreAllArchivedModal() {
+    const modal = document.getElementById('restoreAllArchivedModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function confirmRestoreAllArchivedCourses() {
+    fetch('{% url "dashboard:instructor_restore_all_archived_courses" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'success');
+            }
+            closeRestoreAllArchivedModal();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message, 'error');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        }
+    });
+}
+</script>
+{% endblock %}
+

@@ -1,0 +1,106 @@
+<!-- templates/dashboard/admin_courses.html -->
+{% extends 'partials/base.html' %}
+{% load static %}
+{% block title %}Admin Dashboard - Course Directory{% endblock %}
+{% block navigation %}
+<!-- Override default navigation - no top bar for admin -->
+{% endblock %}
+{% block content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<style>
+    body { 
+        font-family: 'Inter', sans-serif; 
+        background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);
+    }
+</style>
+
+<!-- Admin Top Bar -->
+{% include 'dashboard/admin/admin_topbar.html' %}
+
+<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+    <!-- Sidebar -->
+    {% include 'dashboard/admin/admin_sidebar.html' %}
+
+    <main id="main-content" class="flex-grow p-2 lg:p-3 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+        <div class="p-2 md:p-3 bg-white lg:bg-gray-50 flex-grow rounded-lg shadow-inner min-h-full">
+            <div class="flex flex-col md:flex-row md:justify-between md:items-start gap-2 mb-3">
+                <div class="flex-1 min-w-0">
+                    <h1 class="text-lg font-bold text-gray-900 mb-1 flex items-center">
+                        <i class="fas fa-book-open w-5 h-5 mr-2" style="color: #3C4770;"></i> 
+                        {% if user.education_level == 'university_college' %}
+                        Course Directory
+                        {% else %}
+                        Subject Directory
+                        {% endif %}
+                    </h1>
+                    <p class="text-xs text-gray-600 break-words">Browse and view all academic {% if user.education_level == 'university_college' %}courses{% else %}subjects{% endif %} for <strong class="break-words">{{ user.school_name|default:"All Schools" }}</strong>. Course management is handled by instructors.</p>
+                </div>
+            </div>
+            
+            <!-- Page Header: Departments -->
+            <div class="flex items-center mb-4">
+                <i class="fas fa-building w-5 h-5 mr-2" style="color: #3C4770;"></i>
+                <h2 class="text-lg font-bold text-gray-900">Departments</h2>
+            </div>
+            
+            <!-- Departments as Folder Cards (Larger Size) -->
+            <div id="departments-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {% for dept_data in departments_with_data %}
+                {% with dept=dept_data.department %}
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 transition hover:shadow-xl department-card cursor-pointer" 
+                     data-code="{{ dept.code|lower }}" 
+                     data-name="{{ dept.name|lower }}"
+                     data-dept-id="{{ dept.id }}"
+                     onclick="window.location.href='{% url 'dashboard:admin_department_courses' dept.id %}'">
+                    <!-- Department Icon Section -->
+                    <div class="h-32 flex items-center justify-center" style="background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);">
+                        {% if dept.icon %}
+                        <img src="{{ dept.icon.url }}" alt="{{ dept.code }}" class="w-20 h-20 object-contain rounded">
+                        {% else %}
+                        <div class="w-20 h-20 rounded flex items-center justify-center" style="background-color: #3C4770; color: white;">
+                            <i class="fas fa-building text-4xl"></i>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Department Info Section -->
+                    <div class="p-5">
+                        <div class="flex justify-between items-start mb-3">
+                            <div class="flex-1 flex items-center gap-3">
+                                {% if dept.icon %}
+                                <img src="{{ dept.icon.url }}" alt="{{ dept.code }}" class="w-12 h-12 object-contain rounded flex-shrink-0">
+                                {% else %}
+                                <div class="w-12 h-12 rounded flex items-center justify-center flex-shrink-0" style="background-color: #3C4770; color: white;">
+                                    <i class="fas fa-building text-lg"></i>
+                                </div>
+                                {% endif %}
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-xl font-bold text-gray-800 break-words">{% if dept.code %}{{ dept.code }}{% else %}N/A{% endif %}</h4>
+                                    <p class="text-sm text-gray-600 mt-1 break-words">{{ dept.name }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-3">
+                            <i class="fas fa-graduation-cap mr-1"></i>
+                            {{ dept_data.program_count }} Program{{ dept_data.program_count|pluralize }}
+                        </p>
+                        <div class="mt-4 flex items-center text-base text-gray-600">
+                            <i class="fas fa-arrow-right mr-2"></i>
+                            <span>Click to view</span>
+                        </div>
+                    </div>
+                </div>
+                {% endwith %}
+                {% empty %}
+                <div class="col-span-3 text-center p-8 bg-gray-50 rounded-xl">
+                    <i class="fas fa-building text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-gray-600">No departments found{% if search_query %} matching "{{ search_query }}"{% endif %}.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}

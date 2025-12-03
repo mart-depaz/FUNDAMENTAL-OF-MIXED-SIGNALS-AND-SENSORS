@@ -1,0 +1,1120 @@
+{% extends 'dashboard/instructor/teacher.html' %}
+{% block title %}Attendance Reports{% endblock %}
+{% block dashboard_content %}
+<!-- Notification System -->
+{% include 'dashboard/shared/notification_system.html' %}
+
+<div class="p-4 md:p-8 bg-gradient-to-br from-gray-50 via-white to-gray-50 flex-grow rounded-2xl min-h-full">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900 flex items-center">
+                <i class="fas fa-chart-pie w-6 h-6 mr-3" style="color: #3C4770;"></i> Attendance Reports
+            </h1>
+            <p class="text-sm text-gray-600 mt-1">Quick access to class attendance and detailed reports</p>
+        </div>
+    </div>
+
+    <!-- Two Column Layout: Quick Pick and Course List -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Quick Pick Section (Left/Top) - Matching My Classes Style -->
+        <div class="bg-white rounded-2xl shadow p-4 border border-gray-100 flex flex-col" style="position: sticky; top: 0;">
+            <h3 class="text-sm font-semibold text-gray-800 mb-3 flex-shrink-0">Quick Pick</h3>
+            <div class="space-y-2 overflow-y-auto" style="height: calc(5 * 4.5rem); max-height: calc(5 * 4.5rem);">
+                {% if quick_pick_schedules %}
+                    {% for schedule in quick_pick_schedules %}
+                    {% if schedule.status == 'finished' or schedule.status == 'ended' %}
+                    <a href="{% url 'dashboard:instructor_attendance_reports' %}?course={{ schedule.course_id }}&section={{ schedule.section }}&day_filter=all&month_filter=&week_filter="
+                       class="quick-pick-item flex items-center justify-between p-3 rounded-xl border transition border-gray-200 no-underline hover:no-underline flex-shrink-0 hover:border-indigo-300 hover:bg-indigo-50/40 cursor-pointer">
+                    {% else %}
+                    <div onclick="viewClassAttendance('{{ schedule.course_id }}', '{{ schedule.section }}', '{{ schedule.date|date:"Y-m-d" }}', '{{ schedule.course_code }}', '{{ schedule.course_name }}', '{{ schedule.status }}', '{{ schedule.start_time|time:"H:i" }}', '{{ schedule.end_time|time:"H:i" }}')"
+                         class="quick-pick-item flex items-center justify-between p-3 rounded-xl border transition border-gray-200 flex-shrink-0 hover:border-indigo-300 hover:bg-indigo-50/40 cursor-pointer">
+                    {% endif %}
+                        <div class="min-w-0">
+                            {% if schedule.section and schedule.section != 'N/A' %}
+                            <p class="mb-1">
+                                <span class="px-2 py-0.5 rounded-full font-bold text-[10px] text-white" style="background-color: {{ schedule.color|default:'#3C4770' }};">Section {{ schedule.section }}</span>
+                            </p>
+                            {% endif %}
+                            <p class="text-sm font-semibold text-gray-900 truncate">{{ schedule.course_code }} • {{ schedule.course_name }}</p>
+                            <p class="text-[11px] text-gray-600 uppercase tracking-wide mt-0.5 truncate">{% if schedule.date_label %}{{ schedule.date_label }}{% else %}{{ schedule.date|date:"M d, Y" }}{% endif %} • {% if schedule.time_label %}{{ schedule.time_label }}{% else %}{{ schedule.start_time|time:"g:i A" }} - {{ schedule.end_time|time:"g:i A" }}{% endif %}</p>
+                        </div>
+                        {% if schedule.status == 'live' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 uppercase">Live</span>
+                        {% elif schedule.status == 'starting_today' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 uppercase">Starting Today</span>
+                        {% elif schedule.status == 'tomorrow' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 uppercase">Tomorrow</span>
+                        {% elif schedule.status == 'upcoming' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700 uppercase">Upcoming</span>
+                        {% elif schedule.status == 'soon' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 uppercase">Soon</span>
+                        {% elif schedule.status == 'ongoing' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 uppercase">Ongoing</span>
+                        {% else %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-600 uppercase">Finished</span>
+                        {% endif %}
+                    {% if schedule.status == 'finished' or schedule.status == 'ended' %}
+                    </a>
+                    {% else %}
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                {% else %}
+                    <p class="text-xs text-gray-500">No active schedules yet.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Course List Section (Right/Bottom) -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-900 flex items-center">
+                    <i class="fas fa-list mr-2 text-indigo-600"></i> Course List
+                </h2>
+            </div>
+            <p class="text-sm text-gray-600 mb-4">Select a course and section to view detailed attendance records</p>
+            
+            <div class="space-y-3 max-h-[600px] overflow-y-auto pr-2" id="course-list-container">
+                {% if grouped_courses %}
+                    {% for course in grouped_courses %}
+                    <div class="border-2 border-gray-200 rounded-xl p-4 hover:shadow-md transition duration-200">
+                        <div class="flex justify-between items-start mb-3">
+                            <div class="flex-1">
+                                <h3 class="font-bold text-gray-900 text-lg">{{ course.code }}</h3>
+                                <p class="text-sm text-gray-600">{{ course.name }}</p>
+                                {% if course.semester or course.school_year %}
+                                <p class="text-xs text-gray-500 mt-1">
+                                    {{ course.semester|title }} Semester{% if course.school_year %} - {{ course.school_year }}{% endif %}
+                                </p>
+                                {% endif %}
+                            </div>
+                            {% if course.sections|length > 1 %}
+                            <span class="px-3 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
+                                {{ course.sections|length }} Sections
+                            </span>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mt-3">
+                            {% if course.sections|length > 1 %}
+                                <label class="block text-xs font-medium text-gray-700 mb-2">Select Section:</label>
+                                <div class="flex flex-wrap gap-2">
+                                    <button onclick="viewCourseSection('{{ course.id }}', 'all')" 
+                                            class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition">
+                                        All Sections
+                                    </button>
+                                    {% for section in course.sections %}
+                                    <button onclick="viewCourseSection('{{ course.id }}', '{{ section }}')" 
+                                            class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition">
+                                        {{ section }}
+                                    </button>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <button onclick="viewCourseSection('{{ course.id }}', '{{ course.sections.0|default:"all" }}')" 
+                                        class="w-full px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150 text-sm">
+                                    <i class="fas fa-chart-bar mr-2"></i>View Attendance Records
+                                </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-12">
+                        <i class="fas fa-book text-4xl text-gray-300 mb-3"></i>
+                        <p class="text-gray-500">No courses available</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Detailed View Section (Hidden by default) - Course Folder Style -->
+    <div id="detailed-view-section" class="hidden bg-white rounded-2xl shadow-lg border border-gray-100 mb-6 overflow-hidden">
+        <!-- Course Folder Header -->
+        <div class="bg-gradient-to-r px-6 py-4 border-b border-gray-200" style="background: linear-gradient(135deg, {{ selected_course.color|default:'#3C4770' }} 0%, {{ selected_course.color|default:'#447294' }} 100%);">
+            <div class="flex justify-between items-center">
+                <div class="flex-1">
+                    <h2 class="text-xl font-bold text-white" id="detailed-view-title">{{ selected_course.code }} - {{ selected_course.name }}</h2>
+                    <p class="text-sm text-white/90 mt-1" id="detailed-view-subtitle">
+                        {% if section_filter %}Section: {{ section_filter }}{% else %}All Sections{% endif %}
+                    </p>
+                </div>
+                <button onclick="closeDetailedView()" class="ml-4 px-4 py-2 bg-white/20 backdrop-blur-sm text-white font-semibold rounded-lg hover:bg-white/30 transition border border-white/30">
+                    <i class="fas fa-times mr-2"></i>Close
+                </button>
+            </div>
+        </div>
+        
+        <div id="detailed-view-content" class="p-6">
+            <!-- All content will be rendered here when course is selected -->
+        </div>
+    </div>
+</div>
+
+<!-- Class Attendance Modal -->
+<div id="classAttendanceModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div class="sticky top-0 bg-white border-b border-gray-200 p-6 flex justify-between items-center">
+            <div>
+                <h3 class="text-2xl font-bold text-gray-900" id="modal-class-title"></h3>
+                <p class="text-sm text-gray-600 mt-1" id="modal-class-subtitle"></p>
+            </div>
+            <button onclick="closeClassAttendanceModal()" class="text-gray-400 hover:text-gray-600 transition">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="p-6" id="modal-class-content">
+            <!-- Attendance data will be loaded here -->
+        </div>
+    </div>
+</div>
+
+<script>
+// View class attendance from Quick Pick
+function viewClassAttendance(courseId, section, date, courseCode, courseName, status, startTime, endTime) {
+    // Show modal with status-based messages
+    document.getElementById('modal-class-title').textContent = `${courseCode} - ${courseName}`;
+    document.getElementById('modal-class-subtitle').textContent = `Section: ${section} | Date: ${date}`;
+    
+    let content = '';
+    
+    // Check schedule status and show appropriate message
+    if (status === 'finished' || status === 'ended') {
+        // Class has finished - show attendance data
+        content = `
+            <div class="text-center py-8">
+                <i class="fas fa-spinner fa-spin text-3xl text-indigo-600 mb-3"></i>
+                <p>Loading attendance data...</p>
+            </div>
+        `;
+        document.getElementById('modal-class-content').innerHTML = content;
+        document.getElementById('classAttendanceModal').classList.remove('hidden');
+        
+        // Load attendance data via redirect
+        const url = `{% url 'dashboard:instructor_attendance_reports' %}?course=${courseId}&section=${section}&day_filter=all&month_filter=&week_filter=`;
+        window.location.href = url;
+    } else if (status === 'upcoming' || status === 'soon' || status === 'tomorrow' || status === 'starting_today') {
+        // Class hasn't started yet
+        function formatTime(timeStr) {
+            if (!timeStr) return 'TBA';
+            const [hours, minutes] = timeStr.split(':');
+            const hour = parseInt(hours);
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            const displayHour = hour % 12 || 12;
+            return `${displayHour}:${minutes} ${ampm}`;
+        }
+        const scheduleTime = startTime && endTime ? `${formatTime(startTime)} - ${formatTime(endTime)}` : 'TBA';
+        content = `
+            <div class="text-center py-12">
+                <div class="w-20 h-20 mx-auto mb-4 bg-yellow-100 rounded-full flex items-center justify-center">
+                    <i class="fas fa-calendar-alt text-3xl text-yellow-600"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 mb-2">Schedule Not Started Yet</h3>
+                <p class="text-gray-600 mb-4">This class schedule has not started yet.</p>
+                <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                    <p class="text-sm text-gray-700"><strong>Schedule Time:</strong> ${scheduleTime}</p>
+                    <p class="text-sm text-gray-700 mt-2"><strong>Date:</strong> ${date}</p>
+                </div>
+                <p class="text-sm text-gray-500">Attendance records will be available after the class has finished.</p>
+                <p class="text-xs text-gray-400 mt-2">No students have attended yet.</p>
+                <div class="mt-6">
+                    <button onclick="closeClassAttendanceModal()" class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition">
+                        Close
+                    </button>
+                </div>
+            </div>
+        `;
+        document.getElementById('modal-class-content').innerHTML = content;
+        document.getElementById('classAttendanceModal').classList.remove('hidden');
+    } else if (status === 'ongoing' || status === 'live') {
+        // Class is currently ongoing
+        function formatTime(timeStr) {
+            if (!timeStr) return 'TBA';
+            const [hours, minutes] = timeStr.split(':');
+            const hour = parseInt(hours);
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            const displayHour = hour % 12 || 12;
+            return `${displayHour}:${minutes} ${ampm}`;
+        }
+        content = `
+            <div class="text-center py-12">
+                <div class="w-20 h-20 mx-auto mb-4 bg-blue-100 rounded-full flex items-center justify-center">
+                    <i class="fas fa-clock text-3xl text-blue-600"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 mb-2">Class is Currently Ongoing</h3>
+                <p class="text-gray-600 mb-4">This class is currently in session.</p>
+                <div class="bg-blue-50 rounded-lg p-4 mb-4">
+                    <p class="text-sm text-gray-700"><strong>Start Time:</strong> ${formatTime(startTime)}</p>
+                    <p class="text-sm text-gray-700 mt-2"><strong>End Time:</strong> ${formatTime(endTime)}</p>
+                </div>
+                <p class="text-sm text-gray-500 mb-4">Attendance records will be available after the class has finished.</p>
+                <div class="mt-6">
+                    <button onclick="closeClassAttendanceModal()" class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition">
+                        Close
+                    </button>
+                </div>
+            </div>
+        `;
+        document.getElementById('modal-class-content').innerHTML = content;
+        document.getElementById('classAttendanceModal').classList.remove('hidden');
+    } else {
+        // Default message
+        content = `
+            <div class="text-center py-12">
+                <div class="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                    <i class="fas fa-info-circle text-3xl text-gray-600"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 mb-2">No Attendance Data Available</h3>
+                <p class="text-gray-600 mb-4">Attendance records are not available for this schedule.</p>
+                <div class="mt-6">
+                    <button onclick="closeClassAttendanceModal()" class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition">
+                        Close
+                    </button>
+                </div>
+            </div>
+        `;
+        document.getElementById('modal-class-content').innerHTML = content;
+        document.getElementById('classAttendanceModal').classList.remove('hidden');
+    }
+}
+
+function closeClassAttendanceModal() {
+    document.getElementById('classAttendanceModal').classList.add('hidden');
+}
+
+// View course section from Course List
+function viewCourseSection(courseId, section) {
+    const url = `{% url 'dashboard:instructor_attendance_reports' %}?course=${courseId}&section=${section}&day_filter=all&month_filter=&week_filter=`;
+    window.location.href = url;
+}
+
+function closeDetailedView() {
+    const detailedView = document.getElementById('detailed-view-section');
+    if (detailedView) {
+        detailedView.classList.add('hidden');
+        // Clear URL parameters to reset view
+        const url = new URL(window.location);
+        url.searchParams.delete('course');
+        url.searchParams.delete('section');
+        url.searchParams.delete('day_filter');
+        url.searchParams.delete('month_filter');
+        url.searchParams.delete('week_filter');
+        window.history.pushState({}, '', url);
+        // Scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+}
+
+// Toggle date folder
+function toggleDateFolder(folderId) {
+    const folder = document.getElementById(folderId);
+    const icon = document.getElementById(folderId.replace('date-folder-', 'date-folder-icon-'));
+    if (folder && icon) {
+        folder.classList.toggle('hidden');
+        icon.classList.toggle('fa-chevron-down');
+        icon.classList.toggle('fa-chevron-up');
+    }
+}
+
+// Auto-scroll to detailed view if filters are set
+document.addEventListener('DOMContentLoaded', function() {
+    {% if selected_course %}
+        // Show detailed view section
+        const detailedView = document.getElementById('detailed-view-section');
+        if (detailedView) {
+            detailedView.classList.remove('hidden');
+            
+            // Populate with existing data (title is already set in template)
+            
+            // Expand all date folders by default
+            setTimeout(() => {
+                const dateFolders = document.querySelectorAll('[id^="date-folder-"]:not([id*="icon"])');
+                dateFolders.forEach(folder => {
+                    if (folder.id.startsWith('date-folder-') && !folder.id.includes('icon')) {
+                        folder.classList.remove('hidden');
+                        const iconId = folder.id.replace('date-folder-', 'date-folder-icon-');
+                        const icon = document.getElementById(iconId);
+                        if (icon) {
+                            icon.classList.remove('fa-chevron-down');
+                            icon.classList.add('fa-chevron-up');
+                        }
+                    }
+                });
+            }, 200);
+            
+            // Scroll to detailed view
+            setTimeout(() => {
+                detailedView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+        }
+    {% endif %}
+});
+</script>
+
+<!-- Include the existing detailed view content if course is selected - Inside Course Folder -->
+{% if selected_course %}
+    {% if selected_sections|length <= 1 or section_filter %}
+    <script>
+    // Move content inside detailed-view-content when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        const detailedViewContent = document.getElementById('detailed-view-content');
+        const detailedViewActual = document.getElementById('detailed-view-content-actual');
+        if (detailedViewContent && detailedViewActual) {
+            // Move all content from detailed-view-content-actual to detailed-view-content
+            while (detailedViewActual.firstChild) {
+                detailedViewContent.appendChild(detailedViewActual.firstChild);
+            }
+            // Remove the now-empty container
+            detailedViewActual.remove();
+        }
+    });
+    </script>
+    <div id="detailed-view-content-actual" style="display: none;">
+        <!-- Download Button -->
+        <div class="mb-6 flex items-center gap-4">
+            <a href="{% url 'dashboard:instructor_attendance_reports_download' %}?course={{ selected_course.id }}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if day_filter %}&day_filter={{ day_filter }}{% endif %}{% if month_filter %}&month_filter={{ month_filter }}{% endif %}{% if week_filter %}&week_filter={{ week_filter }}{% endif %}{% if weeks %}&weeks={{ weeks }}{% endif %}" 
+               class="inline-flex items-center px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-md hover:shadow-lg">
+                <i class="fas fa-file-excel mr-2"></i> Download Excel Report
+            </a>
+            <div class="text-sm text-gray-600 bg-blue-50 px-4 py-2 rounded-lg border border-blue-200">
+                <i class="fas fa-info-circle mr-2 text-blue-600"></i>
+                <span>Click on records or statistics to view details</span>
+            </div>
+        </div>
+
+        <!-- Charts and Statistics Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <!-- Charts (2 columns) -->
+            <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Attendance Status Chart -->
+                <div class="bg-white rounded-2xl shadow-lg p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Attendance Status Distribution</h3>
+                    <canvas id="attendanceStatusChart" height="200"></canvas>
+                </div>
+                
+                <!-- Student Absences Chart -->
+                <div class="bg-white rounded-2xl shadow-lg p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Top 10 Students by Absences</h3>
+                    <canvas id="studentAbsencesChart" height="200"></canvas>
+                </div>
+            </div>
+            
+            <!-- Course Statistics (1 column) -->
+            <div class="space-y-4">
+                <div class="bg-white rounded-2xl shadow-lg p-6 border-l-4" style="border-color: #3C4770;">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-600 mb-1">Total Records</p>
+                            <p class="text-3xl font-bold text-gray-900">{{ course_stats.total_records }}</p>
+                        </div>
+                        <i class="fas fa-clipboard-list text-4xl opacity-20" style="color: #3C4770;"></i>
+                    </div>
+                </div>
+                <div class="bg-white rounded-2xl shadow-lg p-6 border-l-4" style="border-color: #10b981;">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-600 mb-1">Present</p>
+                            <p class="text-3xl font-bold text-green-600">{{ course_stats.present_count }}</p>
+                            <p class="text-xs text-gray-500 mt-1">{{ course_stats.present_percentage }}%</p>
+                        </div>
+                        <i class="fas fa-check-circle text-4xl opacity-20 text-green-600"></i>
+                    </div>
+                </div>
+                <div class="bg-white rounded-2xl shadow-lg p-6 border-l-4" style="border-color: #f59e0b;">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-600 mb-1">Late</p>
+                            <p class="text-3xl font-bold text-yellow-600">{{ course_stats.late_count }}</p>
+                            <p class="text-xs text-gray-500 mt-1">{{ course_stats.late_percentage }}%</p>
+                        </div>
+                        <i class="fas fa-clock text-4xl opacity-20 text-yellow-600"></i>
+                    </div>
+                </div>
+                <div class="bg-white rounded-2xl shadow-lg p-6 border-l-4" style="border-color: #ef4444;">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-600 mb-1">Absent</p>
+                            <p class="text-3xl font-bold text-red-600">{{ course_stats.absent_count }}</p>
+                            <p class="text-xs text-gray-500 mt-1">{{ course_stats.absent_percentage }}%</p>
+                        </div>
+                        <i class="fas fa-times-circle text-4xl opacity-20 text-red-600"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Student Statistics and Attendance Records -->
+        <div class="space-y-6 mb-6">
+            <!-- Search Bar -->
+            <div class="bg-white rounded-2xl shadow-lg p-4">
+                <div class="relative">
+                    <input type="text" id="attendance-search" placeholder="Search students by name or ID..." 
+                           class="w-full px-4 py-3 pl-14 pr-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm"
+                           onkeyup="filterAttendanceTables()">
+                    <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                </div>
+            </div>
+            
+            <!-- Student Statistics Table -->
+            <div class="bg-white rounded-2xl shadow-lg p-6" id="student-stats-container">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-gray-900">Student Statistics</h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200" id="student-stats-table">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Section</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Present</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Late</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Absent</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">%</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200" id="student-stats-tbody">
+                            {% for student_id, stats in student_stats.items %}
+                            <tr class="hover:bg-gray-50 cursor-pointer" onclick="openStudentStatsModal('{{ student_id }}', '{{ stats.student_name|escapejs }}', '{{ stats.student_id_number }}', '{{ stats.present }}', '{{ stats.late }}', '{{ stats.absent }}', '{{ stats.total }}', '{{ stats.present_percentage }}', '{{ stats.late_percentage }}', '{{ stats.absent_percentage }}', '{{ selected_course.id }}', '{{ stats.section|default:'' }}')">
+                                <td class="px-4 py-4 whitespace-nowrap">
+                                    <div class="flex items-center">
+                                        {% if stats.student_profile_picture %}
+                                        <img src="{{ stats.student_profile_picture }}?v={{ student_id }}" alt="{{ stats.student_name }}" class="w-8 h-8 rounded-full object-cover mr-2 border-2 border-indigo-200">
+                                        {% else %}
+                                        <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center mr-2 border-2 border-indigo-200">
+                                            <span class="text-xs font-semibold text-indigo-600">{{ stats.student_name|first|upper }}</span>
+                                        </div>
+                                        {% endif %}
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-900">{{ stats.student_name }}</div>
+                                            <div class="text-xs text-gray-500 font-mono">{{ stats.student_id_number }}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-left text-gray-900 font-medium">{{ stats.section|default:'—' }}</td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-center text-green-600 font-semibold">{{ stats.present }}</td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-center text-yellow-600 font-semibold">{{ stats.late }}</td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-center text-red-600 font-semibold">{{ stats.absent }}</td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold">{{ stats.total }}</td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-center">
+                                    <div class="flex flex-col">
+                                        <span class="text-green-600 text-xs">{{ stats.present_percentage }}%</span>
+                                        <span class="text-yellow-600 text-xs">{{ stats.late_percentage }}%</span>
+                                        <span class="text-red-600 text-xs">{{ stats.absent_percentage }}%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500">No student statistics available</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Attendance Records Table - Grouped by Date -->
+            <div class="bg-white rounded-2xl shadow-lg p-6 border border-gray-100" id="attendance-records-container">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900 flex items-center">
+                            <i class="fas fa-list mr-2 text-indigo-600"></i> Attendance Records
+                        </h3>
+                        <p class="text-xs text-gray-500 mt-1">Click on a record to view details or edit</p>
+                    </div>
+                    <span class="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full font-semibold">{{ attendance_data|length }} record(s)</span>
+                </div>
+                <div class="space-y-4">
+                    {% if attendance_data_grouped %}
+                        {% for date, records in attendance_data_grouped %}
+                        <!-- Date Folder -->
+                        <div class="border border-gray-200 rounded-lg overflow-hidden">
+                            <!-- Date Header (Folder Style) -->
+                            <div class="bg-gradient-to-r from-indigo-50 to-purple-50 px-4 py-3 border-b border-gray-200 cursor-pointer hover:bg-indigo-100 transition" onclick="toggleDateFolder('date-folder-{{ date|date:'Y-m-d' }}')">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-3 flex-1">
+                                        <i class="fas fa-folder text-indigo-600"></i>
+                                        <div class="flex-1">
+                                            <h4 class="font-bold text-gray-900 text-sm">{{ date|date:"l, F d, Y" }}</h4>
+                                            <p class="text-xs text-gray-600">{{ records|length }} record{{ records|length|pluralize }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2 px-3">
+                                        {% if records.0.course_code %}
+                                        <div class="text-center">
+                                            <div class="text-xs font-semibold text-gray-700">{{ records.0.course_code }}</div>
+                                            <div class="text-[10px] text-gray-500 truncate max-w-[100px]">{{ records.0.course_name }}</div>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    <i class="fas fa-chevron-down text-gray-500 transition-transform ml-2" id="date-folder-icon-{{ date|date:'Y-m-d' }}"></i>
+                                </div>
+                            </div>
+                            <!-- Records Table (Collapsible) -->
+                            <div id="date-folder-{{ date|date:'Y-m-d' }}" class="hidden">
+                                <div class="overflow-x-auto max-w-full">
+                                    <table class="w-full divide-y divide-gray-200 table-auto">
+                                        <thead class="bg-gray-50">
+                                            <tr>
+                                                <th class="px-2 py-2 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">Student Name</th>
+                                                <th class="px-2 py-2 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">Student ID</th>
+                                                <th class="px-2 py-2 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">Section</th>
+                                                <th class="px-2 py-2 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">Class Time</th>
+                                                <th class="px-2 py-2 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">Attendance Time</th>
+                                                <th class="px-2 py-2 text-center text-[10px] font-medium text-gray-700 uppercase tracking-wider">Status</th>
+                                                <th class="px-2 py-2 text-center text-[10px] font-medium text-gray-700 uppercase tracking-wider">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="bg-white divide-y divide-gray-200">
+                                            {% for record in records %}
+                                            <tr class="hover:bg-indigo-50/50 transition duration-150 cursor-pointer group" 
+                                                onclick="openRecordDetailsModal('{{ record.id|default:"None" }}', '{{ record.student_id }}', '{{ record.attendance_date|date:"Y-m-d" }}', '{{ record.status }}', '{{ record.student_name|escapejs }}', '{{ selected_course.id }}', '{{ record.student_id_number }}', '{{ record.section }}', '{% if record.attendance_time %}{{ record.attendance_time|time:"g:i A" }}{% else %}N/A{% endif %}', '{{ record.course_code|escapejs }}', '{{ record.course_name|escapejs }}', '{% if record.course_start_time %}{{ record.course_start_time|time:"g:i A" }}{% else %}N/A{% endif %}', '{% if record.course_end_time %}{{ record.course_end_time|time:"g:i A" }}{% else %}N/A{% endif %}')"
+                                                data-record-id="{{ record.id }}" data-student-id="{{ record.student_id }}" data-date="{{ record.attendance_date|date:'Y-m-d' }}" data-course-id="{{ selected_course.id }}">
+                                                <td class="px-2 py-2">
+                                                    <div class="flex items-center">
+                                                        {% if record.student_profile_picture %}
+                                                        <img src="{{ record.student_profile_picture }}?v={{ record.student_id }}" alt="{{ record.student_name }}" class="w-6 h-6 rounded-full object-cover mr-1.5 border border-indigo-200">
+                                                        {% else %}
+                                                        <div class="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center mr-1.5 border border-indigo-200">
+                                                            <span class="text-[10px] font-semibold text-indigo-600">{{ record.student_name|first|upper }}</span>
+                                                        </div>
+                                                        {% endif %}
+                                                        <span class="text-xs text-gray-900 font-medium truncate max-w-[120px]">{{ record.student_name }}</span>
+                                                    </div>
+                                                </td>
+                                                <td class="px-2 py-2 text-xs text-gray-900 font-mono">{{ record.student_id_number }}</td>
+                                                <td class="px-2 py-2 text-xs text-gray-600">{{ record.section }}</td>
+                                                <td class="px-2 py-2 text-xs text-gray-700">
+                                                    {% if record.course_start_time and record.course_end_time %}
+                                                    <div class="flex flex-col">
+                                                        <span class="font-medium">{{ record.course_start_time|time:"g:i A" }}</span>
+                                                        <span class="text-[10px] text-gray-500">to {{ record.course_end_time|time:"g:i A" }}</span>
+                                                    </div>
+                                                    {% else %}
+                                                    <span class="text-gray-400 text-[10px]">N/A</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="px-2 py-2 text-xs text-gray-700 font-medium">
+                                                    {% if record.attendance_time %}
+                                                    {{ record.attendance_time|time:"g:i A" }}
+                                                    {% else %}
+                                                    <span class="text-gray-400">N/A</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="px-2 py-2 text-center">
+                                                    {% if record.status == 'present' %}
+                                                    <span class="px-2 py-1 text-[10px] font-semibold rounded-full bg-green-100 text-green-800">Present</span>
+                                                    {% elif record.status == 'late' %}
+                                                    <span class="px-2 py-1 text-[10px] font-semibold rounded-full bg-yellow-100 text-yellow-800">Late</span>
+                                                    {% else %}
+                                                    <span class="px-2 py-1 text-[10px] font-semibold rounded-full bg-red-100 text-red-800">Absent</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="px-2 py-2 text-center">
+                                                    <button onclick="event.stopPropagation(); openStatusChangeModal('{{ record.id|default:"None" }}', '{{ record.student_id }}', '{{ record.attendance_date|date:"Y-m-d" }}', '{{ record.status }}', '{{ record.student_name|escapejs }}', '{{ selected_course.id }}')" 
+                                                            class="px-2 py-1 text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded transition duration-150">
+                                                        <i class="fas fa-edit"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center py-12">
+                            <i class="fas fa-inbox text-4xl text-gray-300 mb-3"></i>
+                            <p class="text-sm text-gray-500">No attendance records found for the selected filters</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+{% endif %}
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+
+<!-- Include all the existing JavaScript functions from the old template -->
+<script>
+// Search functionality
+function filterAttendanceTables() {
+    const searchInput = document.getElementById('attendance-search');
+    if (!searchInput) return;
+    
+    const searchTerm = searchInput.value.toLowerCase().trim();
+    
+    const statsTable = document.getElementById('student-stats-tbody');
+    const recordsTable = document.getElementById('attendance-records-tbody');
+    
+    if (statsTable) {
+        const statsRows = statsTable.querySelectorAll('tr');
+        statsRows.forEach(row => {
+            if (row.querySelector('td[colspan]')) return;
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(searchTerm) ? '' : 'none';
+        });
+    }
+    
+    if (recordsTable) {
+        const recordsRows = recordsTable.querySelectorAll('tr');
+        recordsRows.forEach(row => {
+            if (row.querySelector('td[colspan]')) return;
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(searchTerm) ? '' : 'none';
+        });
+    }
+}
+
+// Status change modal functions (keep existing)
+function openStatusChangeModal(recordId, studentId, date, currentStatus, studentName, courseId) {
+    // Implementation from original template
+    const modal = document.getElementById('attendanceStatusModal');
+    if (!modal) {
+        console.error('Status change modal not found');
+        return;
+    }
+    // ... rest of implementation
+}
+
+function openRecordDetailsModal(recordId, studentId, date, status, studentName, courseId, studentIdNumber, section, time) {
+    // Implementation from original template
+}
+
+function openStudentStatsModal(studentId, studentName, studentIdNumber, present, late, absent, total, presentPct, latePct, absentPct, courseId, section) {
+    // Implementation from original template (placeholder)
+    const modal = document.getElementById('studentStatsModal');
+    if (!modal) return;
+    document.getElementById('stats-student-name').textContent = studentName;
+    document.getElementById('stats-student-id').textContent = studentIdNumber;
+    document.getElementById('stats-student-section').textContent = section || '';
+    document.getElementById('stats-present').textContent = present;
+    document.getElementById('stats-late').textContent = late;
+    document.getElementById('stats-absent').textContent = absent;
+    document.getElementById('stats-total').textContent = total;
+    document.getElementById('stats-present-pct').textContent = presentPct + '%';
+    document.getElementById('stats-late-pct').textContent = latePct + '%';
+    document.getElementById('stats-absent-pct').textContent = absentPct + '%';
+    modal.classList.remove('hidden');
+}
+
+{% if selected_course and course_stats %}
+// Charts initialization
+const statusCtx = document.getElementById('attendanceStatusChart');
+if (statusCtx) {
+    new Chart(statusCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Present', 'Late', 'Absent'],
+            datasets: [{
+                data: [
+                    {{ course_stats.present_count }},
+                    {{ course_stats.late_count }},
+                    {{ course_stats.absent_count }}
+                ],
+                backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                borderWidth: 2,
+                borderColor: '#ffffff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { position: 'bottom' }
+            }
+        }
+    });
+}
+
+const absencesCtx = document.getElementById('studentAbsencesChart');
+if (absencesCtx) {
+    const studentStats = {% if student_stats_json %}{{ student_stats_json|safe }}{% else %}{}{% endif %};
+    const students = Object.values(studentStats);
+    students.sort((a, b) => b.absent - a.absent);
+    const top10 = students.slice(0, 10);
+    
+    new Chart(absencesCtx, {
+        type: 'bar',
+        data: {
+            labels: top10.map(s => s.student_name.length > 15 ? s.student_name.substring(0, 15) + '...' : s.student_name),
+            datasets: [{
+                label: 'Absences',
+                data: top10.map(s => s.absent),
+                backgroundColor: '#ef4444',
+                borderColor: '#dc2626',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+{% endif %}
+</script>
+
+<!-- Attendance Status Change Modal -->
+<div id="attendanceStatusModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-indigo-600">
+                <i class="fas fa-edit w-6 h-6 mr-2"></i> Change Attendance Status
+            </h3>
+            <button onclick="closeStatusChangeModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <p class="text-sm text-gray-600 mb-2">Student:</p>
+                <p class="font-semibold text-gray-900" id="status-student-name"></p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-600 mb-2">Date:</p>
+                <p class="font-semibold text-gray-900" id="status-attendance-date-display"></p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">New Status</label>
+                <select id="status-new-status" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="present">Present</option>
+                    <option value="late">Late</option>
+                    <option value="absent">Absent</option>
+                </select>
+            </div>
+            <input type="hidden" id="status-record-id">
+            <input type="hidden" id="status-student-id">
+            <input type="hidden" id="status-attendance-date">
+            <input type="hidden" id="status-course-id">
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="closeStatusChangeModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                    Cancel
+                </button>
+                <button onclick="confirmStatusChange()" class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150 shadow-sm">
+                    <i class="fas fa-check mr-2"></i> Update Status
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Record Details Modal -->
+<div id="recordDetailsModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <!-- Header with gradient -->
+        <div class="bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-3">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
+                        <i class="fas fa-info-circle text-white text-sm"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-white">Record Details</h3>
+                        <p class="text-[10px] text-white/90">Attendance Information</p>
+                    </div>
+                </div>
+                <button onclick="closeRecordDetailsModal()" class="w-7 h-7 rounded-lg bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition duration-150 flex items-center justify-center border border-white/30">
+                    <i class="fas fa-times text-xs"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Content -->
+        <div class="p-4 space-y-3">
+            <!-- Course Information Card -->
+            <div class="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg p-3 border border-indigo-100">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-xs" id="record-details-course-icon">
+                        C
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold mb-0.5">Course</p>
+                        <p class="text-sm font-bold text-gray-900 truncate" id="record-details-course-code"></p>
+                        <p class="text-xs text-gray-600 truncate" id="record-details-course-name"></p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Student Information Card -->
+            <div class="bg-white rounded-lg p-3 border border-gray-200 shadow-sm">
+                <div class="flex items-center gap-2 mb-3">
+                    <div id="record-details-student-avatar" class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center border-2 border-indigo-200 flex-shrink-0">
+                        <span class="text-sm font-bold text-indigo-600" id="record-details-student-initial">S</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-0.5">Student</p>
+                        <p class="text-sm font-bold text-gray-900 truncate" id="record-details-student-name"></p>
+                        <p class="text-xs text-gray-600 font-mono truncate" id="record-details-student-id"></p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 pt-3 border-t border-gray-100">
+                    <div>
+                        <p class="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-0.5">Section</p>
+                        <p class="text-xs font-semibold text-gray-900" id="record-details-section"></p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-0.5">Status</p>
+                        <span id="record-details-status" class="inline-block"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Attendance Details Card -->
+            <div class="bg-gradient-to-br from-gray-50 to-white rounded-lg p-3 border border-gray-200">
+                <p class="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-2 flex items-center gap-1">
+                    <i class="fas fa-calendar-alt text-indigo-600 text-xs"></i>
+                    Attendance Details
+                </p>
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between py-1.5 border-b border-gray-100">
+                        <span class="text-xs text-gray-600 font-medium">Date</span>
+                        <span class="text-xs font-semibold text-gray-900 text-right" id="record-details-date"></span>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5 border-b border-gray-100">
+                        <span class="text-xs text-gray-600 font-medium">Class Time</span>
+                        <span class="text-xs font-semibold text-gray-900 text-right" id="record-details-class-time"></span>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5">
+                        <span class="text-xs text-gray-600 font-medium">Attendance Time</span>
+                        <span class="text-xs font-semibold text-gray-900 text-right" id="record-details-time"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Action Button -->
+            <div class="flex justify-end pt-1">
+                <button onclick="closeRecordDetailsModal()" class="px-4 py-1.5 text-xs bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150 shadow-md hover:shadow-lg flex items-center gap-1.5">
+                    <i class="fas fa-check text-xs"></i>
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Student Statistics Modal -->
+<div id="studentStatsModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-indigo-600">
+                <i class="fas fa-chart-bar w-6 h-6 mr-2"></i> Student Statistics
+            </h3>
+            <button onclick="closeStudentStatsModal()" class="text-gray-400 hover:text-gray-600 transition duration-150">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <p class="text-sm text-gray-600 mb-1">Student Name:</p>
+                <p class="font-semibold text-gray-900 text-lg" id="stats-student-name"></p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-600 mb-1">Student ID:</p>
+                <p class="font-mono text-gray-900" id="stats-student-id"></p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-600 mb-1">Section:</p>
+                <p class="font-semibold text-gray-900" id="stats-student-section"></p>
+            </div>
+            <div class="grid grid-cols-3 gap-4 pt-4 border-t border-gray-100">
+                <div class="text-center p-4 bg-green-50 rounded-lg">
+                    <p class="text-sm text-gray-600 mb-1">Present</p>
+                    <p class="text-2xl font-bold text-green-600" id="stats-present"></p>
+                    <p class="text-xs text-gray-500 mt-1" id="stats-present-pct"></p>
+                </div>
+                <div class="text-center p-4 bg-yellow-50 rounded-lg">
+                    <p class="text-sm text-gray-600 mb-1">Late</p>
+                    <p class="text-2xl font-bold text-yellow-600" id="stats-late"></p>
+                    <p class="text-xs text-gray-500 mt-1" id="stats-late-pct"></p>
+                </div>
+                <div class="text-center p-4 bg-red-50 rounded-lg">
+                    <p class="text-sm text-gray-600 mb-1">Absent</p>
+                    <p class="text-2xl font-bold text-red-600" id="stats-absent"></p>
+                    <p class="text-xs text-gray-500 mt-1" id="stats-absent-pct"></p>
+                </div>
+            </div>
+            <div class="pt-4 border-t border-gray-100">
+                <p class="text-sm text-gray-600 mb-1">Total Records:</p>
+                <p class="text-2xl font-bold text-gray-900" id="stats-total"></p>
+            </div>
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="closeStudentStatsModal()" class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Modal functions
+function closeStatusChangeModal() {
+    document.getElementById('attendanceStatusModal').classList.add('hidden');
+}
+
+function confirmStatusChange() {
+    const recordId = document.getElementById('status-record-id').value;
+    const studentId = document.getElementById('status-student-id').value;
+    const date = document.getElementById('status-attendance-date').value;
+    const courseId = document.getElementById('status-course-id').value;
+    const newStatus = document.getElementById('status-new-status').value;
+    
+    if (!studentId || !date || !courseId || !newStatus) {
+        alert('Missing required information');
+        return;
+    }
+    
+    closeStatusChangeModal();
+    
+    fetch('{% url "dashboard:instructor_update_attendance_record_status" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            record_id: recordId || null,
+            student_id: studentId,
+            course_id: courseId,
+            attendance_date: date,
+            new_status: newStatus
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Attendance status updated successfully!', 'success');
+            } else {
+                alert(data.message || 'Attendance status updated successfully!');
+            }
+            setTimeout(() => window.location.reload(), 800);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Error updating attendance status.', 'error');
+            } else {
+                alert(data.message || 'Error updating attendance status.');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        } else {
+            alert('An error occurred. Please try again.');
+        }
+    });
+}
+
+function openStatusChangeModal(recordId, studentId, date, currentStatus, studentName, courseId) {
+    const modal = document.getElementById('attendanceStatusModal');
+    if (!modal) return;
+    
+    document.getElementById('status-record-id').value = recordId === 'None' ? '' : recordId;
+    document.getElementById('status-student-id').value = studentId;
+    document.getElementById('status-attendance-date').value = date;
+    document.getElementById('status-course-id').value = courseId;
+    document.getElementById('status-student-name').textContent = studentName;
+    
+    if (date) {
+        try {
+            const dateObj = new Date(date + 'T00:00:00');
+            const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            document.getElementById('status-attendance-date-display').textContent = formattedDate;
+        } catch (e) {
+            document.getElementById('status-attendance-date-display').textContent = date;
+        }
+    }
+    
+    const statusSelect = document.getElementById('status-new-status');
+    if (statusSelect) {
+        statusSelect.value = currentStatus;
+    }
+    
+    modal.classList.remove('hidden');
+}
+
+function openRecordDetailsModal(recordId, studentId, date, status, studentName, courseId, studentIdNumber, section, time, courseCode, courseName, classStartTime, classEndTime) {
+    const modal = document.getElementById('recordDetailsModal');
+    if (!modal) return;
+    
+    // Set student information
+    document.getElementById('record-details-student-name').textContent = studentName || '-';
+    document.getElementById('record-details-student-id').textContent = studentIdNumber || '-';
+    document.getElementById('record-details-section').textContent = section || '-';
+    document.getElementById('record-details-student-initial').textContent = (studentName && studentName.length > 0) ? studentName.charAt(0).toUpperCase() : 'S';
+    
+    // Set course information
+    document.getElementById('record-details-course-code').textContent = courseCode || '-';
+    document.getElementById('record-details-course-name').textContent = courseName || '-';
+    if (courseCode && courseCode.length > 0) {
+        document.getElementById('record-details-course-icon').textContent = courseCode.charAt(0).toUpperCase();
+    }
+    
+    // Set date
+    const dateText = date ? new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '-';
+    document.getElementById('record-details-date').textContent = dateText;
+    
+    // Set class time
+    const classTimeText = (classStartTime && classEndTime && classStartTime !== 'N/A' && classEndTime !== 'N/A') 
+        ? `${classStartTime} - ${classEndTime}` 
+        : 'N/A';
+    document.getElementById('record-details-class-time').textContent = classTimeText;
+    
+    // Set attendance time
+    document.getElementById('record-details-time').textContent = time || 'N/A';
+    
+    // Set status
+    const statusEl = document.getElementById('record-details-status');
+    const statusText = status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown';
+    statusEl.textContent = statusText;
+    statusEl.className = status === 'present' 
+        ? 'px-2 py-1 text-[10px] font-semibold rounded-full bg-green-100 text-green-800' 
+        : status === 'late' 
+        ? 'px-2 py-1 text-[10px] font-semibold rounded-full bg-yellow-100 text-yellow-800' 
+        : 'px-2 py-1 text-[10px] font-semibold rounded-full bg-red-100 text-red-800';
+    
+    modal.classList.remove('hidden');
+}
+
+function closeRecordDetailsModal() {
+    document.getElementById('recordDetailsModal').classList.add('hidden');
+}
+
+function openStudentStatsModal(studentId, studentName, studentIdNumber, present, late, absent, total, presentPct, latePct, absentPct, courseId, section) {
+    const modal = document.getElementById('studentStatsModal');
+    if (!modal) return;
+    
+    document.getElementById('stats-student-name').textContent = studentName;
+    document.getElementById('stats-student-id').textContent = studentIdNumber;
+    document.getElementById('stats-student-section').textContent = section || '';
+    document.getElementById('stats-present').textContent = present;
+    document.getElementById('stats-late').textContent = late;
+    document.getElementById('stats-absent').textContent = absent;
+    document.getElementById('stats-total').textContent = total;
+    document.getElementById('stats-present-pct').textContent = presentPct + '%';
+    document.getElementById('stats-late-pct').textContent = latePct + '%';
+    document.getElementById('stats-absent-pct').textContent = absentPct + '%';
+    
+    modal.classList.remove('hidden');
+}
+
+function closeStudentStatsModal() {
+    document.getElementById('studentStatsModal').classList.add('hidden');
+}
+</script>
+
+{% endblock %}

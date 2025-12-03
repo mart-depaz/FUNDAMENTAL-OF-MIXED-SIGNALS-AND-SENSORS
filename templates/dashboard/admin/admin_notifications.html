@@ -1,0 +1,82 @@
+<!-- templates/dashboard/admin_notifications.html -->
+{% extends 'partials/base.html' %}
+{% load static %}
+{% block title %}Admin Dashboard - Notifications{% endblock %}
+{% block navigation %}
+<!-- Override default navigation - no top bar for admin -->
+{% endblock %}
+{% block content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<style>
+    body { 
+        font-family: 'Inter', sans-serif; 
+        background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);
+    }
+</style>
+
+<!-- Admin Top Bar -->
+{% include 'dashboard/admin/admin_topbar.html' %}
+
+<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+    <!-- Sidebar -->
+    {% include 'dashboard/admin/admin_sidebar.html' %}
+
+    <!-- Main Content -->
+    <main id="main-content" class="flex-grow p-4 lg:p-6 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+        <div class="p-4 md:p-8 bg-white lg:bg-gray-50 flex-grow rounded-2xl shadow-inner min-h-full">
+            <h1 class="text-3xl font-extrabold text-gray-900 mb-6 flex items-center">
+                <i class="fas fa-bell w-8 h-8 mr-3" style="color: #3C4770;"></i> System Notifications
+            </h1>
+            <p class="text-gray-600 mb-8">Review and manage all system alerts, critical warnings, and user-generated requests.</p>
+            
+            <div class="bg-white p-6 rounded-xl shadow-lg space-y-4">
+                <h3 class="text-xl font-bold text-gray-800 border-b pb-3">Unread Alerts ({{ unread_count }})</h3>
+                
+                {% for notification in notifications %}
+                <div class="flex items-center p-4 {% if notification.is_read %}bg-gray-50{% else %}{% if notification.notification_type == 'new_teacher_signup' or notification.notification_type == 'new_student_signup' %}bg-blue-50 border border-blue-200{% else %}bg-red-50 border border-red-200{% endif %}{% endif %} rounded-xl">
+                    <i class="fas {% if notification.notification_type == 'new_teacher_signup' or notification.notification_type == 'new_student_signup' %}fa-user-plus{% elif notification.notification_type == 'system_alert' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %} w-5 h-5 {% if notification.is_read %}text-gray-400{% else %}{% if notification.notification_type == 'new_teacher_signup' or notification.notification_type == 'new_student_signup' %}text-blue-600{% else %}text-red-600{% endif %}{% endif %} mr-3"></i>
+                    <div class="flex-grow">
+                        <p class="text-sm {% if notification.is_read %}text-gray-600{% else %}font-medium{% endif %}">
+                            <strong>{{ notification.title }}</strong> - {{ notification.message }}
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">{{ notification.created_at|timesince }} ago</p>
+                    </div>
+                    {% if notification.related_user and not notification.is_read %}
+                    <div class="flex space-x-2 ml-4">
+                        <a href="{% url 'dashboard:admin_user_management' %}?user_id={{ notification.related_user.id }}" 
+                           class="text-xs font-semibold transition" style="{% if notification.notification_type == 'new_teacher_signup' or notification.notification_type == 'new_student_signup' %}color: #2563eb;{% else %}color: #3C4770;{% endif %}" onmouseover="this.style.color='{% if notification.notification_type == 'new_teacher_signup' or notification.notification_type == 'new_student_signup' %}#1e40af{% else %}#447294{% endif %}';" onmouseout="this.style.color='{% if notification.notification_type == 'new_teacher_signup' or notification.notification_type == 'new_student_signup' %}#2563eb{% else %}#3C4770{% endif %}';">
+                            View User
+                        </a>
+                    </div>
+                    {% endif %}
+                    {% if not notification.is_read %}
+                    <button onclick="markAsRead({{ notification.id }})" class="ml-2 text-xs text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-check"></i>
+                    </button>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <p class="text-center py-8 text-gray-500">No notifications</p>
+                {% endfor %}
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+    function markAsRead(notificationId) {
+        fetch(`/dashboard/admin-dashboard/notifications/${notificationId}/read/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        }).then(() => {
+            location.reload();
+        });
+    }
+</script>
+{% endblock %}
+

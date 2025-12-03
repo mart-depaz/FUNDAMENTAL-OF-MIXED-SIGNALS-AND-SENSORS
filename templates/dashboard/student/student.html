@@ -1,0 +1,41 @@
+<!--
+templates folder: library_system/templates/dashboard/student.html
+-->
+
+{% extends 'partials/base.html' %}
+{% load static %}
+{% block title %}Student Dashboard{% endblock %}
+{% block navigation %}
+<!-- Override default navigation - no top bar for student -->
+{% endblock %}
+{% block content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<style>
+    body { 
+        font-family: 'Inter', sans-serif; 
+        background: #f4f5fb;
+    }
+</style>
+
+<!-- Notification System -->
+{% include 'dashboard/shared/notification_system.html' %}
+
+<!-- Student Top Bar -->
+{% include 'dashboard/student/student_topbar.html' %}
+
+<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+    <!-- Sidebar -->
+    {% include 'dashboard/student/student_sidebar.html' %}
+
+    <!-- Main Content -->
+    <main id="main-content" class="flex-grow p-4 lg:p-6 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+        <div class="p-4 md:p-8 bg-white lg:bg-gray-50 flex-grow rounded-2xl shadow-inner min-h-full">
+            {% block dashboard_content %}
+            {% include 'dashboard/student/student_home.html' %}
+            {% endblock %}
+        </div>
+    </main>
+</div>
+{% endblock %}

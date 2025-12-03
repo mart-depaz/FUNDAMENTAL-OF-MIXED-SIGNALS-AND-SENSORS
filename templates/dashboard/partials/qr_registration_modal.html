@@ -1,0 +1,1334 @@
+<!-- QR Registration Modal Partial -->
+<div id="qrRegistrationModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] p-6 md:p-8 flex flex-col overflow-hidden">
+        <div class="flex justify-between items-start mb-6 flex-shrink-0">
+            <h3 class="text-2xl font-bold flex items-center text-green-600">
+                <i class="fas fa-qrcode w-6 h-6 mr-2"></i> Register Student QR
+            </h3>
+            <button onclick="closeQRRegistrationModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4 flex-1 overflow-y-auto pr-2">
+            <input type="hidden" id="qr-reg-course-id">
+            <input type="hidden" id="qr-reg-schedule-id">
+            <input type="hidden" id="qr-reg-prefilled-student-id">
+
+            <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                    <label class="text-sm text-gray-700">Camera</label>
+                    <select id="qr-reg-camera-select" class="px-2 py-1 border border-gray-300 rounded bg-white text-sm">
+                        <option value="">Detecting cameras...</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2">
+                        <label class="text-sm text-gray-700">Scan full frame</label>
+                        <input type="checkbox" id="qr-reg-fullframe-toggle" checked />
+                </div>
+            </div>
+                <div id="qr-reg-open-phone" class="mt-2">
+                    <button id="qr-reg-open-on-phone-btn" class="px-3 py-1 bg-indigo-600 text-white rounded text-sm">Open on phone</button>
+                    <div id="qr-reg-phone-overlay" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
+                        <div class="bg-white p-4 rounded shadow-lg max-w-sm w-full text-center">
+                            <h4 class="font-semibold text-lg mb-2">Open on your phone</h4>
+                            <p class="text-xs text-gray-600 mb-2">Scan this QR with your phone or open the link below to use your phone camera for scanning.</p>
+                            <div id="qr-reg-phone-qr" class="mb-3"></div>
+                            <input id="qr-reg-phone-link" class="w-full px-2 py-1 border border-gray-200 rounded text-sm mb-3" readonly />
+                            <div class="flex justify-between gap-2">
+                                <button id="qr-reg-copy-phone-link" class="px-3 py-1 bg-green-600 text-white rounded text-sm">Copy link</button>
+                                <button id="qr-reg-close-phone-overlay" class="px-3 py-1 bg-gray-200 text-gray-800 rounded text-sm">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <div id="qr-reg-scanner-container" class="w-full mb-2 rounded-lg overflow-hidden" style="height: 550px; background: #000;"></div>
+
+            <div id="qr-reg-qr-code-display" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50 text-gray-600 min-h-[40px] flex items-center justify-center">
+                <span class="text-gray-500 italic">No QR code scanned yet</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button id="qr-reg-capture-btn" class="px-3 py-1 bg-blue-600 text-white rounded text-sm">Capture frame & decode</button>
+                <span id="qr-reg-capture-status" class="text-xs text-gray-600"></span>
+            </div>
+
+            <!-- Manual QR Code Input (fallback if scanner doesn't work) -->
+            <div id="manual-qr-section">
+                <label class="text-sm font-medium text-gray-700">OR Enter Registration QR Manually</label>
+                <input id="qr-reg-manual-qr-input" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="If scanner doesn't work, paste QR code here">
+            </div>
+
+            <!-- Student ID Input: always visible -->
+            <div id="student-id-section">
+                <label class="text-sm font-medium text-gray-700">Student ID (auto-filled when QR scanned)</label>
+                <input id="qr-reg-student-id-input" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Scan student ID QR code or enter manually" readonly>
+            </div>
+
+            <!-- Message area for feedback -->
+            <p id="qr-reg-message" class="text-xs text-gray-600 text-center mt-2"></p>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-4 border-t border-gray-100 flex-shrink-0 mt-4">
+            <button onclick="closeQRRegistrationModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                Cancel
+            </button>
+            <button id="qr-reg-register-btn" onclick="registerStudentQRCode()" class="px-4 py-2 bg-gray-400 text-white font-semibold rounded-lg cursor-not-allowed shadow-sm" disabled>
+                <i class="fas fa-check mr-2"></i> Register
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
+<script>
+(function(){
+    // Quick sanity: detect duplicate modal elements which cause scanner/video conflicts
+    try{
+        const modalCount = document.querySelectorAll('#qrRegistrationModal').length;
+        if (modalCount > 1){
+            console.warn('Multiple #qrRegistrationModal elements found ('+modalCount+'). This may cause scanner conflicts (duplicate videos/listeners). Using the first instance.');
+        }
+    } catch(e){ /* ignore */ }
+    if (window.__qrRegistrationPartialLoaded) return;
+    window.__qrRegistrationPartialLoaded = true;
+
+    let qrRegScanner = null;
+    window.qrRegScannedCode = null;
+    let qrRegScanErrorCount = 0;
+    let qrRegFallbackInterval = null;
+    let qrRegFallbackCanvas = null;
+    let qrRegFallbackCtx = null;
+    let zxingReader = null;
+    let zxingActive = false;
+    // Custom getUserMedia-based scanner state
+    let customScannerActive = false;
+    let customStream = null;
+    let customVideo = null;
+    let customCanvas = null;
+    let customCtx = null;
+
+    function getCsrfToken(){
+        const el = document.querySelector('[name=csrfmiddlewaretoken]') || document.querySelector('meta[name="csrf-token"]');
+        return el ? (el.value || el.getAttribute('content') || '') : '';
+    }
+
+    window.openQRRegistrationModal = function(courseId, studentId, scheduleId){
+        const modal = document.getElementById('qrRegistrationModal');
+        if (!modal) { alert('QR Registration modal not found'); return; }
+        
+        // Reset modal state
+        document.getElementById('qr-reg-course-id').value = courseId || '';
+        document.getElementById('qr-reg-schedule-id').value = scheduleId || '';
+        document.getElementById('qr-reg-prefilled-student-id').value = studentId || '';
+        document.getElementById('qr-reg-qr-code-display').innerHTML = '<span class="text-gray-500 italic">No QR code scanned yet</span>';
+        document.getElementById('qr-reg-student-id-input').value = studentId || '';
+        document.getElementById('qr-reg-message').textContent = '';
+        document.getElementById('qr-reg-message').className = 'text-xs text-gray-600 text-center mt-2';
+        
+        window.qrRegScannedCode = null;
+        const registerBtn = document.getElementById('qr-reg-register-btn');
+        if (registerBtn) { registerBtn.disabled = true; registerBtn.className = 'px-4 py-2 bg-gray-400 text-white font-semibold rounded-lg cursor-not-allowed shadow-sm'; }
+        
+        modal.classList.remove('hidden');
+        
+        // Start scanner immediately
+        setTimeout(() => {
+            try { 
+                startQRRegistrationScanner(); 
+            } catch(e){ 
+                console.error('Scanner failed to start:', e); 
+                document.getElementById('qr-reg-message').textContent = 'Error starting scanner: ' + e.message;
+                document.getElementById('qr-reg-message').className = 'text-xs text-red-600 text-center mt-2 font-semibold';
+            }
+        }, 100);
+    };
+
+    window.closeQRRegistrationModal = function(){
+        const modal = document.getElementById('qrRegistrationModal');
+        if (modal) modal.classList.add('hidden');
+        if (qrRegScanner){
+            try {
+                qrRegScanner.stop().catch(()=>{});
+            } catch(e) {}
+            qrRegScanner = null;
+            window.__qrRegistrationHtml5Started = false;
+        }
+        try { stopFallbackDecoder(); } catch(e) {}
+        try { stopCustomScanner(); } catch(e) {}
+    };
+
+    window.startQRRegistrationScanner = function(){
+        // Ensure html5-qrcode library is loaded
+        if (typeof window.Html5Qrcode === 'undefined'){
+            try { document.getElementById('qr-reg-message').textContent = 'Loading scanner library...'; } catch(e){}
+            loadHtml5Qrcode().then(() => {
+                try { startQRRegistrationScanner(); } catch(e){ console.error('startQRRegistrationScanner after load failed', e); }
+            }).catch(err => {
+                console.error('Failed to load html5-qrcode library', err);
+                try { document.getElementById('qr-reg-message').textContent = 'Failed to load scanner library'; } catch(e){}
+            });
+            return;
+        }
+
+        const scannerContainer = document.getElementById('qr-reg-scanner-container');
+        if (!scannerContainer) { 
+            console.error('Scanner container not found'); 
+            return;
+        }
+        
+        console.log('Starting QR scanner...');
+        
+        // Clear container
+        scannerContainer.innerHTML = '';
+        
+        // Create scanner element
+        const scannerDiv = document.createElement('div');
+        scannerDiv.id = 'qr-reg-scanner';
+        scannerDiv.style.width = '100%';
+        scannerDiv.style.height = '100%';
+        scannerDiv.style.backgroundColor = '#000';
+        scannerContainer.appendChild(scannerDiv);
+
+        // populate camera selection (non-blocking)
+        try {
+            Html5Qrcode.getCameras().then(cameras => {
+                const sel = document.getElementById('qr-reg-camera-select');
+                if (!sel) return;
+                sel.innerHTML = '';
+                if (!cameras || !cameras.length) {
+                    const opt = document.createElement('option'); opt.value=''; opt.text = 'No cameras found'; sel.appendChild(opt); return;
+                }
+                cameras.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.text = c.label || c.id || ('Camera ' + (sel.length+1));
+                    sel.appendChild(opt);
+                });
+                // try to pick a rear camera
+                const preferredIndex = Array.from(sel.options).findIndex(o => /back|rear|environment/i.test(o.text));
+                if (preferredIndex >= 0) sel.selectedIndex = preferredIndex;
+            }).catch(e => console.warn('getCameras failed', e));
+        } catch(e) { console.warn('Camera list init error', e); }
+
+        // camera select change: restart scanner
+        const camSelect = document.getElementById('qr-reg-camera-select');
+        if (camSelect) {
+            camSelect.addEventListener('change', () => {
+                try { if (qrRegScanner) { qrRegScanner.stop().catch(()=>{}); } } catch(e){}
+                // small delay to allow stop
+                setTimeout(() => startQRRegistrationScanner(), 250);
+            });
+        }
+        const fullframeToggle = document.getElementById('qr-reg-fullframe-toggle');
+        if (fullframeToggle) fullframeToggle.addEventListener('change', () => {
+            try { if (qrRegScanner) { qrRegScanner.stop().catch(()=>{}); } } catch(e){}
+            setTimeout(() => startQRRegistrationScanner(), 250);
+        });
+        
+        // Stop any existing scanner
+        if (qrRegScanner){ 
+            try {
+                console.log('Stopping previous scanner instance...');
+                qrRegScanner.stop().catch(()=>{});
+                window.__qrRegistrationHtml5Started = false;
+            } catch(e) {}
+            qrRegScanner = null;
+        }
+        try { stopCustomScanner(); } catch(e) {}
+        
+        try {
+            console.log('Creating new Html5Qrcode instance...');
+            qrRegScanner = new Html5Qrcode('qr-reg-scanner');
+            console.log('Html5Qrcode instance created successfully');
+        } catch(err) {
+            console.error('Failed to create Html5Qrcode instance:', err);
+            document.getElementById('qr-reg-message').textContent = 'Failed to initialize scanner: ' + (err.message || err.toString());
+            document.getElementById('qr-reg-message').className = 'text-xs text-red-600 text-center mt-2 font-semibold';
+            return;
+        }
+
+        // Use optimized scan config (match working student scanner)
+        const scanConfig = {
+            fps: 30,
+            qrbox: function(viewfinderWidth, viewfinderHeight){
+                try{
+                    const fullframeToggle = document.getElementById('qr-reg-fullframe-toggle');
+                    const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                    if (fullframeToggle && fullframeToggle.checked){
+                        // scan nearly whole frame when user requests fullframe
+                        const size = Math.floor(minEdge * 0.95);
+                        return { width: Math.max(200, Math.min(1200, size)), height: Math.max(200, Math.min(1200, size)) };
+                    }
+                    let qrboxSize = Math.floor(minEdge * 0.6);
+                    return { width: Math.max(200, Math.min(300, qrboxSize)), height: Math.max(200, Math.min(300, qrboxSize)) };
+                } catch(e) {
+                    const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                    let qrboxSize = Math.floor(minEdge * 0.6);
+                    return { width: Math.max(200, Math.min(300, qrboxSize)), height: Math.max(200, Math.min(300, qrboxSize)) };
+                }
+            },
+            aspectRatio: 1.0,
+            disableFlip: false,
+            supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+            videoConstraints: {
+                facingMode: 'environment',
+                width: { ideal: 640, max: 1280 },
+                height: { ideal: 480, max: 720 }
+            },
+            rememberLastUsedCamera: true
+        };
+
+        document.getElementById('qr-reg-message').textContent = 'Requesting camera access...';
+        document.getElementById('qr-reg-message').className = 'text-xs text-blue-600 text-center mt-2';
+
+        // Prefer selecting a back/rear camera if available
+        Html5Qrcode.getCameras().then(cameras => {
+            let cameraIdOrConfig = null;
+            if (cameras && cameras.length) {
+                // look for a camera labelled 'back' or 'rear' or 'environment'
+                const preferred = cameras.find(c => /back|rear|environment/i.test(c.label || c.id));
+                const chosen = preferred || cameras[0];
+                cameraIdOrConfig = chosen.id || { deviceId: { exact: chosen.id } };
+                console.log('Selected camera:', chosen);
+            }
+
+            // determine selected camera from the dropdown if user chose one
+            const selectedCamEl = document.getElementById('qr-reg-camera-select');
+            const selectedCamId = (selectedCamEl && selectedCamEl.value) ? selectedCamEl.value : null;
+
+            // Build start args with only the allowed key(s) for Html5Qrcode
+            // Html5Qrcode expects either a string cameraId or an object with exactly one key
+            // (e.g., { deviceId: { exact: id } } or { facingMode: 'environment' }).
+            let startArgs;
+            if (selectedCamId) {
+                // prefer deviceId object for selected camera
+                startArgs = { deviceId: { exact: selectedCamId } };
+            } else if (cameraIdOrConfig && typeof cameraIdOrConfig === 'string') {
+                // cameraId as string
+                startArgs = cameraIdOrConfig;
+            } else if (cameraIdOrConfig && cameraIdOrConfig.deviceId) {
+                // already in acceptable shape
+                startArgs = cameraIdOrConfig;
+            } else {
+                startArgs = { facingMode: 'environment' };
+            }
+
+            // Build camera config for Html5Qrcode.start
+            const cameraConfig = (selectedCamId) ? { deviceId: { exact: selectedCamId } } : (startArgs || { facingMode: 'environment' });
+
+            qrRegScanner.start(
+                cameraConfig,
+                scanConfig,
+                (decodedText, decodedResult) => {
+                    qrRegScanErrorCount = 0;
+                    console.log('Decoded result:', decodedResult);
+                    if (/^\d+$/.test((decodedText||'').trim())) showQRToast('Student ID scanned: ' + decodedText.trim(), 'info', 1400);
+                    onQRRegistrationScanned(decodedText, decodedResult);
+                },
+                (err) => {
+                    qrRegScanErrorCount = (qrRegScanErrorCount || 0) + 1;
+                    onQRRegistrationScanError(err);
+                }
+            ).then(() => {
+                console.log('✓✓✓ SCANNER STARTED SUCCESSFULLY ✓✓✓');
+                // mark that html5-qrcode started successfully
+                window.__qrRegistrationHtml5Started = true;
+                document.getElementById('qr-reg-message').textContent = '✓ Camera active - point at QR code';
+                document.getElementById('qr-reg-message').className = 'text-xs text-green-600 text-center mt-2 font-semibold';
+                startFallbackDecoder();
+                // ensure video not mirrored
+                setTimeout(() => {
+                    const videoElement = document.querySelector('#qr-reg-scanner video');
+                    if (videoElement) {
+                        videoElement.style.transform = 'scaleX(1)';
+                        videoElement.style.webkitTransform = 'scaleX(1)';
+                    }
+                }, 250);
+            }).catch(err => {
+                console.error('❌ CAMERA FAILED:', err);
+                let errorMsg = (err && err.message) ? err.message : JSON.stringify(err);
+                document.getElementById('qr-reg-message').innerHTML = '<strong>❌ Camera Error</strong><br>' + errorMsg;
+                document.getElementById('qr-reg-message').className = 'text-xs text-red-600 text-center mt-2 font-semibold';
+                showQRToast('Camera error: ' + errorMsg, 'error', 8000);
+            });
+        }).catch(err => {
+            console.warn('Could not get cameras list, falling back to facingMode. Error:', err);
+            // fallback: use facingMode constraint
+            qrRegScanner.start({ facingMode: 'environment' }, qrCodeConfig, onQRRegistrationScanned, onQRRegistrationScanError).then(() => {
+                document.getElementById('qr-reg-message').textContent = '✓ Camera active - point at QR code';
+                document.getElementById('qr-reg-message').className = 'text-xs text-green-600 text-center mt-2 font-semibold';
+                startFallbackDecoder();
+            }).catch(err2 => {
+                console.error('Camera fallback failed:', err2);
+                document.getElementById('qr-reg-message').textContent = 'Camera failed: ' + (err2 && err2.message ? err2.message : err2);
+                document.getElementById('qr-reg-message').className = 'text-xs text-red-600 text-center mt-2 font-semibold';
+                showQRToast('Camera error: ' + (err2 && err2.message ? err2.message : err2), 'error', 8000);
+            });
+            // ensure we attempt custom scanner if html5-qrcode doesn't start quickly
+            setTimeout(() => {
+                if (!window.__qrRegistrationHtml5Started) {
+                    try { startCustomProcessingScanner(); } catch(e){ console.warn('Delayed custom scanner start failed', e); }
+                }
+            }, 1200);
+        });
+    };
+
+    window.onQRRegistrationScanned = function(decodedText, decodedResult){
+        const scannedData = decodedText.trim();
+        console.log('✓✓✓ QR Code DETECTED:', scannedData);
+        console.log('Debug info:', { decodedText, hasResult: !!decodedResult });
+        
+        // Check if registration QR has been scanned
+        const hasRegQR = !!window.qrRegScannedCode;
+        
+        // Determine what type of QR was scanned by pattern
+        const looksLikeStudentId = /^\d+$/.test(scannedData);
+        
+        console.log('Current state:', { hasRegQR, looksLikeStudentId, scannedData });
+        
+        if (looksLikeStudentId) {
+            // Student ID QR detected (numeric pattern)
+            const studentIdInput = document.getElementById('qr-reg-student-id-input');
+            studentIdInput.value = scannedData;
+            const msg = document.getElementById('qr-reg-message'); 
+            if (msg) { 
+                msg.textContent = '✓ Student ID: ' + scannedData + ' | ' + (hasRegQR ? 'Ready to register' : 'Now scan registration QR'); 
+                msg.className = 'text-xs text-green-600 text-center mt-2 font-semibold'; 
+            }
+            // Show uniform success notification
+            try{ if (window.showNotification) window.showNotification('Student ID scanned: ' + scannedData, 'success'); } catch(e){}
+            console.log('Student ID field filled:', scannedData);
+        } else {
+            // Registration QR detected (non-numeric)
+            window.qrRegScannedCode = scannedData;
+            const disp = document.getElementById('qr-reg-qr-code-display');
+            if (disp) { 
+                disp.textContent = 'Registration QR: ' + (scannedData.length > 25 ? scannedData.substring(0, 25) + '...' : scannedData); 
+                disp.className = 'w-full px-3 py-2 border border-green-300 rounded-lg text-sm bg-green-50 text-green-700 font-semibold min-h-[40px] flex items-center break-all'; 
+            }
+
+            // Also auto-fill the manual QR input so users see the scanned value in the 'OR Enter Registration QR Manually' field
+            try{
+                const manualEl = document.getElementById('qr-reg-manual-qr-input');
+                if (manualEl){
+                    manualEl.value = scannedData;
+                    // dispatch input event so listeners update UI and enable register button
+                    manualEl.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            } catch(e){ console.warn('Auto-fill manual QR input failed', e); }
+
+            const msg = document.getElementById('qr-reg-message'); 
+            if (msg) { 
+                msg.textContent = '✓ Registration QR scanned | ' + (document.getElementById('qr-reg-student-id-input').value ? 'Ready to register' : 'Now scan student ID'); 
+                msg.className = 'text-xs text-green-600 text-center mt-2 font-semibold'; 
+            }
+            // Show uniform success notification for registration QR
+            try{ if (window.showNotification) window.showNotification('Registration QR scanned', 'success'); } catch(e){}
+            console.log('Registration QR stored and auto-filled manual input:', scannedData);
+        }
+        
+        enableQRRegisterIfReady();
+    };
+
+    window.onQRRegistrationScanError = function(error){
+        // Show guidance if many consecutive scan errors occur
+        console.log('Scan error:', error);
+        const msgEl = document.getElementById('qr-reg-message');
+        qrRegScanErrorCount = (qrRegScanErrorCount || 0) + 1;
+
+        if (qrRegScanErrorCount >= 6) {
+            const hint = 'No QR detected — try moving closer, increase lighting, or steady your device.';
+            if (msgEl) {
+                msgEl.textContent = '⚠️ ' + hint;
+                msgEl.className = 'text-xs text-yellow-600 text-center mt-2 font-semibold';
+            }
+            showQRToast(hint, 'warning', 6000);
+            // reset counter so message not spammed
+            qrRegScanErrorCount = 0;
+            // After repeated failures, try starting an alternate ZXing continuous scanner
+            try { startZXingContinuousFallback(); } catch(e){ console.warn('ZXing continuous fallback failed to start', e); }
+            try { startCustomProcessingScanner(); } catch(e){ console.warn('Custom processing scanner failed to start', e); }
+        }
+    };
+
+    async function startZXingContinuousFallback(){
+        if (zxingActive) return;
+        try { stopCustomScanner(); } catch(e){}
+        try{
+            await loadZxing();
+            const Reader = (window.ZXing && window.ZXing.BrowserMultiFormatReader) ? window.ZXing.BrowserMultiFormatReader : (window.BrowserMultiFormatReader || null);
+            if (!Reader) { console.warn('ZXing Reader not available'); return; }
+            // stop Html5Qrcode scanner if running
+            try { if (qrRegScanner) { qrRegScanner.stop().catch(()=>{}); } } catch(e){}
+            zxingReader = new Reader();
+            const videoElemId = 'qr-reg-zxing-video';
+            let videoElem = document.getElementById(videoElemId);
+            if (!videoElem){
+                videoElem = document.createElement('video');
+                videoElem.id = videoElemId;
+                videoElem.style.width = '100%';
+                videoElem.style.height = '100%';
+                const container = document.getElementById('qr-reg-scanner-container');
+                if (container) {
+                    // insert video at top and hide existing scanner UI
+                    container.innerHTML = '';
+                    container.appendChild(videoElem);
+                }
+            }
+            const cameras = await Html5Qrcode.getCameras().catch(()=>[]);
+            const selected = cameras && cameras.length ? (cameras.find(c => /back|rear|environment/i.test(c.label||c.id)) || cameras[0]).id : null;
+            zxingActive = true;
+            zxingReader.decodeFromVideoDevice(selected || null, videoElem, (result, err) => {
+                if (result && result.text){
+                    console.log('ZXing continuous detected:', result.text);
+                    // stop reader and hand over
+                    try { zxingReader.reset(); } catch(e){}
+                    zxingActive = false;
+                    onQRRegistrationScanned(result.text, result);
+                }
+                if (err){
+                    console.warn('ZXing continuous error', err);
+                }
+            });
+            document.getElementById('qr-reg-message').textContent = 'Alternate scanner active — point at QR code';
+            document.getElementById('qr-reg-message').className = 'text-xs text-blue-600 text-center mt-2';
+        } catch(e){ console.warn('startZXingContinuousFallback failed', e); }
+    }
+
+    function showQRToast(message, type='info', duration=4000){
+        try {
+            // Prefer global notification system if available for uniform UI
+            if (window.showNotification && typeof window.showNotification === 'function'){
+                window.showNotification(message, type === 'error' ? 'error' : (type === 'warning' ? 'warning' : (type === 'success' ? 'success' : 'info')));
+                return;
+            }
+            // Fallback small toast inside modal
+            const modal = document.getElementById('qrRegistrationModal');
+            const toast = document.createElement('div');
+            toast.className = 'qr-reg-toast';
+            toast.style.position = 'fixed';
+            toast.style.right = '24px';
+            toast.style.top = '24px';
+            toast.style.zIndex = 2000;
+            toast.style.padding = '10px 14px';
+            toast.style.borderRadius = '8px';
+            toast.style.boxShadow = '0 6px 18px rgba(0,0,0,0.12)';
+            toast.style.color = '#fff';
+            toast.style.fontSize = '13px';
+            toast.style.maxWidth = '360px';
+
+            if (type === 'error') toast.style.background = '#dc2626';
+            else if (type === 'warning') toast.style.background = '#f59e0b';
+            else if (type === 'success') toast.style.background = '#16a34a';
+            else toast.style.background = '#2563eb';
+
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(()=>{ toast.style.opacity = '0'; toast.style.transition = 'opacity 300ms'; }, duration - 300);
+            setTimeout(()=>{ try { document.body.removeChild(toast); } catch(e){} }, duration + 50);
+        } catch(e){ console.error('Toast error', e); }
+    }
+
+    // Preprocess image: convert to grayscale and boost contrast for QR detection
+    function preprocessImageForQR(imgData){
+        const data = new Uint8ClampedArray(imgData.data);
+        const len = data.length;
+        let minVal = 255, maxVal = 0;
+        // Grayscale + find min/max
+        for (let i=0; i<len; i+=4){
+            const r = data[i], g = data[i+1], b = data[i+2];
+            const gray = (r*0.3 + g*0.59 + b*0.11)|0;
+            minVal = Math.min(minVal, gray);
+            maxVal = Math.max(maxVal, gray);
+            data[i] = data[i+1] = data[i+2] = gray;
+        }
+        // Contrast stretch + binarization
+        const range = maxVal - minVal || 1;
+        const mid = (minVal + maxVal) / 2;
+        for (let i=0; i<len; i+=4){
+            let val = data[i];
+            val = ((val - minVal) / range) * 255;
+            val = val > mid ? 255 : 0;
+            data[i] = data[i+1] = data[i+2] = val;
+        }
+        return { data, width: imgData.width, height: imgData.height };
+    }
+
+    // Load jsQR dynamically if not already present
+    function loadJsQr(){
+        return new Promise((resolve, reject) => {
+            if (window.jsQR) return resolve(window.jsQR);
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+            s.onload = () => resolve(window.jsQR);
+            s.onerror = (e) => reject(e);
+            document.head.appendChild(s);
+        });
+    }
+
+    // Load html5-qrcode dynamically if not already present
+    function loadHtml5Qrcode(){
+        return new Promise((resolve, reject) => {
+            if (window.Html5Qrcode) return resolve(window.Html5Qrcode);
+            const s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js';
+            s.onload = () => {
+                if (window.Html5Qrcode) return resolve(window.Html5Qrcode);
+                // some bundles expose Html5QrcodeScanType separately; still resolve
+                return resolve(window.Html5Qrcode || window);
+            };
+            s.onerror = (e) => reject(e);
+            document.head.appendChild(s);
+        });
+    }
+
+    // Load ZXing library dynamically (UMD bundle)
+    function loadZxing(){
+        return new Promise((resolve, reject) => {
+            if (window.ZXing || window.ZXingBrowser || window.BrowserMultiFormatReader) return resolve(window.ZXing || window.ZXingBrowser || window.BrowserMultiFormatReader);
+            const s = document.createElement('script');
+            s.src = 'https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js';
+            s.onload = () => {
+                // UMD exposes ZXingBrowser or BrowserMultiFormatReader
+                const lib = window.ZXing || window.ZXingBrowser || window.BrowserMultiFormatReader || window.ZXingModule;
+                if (lib) return resolve(lib);
+                // try to access BrowserMultiFormatReader directly
+                if (window.BrowserMultiFormatReader) return resolve(window.BrowserMultiFormatReader);
+                // otherwise resolve with window
+                return resolve(window);
+            };
+            s.onerror = (e) => reject(e);
+            document.head.appendChild(s);
+        });
+    }
+
+    // --- Custom getUserMedia-based processing scanner (robust for low-quality cameras) ---
+    function stopCustomScanner(){
+        try{
+            customScannerActive = false;
+            if (customStream){
+                try{ customStream.getTracks().forEach(t => t.stop()); } catch(e){}
+                customStream = null;
+            }
+            if (customVideo){
+                try{ customVideo.pause(); customVideo.srcObject = null; if (customVideo.parentNode) customVideo.parentNode.removeChild(customVideo); } catch(e){}
+                customVideo = null;
+            }
+            if (customCanvas && customCanvas.parentNode){ try { customCanvas.parentNode.removeChild(customCanvas); } catch(e){} }
+            customCanvas = null; customCtx = null;
+        } catch(e){ console.warn('stopCustomScanner error', e); }
+    }
+
+    async function startCustomProcessingScanner(){
+        if (customScannerActive) return;
+        // try to obtain camera stream with higher ideal resolution but allow fallback
+        const sel = document.getElementById('qr-reg-camera-select');
+        const selectedCamId = (sel && sel.value) ? sel.value : null;
+        const constraints = { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'environment' } };
+        if (selectedCamId) constraints.video = { deviceId: { exact: selectedCamId }, width: { ideal: 1280 }, height: { ideal: 720 } };
+
+        try{
+            // stop other scanners to avoid multiple streams
+            try { if (qrRegScanner) { qrRegScanner.stop().catch(()=>{}); qrRegScanner = null; } } catch(e){}
+            try { if (zxingActive && zxingReader) { zxingReader.reset(); zxingActive = false; } } catch(e){}
+            stopFallbackDecoder();
+            stopCustomScanner();
+
+            customStream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch(err){
+            console.warn('Custom scanner getUserMedia failed', err);
+            return;
+        }
+
+        customVideo = document.createElement('video');
+        customVideo.playsInline = true;
+        customVideo.muted = true;
+        customVideo.autoplay = true;
+        customVideo.srcObject = customStream;
+
+        // attach to container (hidden) so user doesn't see duplicate UI; keep small to avoid layout shifts
+        const container = document.getElementById('qr-reg-scanner-container');
+        if (container){
+            container.innerHTML = '';
+            container.appendChild(customVideo);
+            customVideo.style.width = '100%';
+            customVideo.style.height = '100%';
+            customVideo.style.objectFit = 'cover';
+        }
+
+        customCanvas = document.createElement('canvas');
+        try { customCtx = customCanvas.getContext('2d', { willReadFrequently: true }); } catch(e){ customCtx = customCanvas.getContext('2d'); }
+
+        try{
+            await customVideo.play();
+        } catch(e){ console.warn('customVideo play failed', e); }
+
+        // Wait a moment for camera to stabilize
+        await new Promise(r => setTimeout(r, 400));
+
+        customScannerActive = true;
+
+        // frame processing loop
+        let frameCounter = 0;
+        const attemptDecodeOnFrame = async () => {
+            if (!customScannerActive) return;
+            try{
+                if (!customVideo || customVideo.readyState < 2) {
+                    requestAnimationFrame(attemptDecodeOnFrame);
+                    return;
+                }
+                const w = customVideo.videoWidth || 640;
+                const h = customVideo.videoHeight || 480;
+                if (!w || !h){ requestAnimationFrame(attemptDecodeOnFrame); return; }
+                // set canvas smaller to speed up processing but keep enough pixels
+                const procW = Math.min(1024, Math.max(320, w));
+                const procH = Math.floor(procW * (h / w));
+                customCanvas.width = procW; customCanvas.height = procH;
+                customCtx.drawImage(customVideo, 0, 0, procW, procH);
+
+                // Every 3rd frame run full decoding attempts
+                frameCounter = (frameCounter + 1) % 3;
+                if (frameCounter === 0){
+                    const imgData = customCtx.getImageData(0,0,procW,procH);
+                    // Try BarcodeDetector (fast)
+                    try{
+                        if (window.BarcodeDetector){
+                            const detector = new BarcodeDetector({ formats: ['qr_code'] });
+                            const dets = await detector.detect(customCanvas).catch(()=>[]);
+                            if (dets && dets.length){
+                                stopCustomScanner();
+                                onQRRegistrationScanned(dets[0].rawValue || dets[0].rawText || '', dets[0]);
+                                return;
+                            }
+                        }
+                    } catch(e){ /* continue to heavier decoders */ }
+
+                    // Preprocess once and try jsQR and ZXing with rotations/scales/thresholds
+                    try{
+                        await loadJsQr();
+                        // try several preprocessing strategies
+                        const thresholds = [128, 100, 150, 80, 180];
+                        for (let t=0;t<thresholds.length && customScannerActive; t++){
+                            const pre = preprocessImageForQR(imgData);
+                            // manually apply threshold variant
+                            const data = pre.data.slice();
+                            for (let i=0;i<data.length;i+=4){
+                                const v = data[i];
+                                const val = v > thresholds[t] ? 255 : 0;
+                                data[i]=data[i+1]=data[i+2]=val;
+                            }
+                            // jsQR expects Uint8ClampedArray RGBA
+                            const jsResult = window.jsQR(data, procW, procH, { inversionAttempts: 'attemptBoth' });
+                            if (jsResult && jsResult.data){ stopCustomScanner(); onQRRegistrationScanned(jsResult.data, jsResult); return; }
+
+                            // Try ZXing decodeFromImage using a temporary image
+                            try{
+                                await loadZxing();
+                                const lib = window.ZXing || window.ZXingBrowser || window;
+                                const Reader = (lib && lib.BrowserMultiFormatReader) ? lib.BrowserMultiFormatReader : (window.BrowserMultiFormatReader || null);
+                                if (Reader){
+                                    const codeReader = new Reader();
+                                    const binCanvas = document.createElement('canvas');
+                                    binCanvas.width = procW; binCanvas.height = procH;
+                                    const binCtx = binCanvas.getContext('2d');
+                                    const imageData = binCtx.createImageData(procW, procH);
+                                    imageData.data.set(data);
+                                    binCtx.putImageData(imageData, 0, 0);
+                                    const trialDataUrl = binCanvas.toDataURL('image/png');
+                                    const trialImg = new Image(); trialImg.src = trialDataUrl;
+                                    await new Promise((res, rej) => { trialImg.onload = res; trialImg.onerror = rej; });
+                                    try{
+                                        const resz = await codeReader.decodeFromImage(trialImg);
+                                        if (resz && (resz.text || (resz.getText && resz.getText()))){ stopCustomScanner(); onQRRegistrationScanned(resz.text || (resz.getText && resz.getText()), resz); return; }
+                                    }catch(e){ /* continue */ }
+                                }
+                            } catch(e){ /* ignore zxing errors here */ }
+                        }
+                    } catch(e){ console.warn('Custom scanner decode attempt failed', e); }
+                    // If still not found, try center-crop upscale attempt (helps small QR in frame)
+                    try{
+                        if (!customScannerActive) return;
+                        const cropW = Math.floor(procW * 0.6);
+                        const cropH = Math.floor(procH * 0.6);
+                        const sx = Math.floor((procW - cropW) / 2);
+                        const sy = Math.floor((procH - cropH) / 2);
+                        const cropData = customCtx.getImageData(sx, sy, cropW, cropH);
+                        const upCanvas = document.createElement('canvas');
+                        const upW = Math.min(2048, cropW * 2);
+                        const upH = Math.min(2048, cropH * 2);
+                        upCanvas.width = upW; upCanvas.height = upH;
+                        const upCtx = upCanvas.getContext('2d');
+                        // draw scaled crop
+                        const tmp = document.createElement('canvas'); tmp.width = cropW; tmp.height = cropH;
+                        const tmpCtx = tmp.getContext('2d'); tmpCtx.putImageData(cropData, 0, 0);
+                        upCtx.drawImage(tmp, 0, 0, upW, upH);
+                        const upImgData = upCtx.getImageData(0,0,upW,upH);
+                        // try jsQR on upscale
+                        const upJs = window.jsQR ? window.jsQR(upImgData.data, upW, upH, { inversionAttempts: 'attemptBoth' }) : null;
+                        if (upJs && upJs.data){ stopCustomScanner(); onQRRegistrationScanned(upJs.data, upJs); return; }
+                        // try zxing
+                        try{
+                            await loadZxing();
+                            const lib2 = window.ZXing || window.ZXingBrowser || window;
+                            const Reader2 = (lib2 && lib2.BrowserMultiFormatReader) ? lib2.BrowserMultiFormatReader : (window.BrowserMultiFormatReader || null);
+                            if (Reader2){
+                                const reader2 = new Reader2();
+                                const trialUrl = upCanvas.toDataURL('image/png');
+                                const trialImg2 = new Image(); trialImg2.src = trialUrl;
+                                await new Promise((res, rej) => { trialImg2.onload = res; trialImg2.onerror = rej; });
+                                try{
+                                    const out = await reader2.decodeFromImage(trialImg2);
+                                    if (out && (out.text || (out.getText && out.getText()))){ stopCustomScanner(); onQRRegistrationScanned(out.text || (out.getText && out.getText()), out); return; }
+                                }catch(e){}
+                            }
+                        }catch(e){}
+                    }catch(e){ /* ignore */ }
+                }
+            } catch(e){ console.warn('Custom frame loop error', e); }
+            requestAnimationFrame(attemptDecodeOnFrame);
+        };
+
+        requestAnimationFrame(attemptDecodeOnFrame);
+    }
+
+    function startFallbackDecoder(){
+        // If already running, do nothing
+        if (qrRegFallbackInterval) return;
+        // prepare canvas
+        if (!qrRegFallbackCanvas){
+            qrRegFallbackCanvas = document.createElement('canvas');
+            try {
+                qrRegFallbackCtx = qrRegFallbackCanvas.getContext('2d', { willReadFrequently: true });
+            } catch(e) {
+                qrRegFallbackCtx = qrRegFallbackCanvas.getContext('2d');
+            }
+        }
+
+        // try to load jsQR (best-effort)
+        loadJsQr().then(() => {
+            // poll video frames at faster rate
+            qrRegFallbackInterval = setInterval(async () => {
+                try{
+                    const video = document.querySelector('#qr-reg-scanner video');
+                    if (!video || video.readyState < 2) return;
+                    const w = video.videoWidth;
+                    const h = video.videoHeight;
+                    if (!w || !h) return;
+                    qrRegFallbackCanvas.width = w;
+                    qrRegFallbackCanvas.height = h;
+                    // draw video frame
+                    qrRegFallbackCtx.drawImage(video, 0, 0, w, h);
+                    const imgData = qrRegFallbackCtx.getImageData(0, 0, w, h);
+                    // preprocess with contrast stretch
+                    const preprocessed = preprocessImageForQR(imgData);
+                    // attempt decode with jsQR
+                    const code = window.jsQR(preprocessed.data, w, h, { inversionAttempts: 'attemptBoth' });
+                    if (code && code.data){
+                        console.log('jsQR decoded:', code);
+                        // feed into handler
+                        onQRRegistrationScanned(code.data, code);
+                        // stop further polling briefly to avoid duplicates
+                        clearInterval(qrRegFallbackInterval);
+                        qrRegFallbackInterval = null;
+                        setTimeout(startFallbackDecoder, 1200);
+                    }
+                } catch(e){ console.error('Fallback decode error', e); }
+            }, 300);
+        }).catch(err => {
+            console.warn('jsQR failed to load or not available', err);
+        });
+    }
+
+    function stopFallbackDecoder(){
+        try{ if (qrRegFallbackInterval) { clearInterval(qrRegFallbackInterval); qrRegFallbackInterval = null; } }catch(e){}
+    }
+
+    // Capture a single frame from the selected camera and try to decode using BarcodeDetector
+    async function captureAndDetectFrame(){
+        const statusEl = document.getElementById('qr-reg-capture-status');
+        try{ statusEl.textContent = 'Capturing...'; }catch(e){}
+
+        const sel = document.getElementById('qr-reg-camera-select');
+        const selectedCamId = (sel && sel.value) ? sel.value : null;
+        const constraints = { video: { width: { ideal: 1280 }, height: { ideal: 720 } } };
+        if (selectedCamId) constraints.video.deviceId = { exact: selectedCamId };
+        else constraints.video.facingMode = 'environment';
+
+        // Step 1: Request camera
+        let stream = null;
+        try{
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch(err) {
+            console.error('getUserMedia failed:', err.name, err.message);
+            const msg = err.name === 'NotAllowedError' 
+                ? 'Camera permission denied. Check site settings.' 
+                : err.name === 'NotFoundError'
+                ? 'No camera found.'
+                : err.message || 'Unknown camera error';
+            try{ if (statusEl) statusEl.textContent = 'Error: ' + msg; }catch(e){}
+            showQRToast(msg, 'error', 5000);
+            return;
+        }
+
+        if (!stream) {
+            try{ if (statusEl) statusEl.textContent = 'No stream returned'; }catch(e){}
+            showQRToast('Failed to get camera stream', 'error', 4000);
+            return;
+        }
+
+        // Step 2: Create video element and wait for stream to be ready
+        const video = document.createElement('video');
+        video.playsInline = true;
+        video.muted = true;
+        video.srcObject = stream;
+
+        try{
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('Video play timeout')), 3000);
+                video.onplay = () => { clearTimeout(timeout); resolve(); };
+                video.play().catch(reject);
+            });
+        } catch(err){
+            console.error('Video play/timeout:', err);
+            try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
+            try{ if (statusEl) statusEl.textContent = 'Camera did not start'; }catch(e){}
+            showQRToast('Camera did not start — check permissions and try again', 'error', 5000);
+            return;
+        }
+
+        // Wait for frame to be ready
+        await new Promise(r => setTimeout(r, 500));
+
+        // Step 3: Check video dimensions
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        console.log('Captured video dimensions:', w, 'x', h);
+
+        if (!w || !h) {
+            try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
+            try{ if (statusEl) statusEl.textContent = 'Video has no dimensions'; }catch(e){}
+            showQRToast('Video returned no dimensions — camera may not be working', 'error', 4000);
+            return;
+        }
+
+        // Step 4: Draw frame to canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = w; 
+        canvas.height = h;
+        let ctx;
+        try{
+            ctx = canvas.getContext('2d', { willReadFrequently: true });
+        } catch(e){
+            ctx = canvas.getContext('2d');
+        }
+        
+        try{
+            ctx.drawImage(video, 0, 0, w, h);
+        } catch(err){
+            console.error('Canvas drawImage failed:', err);
+            try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
+            try{ if (statusEl) statusEl.textContent = 'Canvas error'; }catch(e){}
+            showQRToast('Failed to capture canvas', 'error', 4000);
+            return;
+        }
+
+        // Stop camera
+        try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
+
+        // Step 5: Validate canvas has data
+        const dataUrl = canvas.toDataURL('image/png');
+        if (!dataUrl || dataUrl === 'data:image/png;base64,' || dataUrl.endsWith('AAAAA')) {
+            try{ if (statusEl) statusEl.textContent = 'Canvas empty — no frames captured'; }catch(e){}
+            showQRToast('Canvas is empty — camera may not be delivering frames', 'error', 5000);
+            return;
+        }
+        console.log('Canvas captured successfully:', w, 'x', h);
+
+        // Step 6: Try BarcodeDetector
+        if (window.BarcodeDetector){
+            try{
+                try{ if (statusEl) statusEl.textContent = 'Decoding with BarcodeDetector...'; }catch(e){}
+                const detector = new BarcodeDetector({ formats: ['qr_code'] });
+                const results = await detector.detect(canvas);
+                if (results && results.length){
+                    const raw = results[0].rawValue || results[0].rawText || '';
+                    console.log('BarcodeDetector found:', raw);
+                    try{ if (statusEl) statusEl.textContent = 'Detected: ' + raw; }catch(e){}
+                    showQRToast('Detected: ' + raw, 'success', 2200);
+                    onQRRegistrationScanned(raw, results[0]);
+                    return;
+                }
+            } catch(err){
+                console.warn('BarcodeDetector error:', err);
+            }
+        }
+
+        // Step 7: Try jsQR with preprocessing
+        try{
+            try{ if (statusEl) statusEl.textContent = 'Decoding with jsQR...'; }catch(e){}
+            await loadJsQr();
+            const imgData = ctx.getImageData(0, 0, w, h);
+            const preprocessed = preprocessImageForQR(imgData);
+            const code = window.jsQR(preprocessed.data, w, h, { inversionAttempts: 'attemptBoth' });
+            if (code && code.data){
+                console.log('jsQR decoded:', code.data);
+                try{ if (statusEl) statusEl.textContent = 'Detected (jsQR): ' + code.data; }catch(e){}
+                showQRToast('Detected (jsQR): ' + code.data, 'success', 2200);
+                onQRRegistrationScanned(code.data, code);
+                return;
+            }
+        } catch(err){ console.warn('jsQR failed:', err); }
+
+        // Step 7b: Try ZXing on the captured image (fallback)
+        try{
+            try{ if (statusEl) statusEl.textContent = 'Decoding with ZXing...'; }catch(e){}
+            await loadZxing();
+            try{
+                const lib = window.ZXing || window.ZXingBrowser || window;
+                // BrowserMultiFormatReader may be exposed as ZXing.BrowserMultiFormatReader or window.BrowserMultiFormatReader
+                const Reader = (lib && lib.BrowserMultiFormatReader) ? lib.BrowserMultiFormatReader : (window.BrowserMultiFormatReader || null);
+                if (Reader){
+                    const codeReader = new Reader();
+                    const img = new Image();
+                    img.src = dataUrl;
+                    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+                    try{
+                        // Try decode at original size first
+                        try {
+                            const result = await codeReader.decodeFromImage(img);
+                            if (result && (result.text || result.getText && result.getText())){
+                                const raw = result.text || (result.getText && result.getText()) || '';
+                                console.log('ZXing decoded (original):', raw);
+                                try{ if (statusEl) statusEl.textContent = 'Detected (ZXing): ' + raw; }catch(e){}
+                                showQRToast('Detected (ZXing): ' + raw, 'success', 2200);
+                                onQRRegistrationScanned(raw, result);
+                                return;
+                            }
+                        } catch(e){ console.warn('ZXing decodeFromImage at original size failed', e); }
+
+                            // If original fails, try multiple preprocessing attempts: scale, rotate, and threshold
+                            try {
+                                const scales = [1.5, 2, 3];
+                                const rotations = [0, 90, 180, 270];
+                                let found = false;
+                                for (let s=0; s<scales.length && !found; s++){
+                                    for (let r=0; r<rotations.length && !found; r++){
+                                        try{
+                                            const scale = scales[s];
+                                            const rot = rotations[r];
+                                            const tmp = document.createElement('canvas');
+                                            const srcW = img.naturalWidth || w;
+                                            const srcH = img.naturalHeight || h;
+                                            tmp.width = Math.floor(srcW * scale);
+                                            tmp.height = Math.floor(srcH * scale);
+                                            let tmpCtx;
+                                            try { tmpCtx = tmp.getContext('2d', { willReadFrequently: true }); } catch(e) { tmpCtx = tmp.getContext('2d'); }
+                                            // Apply rotation by drawing into an intermediate canvas
+                                            if (rot === 0){
+                                                tmpCtx.drawImage(img, 0, 0, tmp.width, tmp.height);
+                                            } else {
+                                                // draw into rotated canvas
+                                                const rotCanvas = document.createElement('canvas');
+                                                if (rot === 90 || rot === 270){ rotCanvas.width = tmp.height; rotCanvas.height = tmp.width; } else { rotCanvas.width = tmp.width; rotCanvas.height = tmp.height; }
+                                                let rotCtx;
+                                                try { rotCtx = rotCanvas.getContext('2d', { willReadFrequently: true }); } catch(e) { rotCtx = rotCanvas.getContext('2d'); }
+                                                rotCtx.save();
+                                                // translate/rotate
+                                                if (rot === 90){ rotCtx.translate(rotCanvas.width, 0); rotCtx.rotate(Math.PI/2); }
+                                                else if (rot === 180){ rotCtx.translate(rotCanvas.width, rotCanvas.height); rotCtx.rotate(Math.PI); }
+                                                else if (rot === 270){ rotCtx.translate(0, rotCanvas.height); rotCtx.rotate(-Math.PI/2); }
+                                                rotCtx.drawImage(img, 0, 0, tmp.width, tmp.height);
+                                                rotCtx.restore();
+                                                // copy rotated content into tmp sized canvas (fit)
+                                                tmp.width = rotCanvas.width; tmp.height = rotCanvas.height;
+                                                tmpCtx = tmp.getContext('2d');
+                                                try { tmpCtx = tmp.getContext('2d', { willReadFrequently: true }); } catch(e) { tmpCtx = tmp.getContext('2d'); }
+                                                tmpCtx.drawImage(rotCanvas, 0, 0, tmp.width, tmp.height);
+                                            }
+
+                                            // Optional: enhance contrast / binarize before decode
+                                            try{
+                                                const imgData = tmpCtx.getImageData(0,0,tmp.width,tmp.height);
+                                                const pre = preprocessImageForQR(imgData);
+                                                const binCanvas = document.createElement('canvas');
+                                                binCanvas.width = tmp.width; binCanvas.height = tmp.height;
+                                                const binCtx = binCanvas.getContext('2d');
+                                                const imageData = binCtx.createImageData(tmp.width, tmp.height);
+                                                // pre.data contains grayscale bytes in RGBA slots; assign
+                                                for (let i=0;i<pre.data.length;i++){ imageData.data[i] = pre.data[i]; }
+                                                binCtx.putImageData(imageData,0,0);
+                                                const scaledDataUrl = binCanvas.toDataURL('image/png');
+                                                const trialImg = new Image();
+                                                trialImg.src = scaledDataUrl;
+                                                await new Promise((res2, rej2) => { trialImg.onload = res2; trialImg.onerror = rej2; });
+                                                try{
+                                                    const trialResult = await codeReader.decodeFromImage(trialImg);
+                                                    if (trialResult && (trialResult.text || trialResult.getText && trialResult.getText())){
+                                                        const raw2 = trialResult.text || (trialResult.getText && trialResult.getText()) || '';
+                                                        console.log('ZXing decoded (scale ' + scale + ' rot ' + rot + '):', raw2);
+                                                        try{ if (statusEl) statusEl.textContent = 'Detected (ZXing): ' + raw2; }catch(e){}
+                                                        showQRToast('Detected (ZXing): ' + raw2, 'success', 2200);
+                                                        onQRRegistrationScanned(raw2, trialResult);
+                                                        found = true;
+                                                        break;
+                                                    }
+                                                }catch(e){ /* continue */ }
+                                            }catch(e){ /* continue */ }
+                                        }catch(e){ /* try next */ }
+                                    }
+                                }
+                                if (!found){ console.warn('ZXing exhaustive attempts found nothing'); }
+                                if (found) return;
+                            } catch(e){ console.warn('ZXing scaled/rotated decode failed', e); }
+                    } catch(e){ console.warn('ZXing decodeFromImage overall failed', e); }
+                }
+            } catch(e){ console.warn('ZXing failed to decode', e); }
+        } catch(e){ console.warn('loadZxing failed', e); }
+
+        // Step 8: No detection — attempt server-side decode before opening captured image for inspection
+        try{ if (statusEl) statusEl.textContent = 'No QR found — trying server-side decode...'; }catch(e){}
+        showQRToast('No QR detected locally. Trying server-side decode...', 'warning', 3500);
+        try{
+            const serverResp = await fetch('{% url "dashboard:instructor_decode_image" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken(),
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ image: dataUrl })
+            });
+            const sr = await serverResp.json().catch(()=>null);
+            if (sr && sr.success && Array.isArray(sr.decoded) && sr.decoded.length){
+                const raw = sr.decoded[0];
+                console.log('Server decode succeeded:', raw);
+                try{ if (statusEl) statusEl.textContent = 'Detected (server): ' + raw; }catch(e){}
+                showQRToast('Detected (server): ' + raw, 'success', 2200);
+                onQRRegistrationScanned(raw, { source: 'server' });
+                return;
+            } else {
+                console.warn('Server decode did not find QR or failed', sr);
+                try{ if (statusEl) statusEl.textContent = 'No QR found — opening captured image for inspection'; }catch(e){}
+                try{ if (window.showNotification) window.showNotification('QR code not read — try better lighting or closer distance', 'error'); } catch(e){ showQRToast('No QR detected. Check lighting, focus, and QR clarity.', 'warning', 4000); }
+                const w2 = window.open();
+                if (w2) {
+                    w2.document.write(`<html><head><title>Captured QR Frame</title></head><body style='margin:0; padding:20px; font-family:sans-serif; background:#f5f5f5'>
+                        <img src="${dataUrl}" style='max-width:100%; border:1px solid #ccc; border-radius:4px'>
+                        <p style='margin-top:20px; font-size:13px; color:#666'>
+                            If QR is visible: Camera works, but decoder couldn't read it. Try better lighting or closer distance.<br/>
+                            If QR is dark/blurry: Camera focus or exposure issue. Adjust distance.<br/>
+                            If completely black/white: Extreme lighting conditions.
+                        </p>
+                    </body></html>`);
+                    w2.document.close();
+                }
+            }
+        } catch(e){
+            console.error('Server decode request failed', e);
+            try{ if (statusEl) statusEl.textContent = 'Server decode failed — opening captured image'; }catch(e){}
+            showQRToast('Server decode failed — opening captured image', 'warning', 3500);
+            try{
+                const w2 = window.open();
+                if (w2) {
+                    w2.document.write(`<html><head><title>Captured QR Frame</title></head><body style='margin:0; padding:20px; font-family:sans-serif; background:#f5f5f5'>
+                        <img src="${dataUrl}" style='max-width:100%; border:1px solid #ccc; border-radius:4px'>
+                        <p style='margin-top:20px; font-size:13px; color:#666'>
+                            If QR is visible: Camera works, but decoder couldn't read it. Try better lighting or closer distance.<br/>
+                            If QR is dark/blurry: Camera focus or exposure issue. Adjust distance.<br/>
+                            If completely black/white: Extreme lighting conditions.
+                        </p>
+                    </body></html>`);
+                    w2.document.close();
+                }
+            } catch(e2){ console.error('Cannot open window after server decode failure:', e2); }
+        }
+    }
+
+    // wire capture button
+    document.addEventListener('click', function(e){
+        if (e.target && e.target.id === 'qr-reg-capture-btn'){
+            e.preventDefault();
+            captureAndDetectFrame();
+        }
+    });
+
+    // Open on phone functionality
+    document.getElementById('qr-reg-open-on-phone-btn').addEventListener('click', function(){
+        const courseId = (document.getElementById('qr-reg-course-id').value || '').toString();
+        const studentPref = (document.getElementById('qr-reg-prefilled-student-id').value || '').toString();
+        const params = new URLSearchParams();
+        params.set('open_register', '1');
+        if (courseId) params.set('qr_course_id', courseId);
+        if (studentPref) params.set('qr_student_id', studentPref);
+
+        // Build origin; if current origin is localhost/127.0.0.1, prompt user for LAN-accessible host:port
+        let origin = window.location.origin;
+        try{
+            const host = window.location.hostname;
+            if (/^(localhost|127\.|::1)$/i.test(host) || host === ''){
+                const hint = 'Detected localhost. Enter your PC LAN IP and port so your phone can access this site (example: 192.168.1.10:8000)';
+                const userHost = prompt(hint, '');
+                if (userHost && userHost.trim().length > 0){
+                    origin = (userHost.indexOf('://') === -1 ? 'http://' + userHost : userHost);
+                } else {
+                    // user cancelled or left blank: still use origin (may not work)
+                    origin = window.location.origin;
+                }
+            }
+        } catch(e){ origin = window.location.origin; }
+
+        const link = origin + window.location.pathname + '?' + params.toString();
+        const qrDiv = document.getElementById('qr-reg-phone-qr');
+        const linkInput = document.getElementById('qr-reg-phone-link');
+        qrDiv.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = 'https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl=' + encodeURIComponent(link);
+        img.alt = 'Open on phone QR';
+        img.style.maxWidth = '100%';
+        qrDiv.appendChild(img);
+        linkInput.value = link;
+        document.getElementById('qr-reg-phone-overlay').classList.remove('hidden');
+    });
+
+    document.getElementById('qr-reg-copy-phone-link').addEventListener('click', function(){
+        const linkInput = document.getElementById('qr-reg-phone-link');
+        linkInput.select();
+        document.execCommand('copy');
+        showQRToast('Link copied to clipboard', 'info', 1800);
+    });
+    document.getElementById('qr-reg-close-phone-overlay').addEventListener('click', function(){
+        document.getElementById('qr-reg-phone-overlay').classList.add('hidden');
+    });
+
+    // Auto-open modal when link parameters are present (for mobile)
+    (function(){
+        try{
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('open_register')){
+                const courseId = params.get('qr_course_id');
+                const studentId = params.get('qr_student_id');
+                setTimeout(()=>{
+                    openQRRegistrationModal(courseId || '', studentId || '');
+                }, 600);
+            }
+        } catch(e){}
+    })();
+
+    window.registerStudentQRCode = function(){
+        const courseId = document.getElementById('qr-reg-course-id').value;
+        const scheduleId = (document.getElementById('qr-reg-schedule-id').value || '').trim();
+        const prefilledId = (document.getElementById('qr-reg-prefilled-student-id').value || '').trim();
+        const studentIdInput = prefilledId || (document.getElementById('qr-reg-student-id-input').value || '').trim();
+        const qrCode = window.qrRegScannedCode;
+        const messageEl = document.getElementById('qr-reg-message');
+        
+        if (!courseId || !studentIdInput || !qrCode){ 
+            messageEl.textContent = '⚠️ Please scan both QR codes'; 
+            messageEl.className = 'text-xs text-red-600 text-center mt-2 font-semibold'; 
+            return; 
+        }
+        
+        messageEl.textContent = 'Registering...'; 
+        messageEl.className = 'text-xs text-blue-600 text-center mt-2';
+        
+        fetch('{% url "dashboard:instructor_register_student_qr_code" %}', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json', 
+                'X-CSRFToken': getCsrfToken(), 
+                'Accept': 'application/json' 
+            },
+            body: JSON.stringify(Object.assign({ 
+                course_id: parseInt(courseId), 
+                student_id_number: studentIdInput, 
+                qr_code: qrCode 
+            }, scheduleId ? { schedule_id: scheduleId } : {}))
+        }).then(res => res.json()).then(data => {
+            if (data.success){
+                messageEl.textContent = `✓ QR registered for ${data.student_name}!`;
+                messageEl.className = 'text-xs text-green-600 text-center mt-2 font-semibold';
+                try{ if (window.showNotification) window.showNotification(`QR registered for ${data.student_name}`, 'success'); } catch(e){}
+                
+                // Stop scanner and reset after 2.5 seconds
+                if (qrRegScanner) {
+                            qrRegScanner.stop().catch(err => console.log('Scanner stopped after registration'));
+                            window.__qrRegistrationHtml5Started = false;
+                    try { stopFallbackDecoder(); } catch(e){}
+                    try { stopCustomScanner(); } catch(e){}
+                }
+                
+                setTimeout(()=>{ 
+                    // Restart scanner for next scan
+                    document.getElementById('qr-reg-qr-code-display').innerHTML = '<span class="text-gray-500 italic">No QR code scanned yet</span>'; 
+                    document.getElementById('qr-reg-student-id-input').value = '';
+                    window.qrRegScannedCode = null; 
+                    messageEl.textContent = 'Camera active - point at QR code';
+                    messageEl.className = 'text-xs text-green-600 text-center mt-2';
+                    const btn = document.getElementById('qr-reg-register-btn');
+                    if (btn) { btn.disabled = true; btn.className = 'px-4 py-2 bg-gray-400 text-white font-semibold rounded-lg cursor-not-allowed shadow-sm'; }
+                    
+                    // Restart scanner
+                    startQRRegistrationScanner();
+                }, 2500);
+            } else {
+                const msg = (data.message || 'Failed to register');
+                messageEl.textContent = '✗ ' + msg;
+                messageEl.className = 'text-xs text-red-600 text-center mt-2 font-semibold';
+            }
+        }).catch(err => { 
+            console.error('Error registering:', err); 
+            messageEl.textContent = '✗ Error: ' + err.message; 
+            messageEl.className = 'text-xs text-red-600 text-center mt-2 font-semibold'; 
+        });
+    };
+
+    window.enableQRRegisterIfReady = function(){
+        const registerBtn = document.getElementById('qr-reg-register-btn');
+        const prefilledId = (document.getElementById('qr-reg-prefilled-student-id').value || '').trim();
+        const studentInput = document.getElementById('qr-reg-student-id-input');
+        
+        if (!registerBtn) return;
+        
+        const hasQR = !!window.qrRegScannedCode;
+        const hasStudentId = prefilledId || (studentInput && (studentInput.value || '').toString().trim().length > 0);
+        
+        if (hasQR && hasStudentId){ 
+            registerBtn.disabled = false; 
+            registerBtn.className = 'px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-sm'; 
+        } else { 
+            registerBtn.disabled = true; 
+            registerBtn.className = 'px-4 py-2 bg-gray-400 text-white font-semibold rounded-lg cursor-not-allowed shadow-sm'; 
+        }
+    };
+
+    document.addEventListener('input', function(e){ 
+        if (e.target && e.target.id === 'qr-reg-student-id-input'){ 
+            enableQRRegisterIfReady(); 
+        }
+        if (e.target && e.target.id === 'qr-reg-manual-qr-input') {
+            // Manual QR input
+            const manualQR = (e.target.value || '').trim();
+            if (manualQR.length > 0) {
+                window.qrRegScannedCode = manualQR;
+                const disp = document.getElementById('qr-reg-qr-code-display');
+                if (disp) {
+                    disp.textContent = 'Registration QR: ' + (manualQR.length > 25 ? manualQR.substring(0, 25) + '...' : manualQR);
+                    disp.className = 'w-full px-3 py-2 border border-green-300 rounded-lg text-sm bg-green-50 text-green-700 font-semibold min-h-[40px] flex items-center break-all';
+                }
+                console.log('Manual QR entered:', manualQR);
+            } else {
+                window.qrRegScannedCode = null;
+                const disp = document.getElementById('qr-reg-qr-code-display');
+                if (disp) {
+                    disp.innerHTML = '<span class="text-gray-500 italic">No QR code scanned yet</span>';
+                    disp.className = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50 text-gray-600 min-h-[40px] flex items-center justify-center';
+                }
+            }
+            enableQRRegisterIfReady();
+        }
+    });
+
+})();
+</script>

@@ -1,0 +1,1241 @@
+{% extends 'dashboard/instructor/teacher.html' %}
+{% block dashboard_content %}
+<style>
+    /* QR Code Image Styling - Ensure Perfect Display */
+    .qr-code-image {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        background: white !important;
+        object-fit: contain !important;
+        image-rendering: -webkit-optimize-contrast !important;
+        image-rendering: crisp-edges !important;
+        image-rendering: pixelated !important;
+        -ms-interpolation-mode: nearest-neighbor !important;
+        min-width: 160px !important;
+        min-height: 160px !important;
+        max-width: 170px !important;
+        max-height: 170px !important;
+        width: 100% !important;
+        height: 100% !important;
+    }
+    
+    /* QR Code Container - Fixed Size */
+    .qr-code-container {
+        width: 180px !important;
+        height: 180px !important;
+        min-width: 180px !important;
+        min-height: 180px !important;
+        max-width: 180px !important;
+        max-height: 180px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        background: white !important;
+        position: relative !important;
+        overflow: hidden !important;
+    }
+    
+    /* Prevent QR code from disappearing */
+    img.qr-code-image[src] {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    
+    /* Ensure container always shows QR code */
+    .qr-code-container img {
+        position: absolute !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+    }
+</style>
+
+<div class="max-w-7xl mx-auto space-y-6">
+    <div class="bg-white rounded-2xl shadow p-4 border border-gray-100">
+        <div class="flex items-center justify-between">
+            <h2 class="text-xl font-bold text-gray-900">My Classes</h2>
+            <a href="{% url 'dashboard:weekly_timetable' %}" class="text-xs text-indigo-600 font-semibold hover:underline">Go to Timetable</a>
+        </div>
+        <p class="text-sm text-gray-600 mt-1">Monitor today's classes and quickly jump to a course.</p>
+    </div>
+    
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5" style="align-items: start;">
+        <div class="bg-white rounded-2xl shadow p-4 border border-gray-100 flex flex-col" style="position: sticky; top: 0;">
+            <h3 class="text-sm font-semibold text-gray-800 mb-3 flex-shrink-0">Quick Pick</h3>
+            <div class="space-y-2 overflow-y-auto" style="height: calc(5 * 4.5rem); max-height: calc(5 * 4.5rem);">
+                {% if schedule_entries %}
+                    {% for e in schedule_entries %}
+                    <a href="{% if e.status == 'finished' or e.status == 'ended' %}{% url 'dashboard:instructor_attendance_reports' %}?course={{ e.course_id }}&section={{ e.section }}&day_filter=all&month_filter=&week_filter={% else %}?course={{ e.course_id }}&schedule={{ e.schedule_id }}{% endif %}" 
+                       class="quick-pick-item flex items-center justify-between p-3 rounded-xl border transition border-gray-200 no-underline hover:no-underline flex-shrink-0 {% if focus_course_next_entry and focus_course_next_entry.schedule_id == e.schedule_id %}border-indigo-500 bg-indigo-50 shadow-md{% else %}hover:border-indigo-300 hover:bg-indigo-50/40{% endif %}"
+                       data-course-id="{{ e.course_id }}"
+                       data-schedule-id="{{ e.schedule_id }}">
+                        <div class="min-w-0">
+                            {% if e.section %}
+                            <p class="mb-1">
+                                <span class="px-2 py-0.5 rounded-full font-bold text-[10px] text-white" style="background-color: {{ e.color }};">Section {{ e.section }}</span>
+                            </p>
+                            {% endif %}
+                            <p class="text-sm font-semibold text-gray-900 truncate">{{ e.code }} • {{ e.name }}</p>
+                            <p class="text-[11px] text-gray-600 uppercase tracking-wide mt-0.5 truncate">{{ e.date_label }} • {{ e.time_label }}</p>
+                        </div>
+                        {% if e.status == 'live' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 uppercase">Live</span>
+                        {% elif e.status == 'starting_today' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 uppercase">Starting Today</span>
+                        {% elif e.status == 'tomorrow' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 uppercase">Tomorrow</span>
+                        {% elif e.status == 'upcoming' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700 uppercase">Upcoming</span>
+                        {% elif e.status == 'soon' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 uppercase">Soon</span>
+                        {% elif e.status == 'ongoing' %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 uppercase">Ongoing</span>
+                        {% else %}
+                            <span class="ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-600 uppercase">Finished</span>
+                        {% endif %}
+                    </a>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-xs text-gray-500">No active schedules yet.</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow p-4 border border-gray-100 flex flex-col">
+            <div class="flex items-center justify-between mb-3 flex-shrink-0">
+                <h3 class="text-sm font-semibold text-gray-800">Monitoring</h3>
+                <div class="flex items-center gap-2">
+                    {% if focus_course %}
+                    <span class="px-2 py-1 rounded-lg text-xs font-semibold text-white" style="background-color: {{ focus_course.color|default:'#3C4770' }};">
+                        Section {{ focus_course.section|default:'—' }}
+                    </span>
+                    <a href="{% url 'dashboard:instructor_courses' %}?edit_course={{ focus_course.id }}" 
+                       class="px-3 py-1.5 bg-amber-600 text-white text-xs font-semibold rounded-lg hover:bg-amber-700 transition duration-150 shadow-sm flex items-center gap-1">
+                        <i class="fas fa-edit text-xs"></i> Edit
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+                <div class="space-y-3 flex-1 overflow-y-auto" style="min-height: 0;">
+                {% if focus_course %}
+                <!-- Attendance Control Dropdown -->
+                <div class="flex items-center gap-2 mb-2">
+                    <label class="text-xs font-semibold text-gray-700">Attendance Control{% if focus_course_next_entry and focus_course_next_entry.day_label %}: {{ focus_course_next_entry.day_label }}{% endif %}:</label>
+                    <select id="attendance-control" class="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" onfocus="this.dataset.previousValue = this.value" onchange="handleAttendanceControlChange(event, {{ focus_course.id }}, this{% if focus_course_next_entry and focus_course_next_entry.schedule_id %}, '{{ focus_course_next_entry.schedule_id }}'{% endif %}{% if focus_course_next_entry and focus_course_next_entry.day_label %}, '{{ focus_course_next_entry.day_label }}'{% endif %})">
+                        {% if focus_course_next_entry and focus_course_next_entry.day_schedule_status %}
+                            <option value="closed" {% if focus_course_next_entry.day_schedule_status == 'closed' or not focus_course_next_entry.day_schedule_status %}selected{% endif %}>Closed Attendance</option>
+                            <option value="open" {% if focus_course_next_entry.day_schedule_status == 'open' %}selected{% endif %}>Open Attendance</option>
+                            <option value="postponed" {% if focus_course_next_entry.day_schedule_status == 'postponed' %}selected{% endif %}>Postponed</option>
+                        {% else %}
+                            <option value="closed" {% if focus_course.attendance_status == 'closed' or not focus_course.attendance_status %}selected{% endif %}>Closed Attendance</option>
+                            <option value="open" {% if focus_course.attendance_status == 'open' %}selected{% endif %}>Open Attendance</option>
+                            <option value="postponed" {% if focus_course.attendance_status == 'postponed' %}selected{% endif %}>Postponed</option>
+                        {% endif %}
+                    </select>
+                    <div class="ml-2">
+                        <label class="text-xs text-gray-600 block">Present window (min)</label>
+                        <input id="sidebarPresentDuration" type="number" min="1" step="1" class="w-20 px-2 py-1 text-xs border border-gray-300 rounded-lg" placeholder="e.g. 20" value="{% if focus_course_next_entry and focus_course_next_entry.attendance_present_duration %}{{ focus_course_next_entry.attendance_present_duration }}{% elif focus_course.attendance_present_duration %}{{ focus_course.attendance_present_duration }}{% endif %}">
+                    </div>
+                </div>
+                
+                <div class="p-3 rounded-xl border border-gray-200" style="background-color: {{ focus_course.color|default:'#3C4770' }};">
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-xs text-white font-semibold">Room: {{ focus_course.room|default:'TBA' }}</p>
+                        {% if focus_course_next_entry %}
+                        <p class="text-[11px] text-white font-semibold whitespace-nowrap">{{ focus_course_next_entry.date_label }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-xs text-white font-semibold">Semester: {{ focus_course.semester|default:'—' }} • SY: {{ focus_course.school_year|default:'—' }}</p>
+                        {% if focus_course_next_entry %}
+                        <p class="text-[11px] text-white font-semibold whitespace-nowrap">{{ focus_course_next_entry.time_label }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="p-4 rounded-xl border border-gray-200">
+                        <p class="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Attendance</p>
+                        <p class="text-2xl font-bold text-gray-900">{{ today_attendance_count|default:0 }}</p>
+                        <p class="text-xs text-gray-500 mt-1">Students attended today</p>
+                    </div>
+                    <div class="p-4 rounded-xl border border-gray-200">
+                        <p class="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Total Enrolled</p>
+                        <p class="text-2xl font-bold text-gray-900">{{ enrolled_students|length|default:0 }}</p>
+                        <p class="text-xs text-gray-500 mt-1">Students enrolled</p>
+                    </div>
+                </div>
+                
+                <div class="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-camera text-blue-600"></i>
+                            <span class="text-xs font-semibold text-gray-700">Scan Student ID</span>
+                        </div>
+                        {% if focus_course_next_entry and focus_course_next_entry.day_schedule_status == 'open' or focus_course.attendance_status == 'open' %}
+                            <button onclick="openInstructorSchoolIDScanner({{ focus_course.id }}, '{{ focus_course.code|escapejs }}', '{{ focus_course.name|escapejs }}', '{{ focus_course.section }}', '{% if focus_course_next_entry and focus_course_next_entry.schedule_id %}{{ focus_course_next_entry.schedule_id }}{% endif %}')" 
+                                    class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition duration-150 shadow-sm flex items-center gap-1">
+                                <i class="fas fa-camera text-xs"></i> Scan
+                            </button>
+                        {% else %}
+                            <button disabled class="px-3 py-1.5 bg-gray-400 text-white text-xs font-semibold rounded-lg cursor-not-allowed shadow-sm flex items-center gap-1 opacity-60">
+                                <i class="fas fa-lock text-xs"></i> Scan
+                            </button>
+                        {% endif %}
+                    </div>
+                    {% if focus_course_next_entry and focus_course_next_entry.day_schedule_status == 'open' or focus_course.attendance_status == 'open' %}
+                        <p class="text-[10px] text-gray-600 text-center">Open camera to scan student school ID for attendance</p>
+                    {% else %}
+                        <p class="text-[10px] text-yellow-600 text-center font-semibold">⚠️ Attendance is currently CLOSED. Open it to enable scanning.</p>
+                    {% endif %}
+                </div>
+                
+                <!-- Students List -->
+                <div class="p-4 rounded-xl border border-gray-200">
+                    <div class="flex items-center justify-between mb-3">
+                        <p class="text-xs font-semibold text-gray-600 uppercase tracking-wider">Students</p>
+                        {% if attendance_records|length > 10 %}
+                        <button onclick="showStudentsListModal()" class="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition duration-150 shadow-sm flex items-center gap-1">
+                            <i class="fas fa-eye text-xs"></i> View
+                        </button>
+                        {% endif %}
+                    </div>
+                    <div class="space-y-2 {% if attendance_records|length > 10 %}max-h-64 overflow-y-auto{% endif %}">
+                        {% if course_finished %}
+                            <div class="text-center py-6 px-4 bg-blue-50 rounded-lg border border-blue-200">
+                                <i class="fas fa-info-circle text-blue-600 text-2xl mb-2"></i>
+                                <p class="text-xs font-semibold text-blue-800 mb-1">Class has ended for this schedule</p>
+                                <p class="text-[10px] text-blue-600 mb-2">A new QR code has been generated for the next occurrence.</p>
+                                <p class="text-[10px] text-blue-600 mb-3">View attendance records and reports in the Attendance Reports section.</p>
+                                <a href="{% url 'dashboard:instructor_attendance_reports' %}?course={{ focus_course.id }}" 
+                                   class="inline-block px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition duration-150">
+                                    <i class="fas fa-chart-pie mr-1"></i> View Attendance Reports
+                                </a>
+                            </div>
+                        {% elif attendance_records %}
+                            {% for record in attendance_records %}
+                            <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100 transition duration-150">
+                                <div class="flex items-center gap-3 min-w-0 flex-1">
+                                    <span class="text-xs font-bold text-gray-700 flex-shrink-0">{{ forloop.counter }}.</span>
+                                    {% if record.student.profile_picture %}
+                                    <img src="{{ record.student.profile_picture.url }}?v={{ record.student.id }}" 
+                                         alt="{{ record.student.full_name|default:record.student.username }}" 
+                                         class="w-8 h-8 rounded-full object-cover border-2 border-white flex-shrink-0 shadow-sm">
+                                    {% else %}
+                                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm" 
+                                         style="background: linear-gradient(135deg, #3C4770 0%, #447294 100%);">
+                                        {{ record.student.full_name|first|upper|default:record.student.username|first|upper }}
+                                    </div>
+                                    {% endif %}
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-xs font-semibold text-gray-900 truncate">{{ record.student.full_name|default:record.student.username }}</p>
+                                        <p class="text-[10px] text-gray-500">{{ record.attendance_time|time:"g:i A" }}</p>
+                                    </div>
+                                </div>
+                                <span class="ml-2 px-2 py-1 rounded-full text-[10px] font-semibold flex-shrink-0 {% if record.status == 'late' %}bg-yellow-100 text-yellow-700{% elif record.status == 'absent' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                                    {{ record.get_status_display }}
+                                </span>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <p class="text-xs text-gray-500 text-center py-4">No students have attended yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-xs text-gray-500">Select a course on the left to begin monitoring.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- QR Code View Modal -->
+<div id="qrCodeModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-purple-600">
+                <i class="fas fa-qrcode w-6 h-6 mr-2"></i> QR Code
+            </h3>
+            <button onclick="closeQRCodeModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div id="qrCodeModalCourseInfo" class="text-center mb-4">
+                <p class="text-lg font-semibold text-gray-900" id="qrCodeModalCourseName"></p>
+                <p class="text-sm text-gray-600" id="qrCodeModalCourseCode"></p>
+            </div>
+            <div class="flex justify-center">
+                <div class="w-80 h-80 flex items-center justify-center bg-white border-4 border-purple-200 rounded-lg p-4 shadow-lg" style="min-width: 320px; min-height: 320px;">
+                    <img id="qrCodeModalImage" 
+                         src="" 
+                         alt="QR Code" 
+                         style="width: 100%; height: 100%; max-width: 300px; max-height: 300px; min-width: 300px; min-height: 300px; display: block !important; visibility: visible !important; opacity: 1 !important; object-fit: contain; background: white !important; image-rendering: crisp-edges;"
+                         loading="eager">
+                </div>
+            </div>
+            <p class="text-sm text-gray-600 text-center">Students can scan this QR code to mark attendance</p>
+            <div class="flex justify-end pt-4 border-t border-gray-100">
+                <button onclick="closeQRCodeModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Instructor School ID Scanner Modal -->
+<div id="instructorSchoolIDScannerModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8 flex flex-col max-h-[90vh]">
+        <div class="flex justify-between items-start mb-4 flex-shrink-0">
+            <div>
+                <h3 class="text-2xl font-bold flex items-center text-blue-600">
+                    <i class="fas fa-camera w-6 h-6 mr-2"></i> Scan Student ID
+                </h3>
+                <p class="text-sm text-gray-600 mt-1" id="scanner-course-title"></p>
+                <p class="text-xs text-gray-500" id="scanner-section-title"></p>
+            </div>
+            <button onclick="closeInstructorSchoolIDScanner()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto mb-4">
+            <div id="instructor-scanner-container" class="w-full bg-gray-100 rounded-lg mb-4 min-h-[300px] flex items-center justify-center">
+                <p class="text-gray-500 text-sm">Loading camera...</p>
+            </div>
+            
+            <div class="space-y-2">
+                <h4 class="text-sm font-semibold text-gray-700">Recently Scanned</h4>
+                <div id="scanned-students-list" class="space-y-2 max-h-[200px] overflow-y-auto">
+                    <p class="text-xs text-gray-500 text-center py-2">No students scanned yet</p>
+                </div>
+            </div>
+        </div>
+        
+        <input type="hidden" id="scanner-course-id">
+        <input type="hidden" id="scanner-schedule-id">
+        
+        <div class="flex justify-end pt-4 border-t border-gray-100 flex-shrink-0">
+            <button onclick="closeInstructorSchoolIDScanner()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Students List Modal -->
+<div id="studentsListModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div class="flex justify-between items-start p-6 border-b border-gray-200 flex-shrink-0">
+            <h3 class="text-2xl font-bold flex items-center text-indigo-600">
+                <i class="fas fa-users w-6 h-6 mr-2"></i> Students List
+            </h3>
+            <button onclick="closeStudentsListModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="p-6 overflow-y-auto flex-1">
+            <div class="space-y-2">
+                {% if attendance_records %}
+                    {% for record in attendance_records %}
+                    <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100 transition duration-150">
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <span class="text-xs font-bold text-gray-700 flex-shrink-0">{{ forloop.counter }}.</span>
+                            {% if record.student.profile_picture %}
+                            <img src="{{ record.student.profile_picture.url }}?v={{ record.student.id }}" 
+                                 alt="{{ record.student.full_name|default:record.student.username }}" 
+                                 class="w-10 h-10 rounded-full object-cover border-2 border-white flex-shrink-0 shadow-sm">
+                            {% else %}
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm" 
+                                 style="background: linear-gradient(135deg, #3C4770 0%, #447294 100%);">
+                                {{ record.student.full_name|first|upper|default:record.student.username|first|upper }}
+                            </div>
+                            {% endif %}
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-semibold text-gray-900">{{ record.student.full_name|default:record.student.username }}</p>
+                                <p class="text-xs text-gray-500">{{ record.attendance_time|time:"g:i A" }}</p>
+                            </div>
+                        </div>
+                        <span class="ml-2 px-3 py-1.5 rounded-full text-xs font-semibold flex-shrink-0 {% if record.status == 'late' %}bg-yellow-100 text-yellow-700{% elif record.status == 'absent' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                            {{ record.get_status_display }}
+                        </span>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-sm text-gray-500 text-center py-8">No students have attended yet.</p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex justify-end p-6 border-t border-gray-200 flex-shrink-0">
+            <button onclick="closeStudentsListModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Attendance Status Change Modal -->
+<div id="attendanceStatusModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 id="attendance-modal-title-color" class="text-2xl font-bold flex items-center text-indigo-600">
+                <i class="fas fa-clock w-6 h-6 mr-2"></i> Change Attendance Status
+            </h3>
+            <button onclick="closeAttendanceStatusModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <p class="text-gray-700 font-semibold">Are you sure you want to change the attendance status?</p>
+            <div id="attendance-status-box" class="bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded">
+                <p class="font-semibold text-indigo-800" id="attendance-status-message"></p>
+            </div>
+            <input type="hidden" id="attendance-status-course-id">
+            <input type="hidden" id="attendance-status-value">
+            <input type="hidden" id="attendance-status-schedule-id">
+            <input type="hidden" id="attendance-status-day">
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="closeAttendanceStatusModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                    Cancel
+                </button>
+                <button onclick="confirmAttendanceStatusChange()" class="px-4 py-2 text-white font-semibold rounded-lg transition duration-150 shadow-sm" id="attendance-confirm-btn">
+                    <i class="fas fa-check mr-2"></i> Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script>
+let previousAttendanceStatus = null;
+let attendanceStatusSelectElement = null;
+
+// QR Code Image Handling Functions
+function handleQRCodeLoad(img, courseId) {
+    // Ensure image is always visible and STAYS visible
+    if (img) {
+        img.style.display = 'block';
+        img.style.visibility = 'visible';
+        img.style.opacity = '1';
+        img.style.background = 'white';
+        img.classList.add('qr-code-loaded');
+        img.dataset.loaded = 'true';
+        img.dataset.stable = 'true';  // Mark as stable - don't reload
+        img.dataset.retryCount = '0';
+        img.dataset.error = 'false';
+        img.dataset.lastLoadTime = Date.now().toString();
+        
+        // Force browser to show image and prevent it from being replaced
+        img.removeAttribute('hidden');
+        
+        // Set explicit styles to prevent any CSS from hiding it
+        var currentStyle = img.getAttribute('style') || '';
+        if (!currentStyle.includes('display: block')) {
+            img.style.cssText += '; display: block !important; visibility: visible !important; opacity: 1 !important; background: white !important;';
+        }
+        
+        console.log('QR code image loaded successfully for course ' + courseId + ', size:', img.naturalWidth, 'x', img.naturalHeight);
+        
+        // Verify image actually loaded (has dimensions and is visible)
+        setTimeout(function() {
+            if (img && img.complete && img.naturalHeight > 0 && img.naturalWidth > 0) {
+                // Image successfully loaded - mark as stable and prevent reloads
+                img.dataset.stable = 'true';
+                img.dataset.loaded = 'true';
+                console.log('QR code image stable and visible for course ' + courseId + ' - will not reload');
+            } else if (img && (img.naturalWidth === 0 || img.naturalHeight === 0)) {
+                // Only retry if image hasn't been marked as stable
+                if (img.dataset.stable !== 'true') {
+                    console.warn('QR code image loaded but has zero dimensions, retrying...');
+                    retryQRCodeLoad(img, courseId);
+                }
+            }
+        }, 200);
+    }
+}
+
+function handleQRCodeError(img, courseId) {
+    if (!img) return;
+    
+    // Don't retry if image is already marked as stable/loaded
+    if (img.dataset.stable === 'true' && img.dataset.loaded === 'true') {
+        console.log('QR code image is stable, ignoring error for course ' + courseId);
+        return;
+    }
+    
+    var retryCount = parseInt(img.dataset.retryCount || '0');
+    console.error('QR code failed to load for course ' + courseId + ', retry count:', retryCount);
+    
+    // Mark as error but keep visible
+    img.dataset.error = 'true';
+    img.style.display = 'block';
+    img.style.visibility = 'visible';
+    img.style.opacity = '1';
+    img.style.background = 'white';
+    
+    if (retryCount < 5) {  // Reduced retry count - don't retry too many times
+        img.dataset.retryCount = (retryCount + 1).toString();
+        var delay = Math.min(3000, 1000 * (retryCount + 1));  // Max 3 seconds delay
+        setTimeout(function() {
+            if (img && img.parentNode && img.dataset.stable !== 'true') {
+                retryQRCodeLoad(img, courseId);
+            }
+        }, delay);
+    } else {
+        console.error('QR code failed to load after 5 retries for course ' + courseId);
+        // Keep the image element visible - don't replace with text
+        img.style.display = 'block';
+        img.style.visibility = 'visible';
+        img.style.opacity = '0.8';
+        img.style.background = 'white';
+        // Continue retrying but less frequently
+        setTimeout(function() {
+            if (img && img.parentNode && img.dataset.stable !== 'true' && img.dataset.loaded !== 'true') {
+                img.dataset.retryCount = '0';  // Reset retry count
+                retryQRCodeLoad(img, courseId);
+            }
+        }, 30000);  // Retry after 30 seconds
+    }
+}
+
+function retryQRCodeLoad(img, courseId) {
+    if (!img || !img.parentNode) return;
+    
+    // Don't retry if image is already stable/loaded
+    if (img.dataset.stable === 'true' && img.dataset.loaded === 'true') {
+        console.log('QR code image is stable, skipping retry for course ' + courseId);
+        return;
+    }
+    
+    // Use the stored URL from data attribute if available
+    var baseUrl = img.dataset.url || '{% url "dashboard:instructor_qr_code" 0 %}'.replace('/0/', '/' + courseId + '/');
+    var retryCount = parseInt(img.dataset.retryCount || '0') + 1;
+    
+    // Add cache-busting parameters with current date/day (session-based QR codes change daily)
+    var now = new Date();
+    var dateStr = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
+    var dayStr = now.getDay();  // 0=Sunday, 6=Saturday
+    var newUrl = baseUrl + '?v=' + courseId + dateStr + dayStr;
+    
+    console.log('Retrying QR code load for course ' + courseId + ', attempt ' + retryCount + ', URL:', newUrl);
+    
+    // Only reload if image is not already loaded
+    if (img.complete && img.naturalHeight > 0 && img.naturalWidth > 0) {
+        console.log('QR code image already loaded, not retrying for course ' + courseId);
+        img.dataset.loaded = 'true';
+        img.dataset.stable = 'true';
+        return;
+    }
+    
+    // Force reload by setting src to empty first (but keep visible)
+    img.style.opacity = '0.7';  // Show loading state
+    var oldSrc = img.src;
+    img.src = '';
+    img.dataset.loaded = 'false';
+    img.dataset.retryCount = retryCount.toString();
+    
+    // Use a small delay to ensure browser processes the src change
+    setTimeout(function() {
+        if (img && img.parentNode && img.dataset.stable !== 'true') {
+            img.src = newUrl;
+            img.style.opacity = '1';  // Restore opacity
+        } else if (oldSrc && img.dataset.stable !== 'true') {
+            // Restore old src if we shouldn't reload
+            img.src = oldSrc;
+            img.style.opacity = '1';
+        }
+    }, 300);  // Slightly longer delay for better browser processing
+}
+
+function showQRCodePlaceholder(img, courseId) {
+    // DON'T replace image with text/SVG - keep the image element and retry
+    // This prevents the QR code from being replaced with text
+    if (img && img.parentNode) {
+        // Keep the image visible and keep retrying - don't replace with text
+        img.style.display = 'block';
+        img.style.visibility = 'visible';
+        img.style.opacity = '0.8';
+        img.style.background = 'white';
+        console.log('QR code placeholder requested for course ' + courseId + ', but keeping image element for retry');
+        // Don't replace with SVG/text - just keep the image element and retry
+    }
+}
+
+// Monitor QR code images to ensure they stay loaded (but don't reload unnecessarily)
+(function() {
+    var checkInterval = null;
+    var isChecking = false;
+    var loadedImages = new Set();  // Track successfully loaded images
+    
+    function checkQRCodeImages() {
+        if (isChecking) return;  // Prevent concurrent checks
+        isChecking = true;
+        
+        var qrCodeImages = document.querySelectorAll('.qr-code-image');
+        qrCodeImages.forEach(function(img) {
+            if (!img) return;
+            
+            var courseId = img.dataset.courseId;
+            if (!courseId) return;
+            
+            var imgKey = courseId + '_' + img.src;
+            
+            // If image is already loaded and stable, don't touch it
+            if (loadedImages.has(imgKey) && img.dataset.loaded === 'true' && !img.dataset.error) {
+                // Just ensure visibility - don't reload
+                img.style.display = 'block';
+                img.style.visibility = 'visible';
+                img.style.opacity = '1';
+                img.style.background = 'white';
+                return;  // Skip this image - it's already loaded
+            }
+            
+            // Check if image is still visible and loaded
+            var isVisible = img.offsetWidth > 0 && img.offsetHeight > 0 && 
+                           img.naturalWidth > 0 && img.naturalHeight > 0 &&
+                           window.getComputedStyle(img).display !== 'none' &&
+                           window.getComputedStyle(img).visibility !== 'hidden' &&
+                           window.getComputedStyle(img).opacity !== '0';
+            
+            // Check if image actually loaded (has valid data)
+            var hasValidData = img.complete && img.naturalHeight !== 0 && !img.dataset.error;
+            
+            if (isVisible && hasValidData) {
+                // Image is loaded successfully - mark it and don't reload
+                img.style.display = 'block';
+                img.style.visibility = 'visible';
+                img.style.opacity = '1';
+                img.style.background = 'white';
+                img.dataset.loaded = 'true';
+                img.dataset.error = 'false';
+                loadedImages.add(imgKey);  // Mark as successfully loaded
+            } else if (!isVisible || !hasValidData) {
+                // Only retry if image is not loaded yet (not if it was already loaded)
+                if (img.dataset.loaded !== 'true') {
+                    if (img.dataset.loaded === 'true') {
+                        console.warn('QR code image became invisible/invalid for course ' + courseId + ', refreshing...');
+                        img.dataset.error = 'false';  // Reset error flag
+                        loadedImages.delete(imgKey);  // Remove from loaded set
+                    }
+                    retryQRCodeLoad(img, courseId);
+                }
+            }
+        });
+        
+        isChecking = false;
+    }
+    
+    // Check less frequently - only every 60 seconds (reduced from 10 seconds)
+    checkInterval = setInterval(checkQRCodeImages, 60000);
+    
+    // Also check when page becomes visible again (but only if images aren't loaded)
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            // Only check if there are unloaded images
+            var hasUnloaded = false;
+            document.querySelectorAll('.qr-code-image').forEach(function(img) {
+                if (img.dataset.loaded !== 'true') {
+                    hasUnloaded = true;
+                }
+            });
+            if (hasUnloaded) {
+                setTimeout(checkQRCodeImages, 500);
+            }
+        }
+    });
+    
+    // Initial check after page load (only once, not multiple times)
+    setTimeout(checkQRCodeImages, 2000);
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (checkInterval) {
+            clearInterval(checkInterval);
+        }
+    });
+})();
+
+function handleAttendanceControlChange(event, courseId, selectElement, scheduleId, dayLabel) {
+    if (!selectElement) {
+        console.error('Select element not provided');
+        return;
+    }
+    
+    // Get the previous value (stored on focus)
+    const previousValue = selectElement.dataset.previousValue || selectElement.value;
+    
+    // Get the new value that was selected (the select has already changed)
+    const newValue = selectElement.value;
+    
+    // If the value didn't actually change, do nothing
+    if (previousValue === newValue) {
+        return;
+    }
+    
+    // Find the indices
+    const previousIndex = Array.from(selectElement.options).findIndex(opt => opt.value === previousValue);
+    const newIndex = Array.from(selectElement.options).findIndex(opt => opt.value === newValue);
+    
+    // Revert to previous value immediately (we'll set it back after confirmation)
+    if (previousIndex !== -1) {
+        selectElement.selectedIndex = previousIndex;
+    }
+    
+    // Store references
+    attendanceStatusSelectElement = selectElement;
+    if (newIndex !== -1) {
+        selectElement.dataset.pendingIndex = newIndex;
+    }
+    selectElement.dataset.previousIndex = previousIndex;
+    
+    // Show the modal
+    showAttendanceStatusModal(courseId, newValue, selectElement, previousIndex, scheduleId, dayLabel);
+}
+
+function showAttendanceStatusModal(courseId, status, selectElement, previousIndex, scheduleId, dayLabel) {
+    if (!selectElement) {
+        console.error('Select element not provided');
+        return;
+    }
+    
+    // Store the previous index for restoration
+    if (previousIndex !== undefined) {
+        selectElement.dataset.previousIndex = previousIndex;
+    } else {
+        const currentIndex = selectElement.selectedIndex;
+        selectElement.dataset.previousIndex = currentIndex;
+    }
+    
+    // Store the pending new index
+    const pendingIndex = Array.from(selectElement.options).findIndex(opt => opt.value === status);
+    if (pendingIndex !== -1) {
+        selectElement.dataset.pendingIndex = pendingIndex;
+    }
+    
+    const statusLabels = {
+        'postponed': 'Postponed',
+        'closed': 'Closed Attendance',
+        'open': 'Open Attendance',
+        'stopped': 'Stop Attendance'
+    };
+    
+    const statusColors = {
+        'postponed': { bg: 'bg-purple-50', border: 'border-purple-500', text: 'text-purple-800', btn: 'bg-purple-600 hover:bg-purple-700' },
+        'closed': { bg: 'bg-gray-50', border: 'border-gray-500', text: 'text-gray-800', btn: 'bg-gray-600 hover:bg-gray-700' },
+        'open': { bg: 'bg-green-50', border: 'border-green-500', text: 'text-green-800', btn: 'bg-green-600 hover:bg-green-700' },
+        'stopped': { bg: 'bg-red-50', border: 'border-red-500', text: 'text-red-800', btn: 'bg-red-600 hover:bg-red-700' }
+    };
+    
+    const colors = statusColors[status] || statusColors['closed'];
+    
+    const modal = document.getElementById('attendanceStatusModal');
+    if (!modal) {
+        console.error('Attendance status modal not found');
+        return;
+    }
+    
+    const titleColor = document.getElementById('attendance-modal-title-color');
+    const statusBox = document.getElementById('attendance-status-box');
+    const confirmBtn = document.getElementById('attendance-confirm-btn');
+    
+    if (!titleColor || !statusBox || !confirmBtn) {
+        console.error('Modal elements not found');
+        return;
+    }
+    
+    document.getElementById('attendance-status-course-id').value = courseId;
+    document.getElementById('attendance-status-value').value = status;
+    if (scheduleId) {
+        document.getElementById('attendance-status-schedule-id').value = scheduleId;
+    } else {
+        document.getElementById('attendance-status-schedule-id').value = '';
+    }
+    if (dayLabel) {
+        document.getElementById('attendance-status-day').value = dayLabel;
+    } else {
+        document.getElementById('attendance-status-day').value = '';
+    }
+    const dayText = dayLabel ? ` for ${dayLabel}` : '';
+    document.getElementById('attendance-status-message').textContent = `Change attendance status to "${statusLabels[status]}"${dayText}?`;
+    
+    // Update colors based on status
+    titleColor.className = `text-2xl font-bold flex items-center ${colors.text}`;
+    statusBox.className = `p-4 rounded border-l-4 ${colors.bg} ${colors.border}`;
+    document.getElementById('attendance-status-message').className = `font-semibold ${colors.text}`;
+    confirmBtn.className = `px-4 py-2 text-white font-semibold rounded-lg transition duration-150 shadow-sm ${colors.btn}`;
+    
+    modal.classList.remove('hidden');
+}
+
+function closeAttendanceStatusModal() {
+    const modal = document.getElementById('attendanceStatusModal');
+    modal.classList.add('hidden');
+    // Reset select to previous value
+    if (attendanceStatusSelectElement && attendanceStatusSelectElement.dataset.previousIndex !== undefined) {
+        const prevIndex = parseInt(attendanceStatusSelectElement.dataset.previousIndex);
+        attendanceStatusSelectElement.selectedIndex = prevIndex;
+        delete attendanceStatusSelectElement.dataset.previousIndex;
+    }
+    previousAttendanceStatus = null;
+    attendanceStatusSelectElement = null;
+}
+
+function copyQRCode(code) {
+    if (!code || code === 'Not generated' || code === '') {
+        if (typeof showNotification === 'function') {
+            showNotification('QR code not available', 'error');
+        } else {
+            alert('QR code not available');
+        }
+        return;
+    }
+    
+    navigator.clipboard.writeText(code).then(() => {
+        if (typeof showNotification === 'function') {
+            showNotification('QR code copied to clipboard!', 'success');
+        } else {
+            alert('QR code copied to clipboard!');
+        }
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        if (typeof showNotification === 'function') {
+            showNotification('Failed to copy QR code. Please copy manually: ' + code, 'error');
+        } else {
+            alert('Failed to copy QR code. Please copy manually: ' + code);
+        }
+    });
+}
+
+function confirmAttendanceStatusChange() {
+    const courseId = document.getElementById('attendance-status-course-id').value;
+    const status = document.getElementById('attendance-status-value').value;
+    const scheduleId = document.getElementById('attendance-status-schedule-id').value;
+    const day = document.getElementById('attendance-status-day').value;
+    
+    if (!courseId || !status) {
+        closeAttendanceStatusModal();
+        return;
+    }
+    
+    // Update the select to the new value (since user confirmed)
+    if (attendanceStatusSelectElement && attendanceStatusSelectElement.dataset.pendingIndex !== undefined) {
+        const pendingIndex = parseInt(attendanceStatusSelectElement.dataset.pendingIndex);
+        attendanceStatusSelectElement.selectedIndex = pendingIndex;
+        attendanceStatusSelectElement.dataset.previousIndex = pendingIndex;
+        delete attendanceStatusSelectElement.dataset.pendingIndex;
+    }
+    
+    closeAttendanceStatusModal();
+    
+    // Build request body with optional day/schedule_id
+    const requestBody = { status: status };
+    if (scheduleId) {
+        requestBody.schedule_id = scheduleId;
+    }
+    if (day) {
+        // Convert day label to short form (e.g., 'Monday' -> 'Mon')
+        const dayMap = {
+            'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 'Thursday': 'Thu',
+            'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'
+        };
+        requestBody.day = dayMap[day] || day;
+    }
+    // Include present_duration if opening attendance
+    try {
+        if (status === 'open') {
+            const sidebarInput = document.getElementById('sidebarPresentDuration');
+            if (sidebarInput && sidebarInput.value) {
+                const pd = parseInt(sidebarInput.value, 10);
+                if (!isNaN(pd) && pd > 0) requestBody.present_duration = pd;
+            }
+        }
+    } catch (e) {
+        console.error('Error reading present duration input:', e);
+    }
+    
+    fetch('{% url "dashboard:instructor_update_attendance_status" 0 %}'.replace('0', courseId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Attendance status updated successfully!', 'success');
+            }
+            // Reload after a short delay to show updated status
+            setTimeout(() => location.reload(), 500);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Error updating attendance status.', 'error');
+            }
+            // Reset select on error
+            if (attendanceStatusSelectElement && attendanceStatusSelectElement.dataset.previousIndex !== undefined) {
+                const prevIndex = parseInt(attendanceStatusSelectElement.dataset.previousIndex);
+                attendanceStatusSelectElement.selectedIndex = prevIndex;
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('An error occurred. Please try again.', 'error');
+        }
+        // Reset select on error
+        if (attendanceStatusSelectElement && attendanceStatusSelectElement.dataset.previousIndex !== undefined) {
+            const prevIndex = parseInt(attendanceStatusSelectElement.dataset.previousIndex);
+            attendanceStatusSelectElement.selectedIndex = prevIndex;
+        }
+    });
+}
+
+// Instructor School ID Scanner
+let instructorSchoolIDScanner = null;
+
+window.openInstructorSchoolIDScanner = function(courseId, courseCode, courseName, section, scheduleId) {
+    const modal = document.getElementById('instructorSchoolIDScannerModal');
+    if (!modal) {
+        console.error('Instructor School ID Scanner modal not found');
+        alert('Scanner modal not found. Please refresh the page.');
+        return;
+    }
+    
+    // Set modal title
+    document.getElementById('scanner-course-title').textContent = `${courseCode} - ${courseName}`;
+    document.getElementById('scanner-section-title').textContent = `Section: ${section || 'N/A'}`;
+    document.getElementById('scanner-course-id').value = courseId;
+    document.getElementById('scanner-schedule-id').value = scheduleId || '';
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    
+    // Start scanner after modal is visible
+    setTimeout(() => {
+        startInstructorSchoolIDScanner(courseId, section);
+    }, 100);
+};
+
+window.closeInstructorSchoolIDScanner = function() {
+    const modal = document.getElementById('instructorSchoolIDScannerModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    
+    // Stop scanner
+    if (instructorSchoolIDScanner) {
+        instructorSchoolIDScanner.stop().catch(err => console.log('Scanner already stopped'));
+        instructorSchoolIDScanner = null;
+    }
+};
+
+window.startInstructorSchoolIDScanner = function(courseId, section) {
+    // Ensure html5-qrcode is available
+    if (typeof Html5Qrcode === 'undefined') {
+        alert('QR Code scanner library not available. Please refresh the page.');
+        return;
+    }
+    
+    const scannerContainer = document.getElementById('instructor-scanner-container');
+    if (!scannerContainer) {
+        console.error('Scanner container not found');
+        return;
+    }
+    
+    // Clear previous scanner if exists
+    if (instructorSchoolIDScanner) {
+        instructorSchoolIDScanner.stop().catch(err => console.log('Previous scanner stopped'));
+        instructorSchoolIDScanner = null;
+        scannerContainer.innerHTML = '';
+    }
+    
+    // Create scanner element
+    scannerContainer.innerHTML = '<div id="instructor-qr-scanner" style="width:100%;"></div>';
+    
+    instructorSchoolIDScanner = new Html5Qrcode('instructor-qr-scanner');
+    
+    const qrCodeConfig = {
+        fps: 20,
+        qrbox: { width: 300, height: 300 },
+        rememberLastUsedCamera: true,
+        supportedScanTypes: [Html5QrcodeScanType.CAMERA, Html5QrcodeScanType.CAMERA_AND_FILE],
+        disableFlip: false,
+        aspectRatio: 1.0
+    };
+    
+    instructorSchoolIDScanner.start(
+        { facingMode: 'environment' },
+        qrCodeConfig,
+        onInstructorSchoolIDScanned,
+        onInstructorScanError
+    ).catch(err => {
+        console.error('Failed to start scanner:', err);
+        alert('Unable to start camera. Please check permissions.');
+        closeInstructorSchoolIDScanner();
+    });
+};
+
+window.onInstructorSchoolIDScanned = function(decodedText, decodedResult) {
+    const courseId = document.getElementById('scanner-course-id').value;
+    const scheduleId = document.getElementById('scanner-schedule-id').value;
+    
+    if (!courseId) {
+        console.error('Course ID not found');
+        return;
+    }
+    
+    // Stop scanner while processing
+    if (instructorSchoolIDScanner) {
+        instructorSchoolIDScanner.stop().catch(err => console.log('Scanner stopped for processing'));
+    }
+    
+    // Send QR code to backend for lookup in QRCodeRegistration
+    fetch('{% url "dashboard:instructor_scan_student_qr_code" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+        },
+        body: JSON.stringify({
+            qr_code: decodedText.trim(),
+            course_id: parseInt(courseId)
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            showScannerNotification(`✓ ${data.student_name} marked attendance`, 'success');
+            
+            // Update scanned students list
+            updateScannedStudentsList();
+            
+            // Resume scanner after 1 second
+            setTimeout(() => {
+                startInstructorSchoolIDScanner(courseId, document.getElementById('scanner-section-title').textContent);
+            }, 1000);
+        } else {
+            showScannerNotification(`✗ ${data.message}`, 'error');
+            
+            // Resume scanner
+            setTimeout(() => {
+                startInstructorSchoolIDScanner(courseId, document.getElementById('scanner-section-title').textContent);
+            }, 2000);
+        }
+    })
+    .catch(err => {
+        console.error('Error scanning QR code:', err);
+        showScannerNotification('Error: Could not process scan', 'error');
+        
+        // Resume scanner
+        setTimeout(() => {
+            startInstructorSchoolIDScanner(courseId, document.getElementById('scanner-section-title').textContent);
+        }, 2000);
+    });
+};
+
+window.onInstructorScanError = function(error) {
+    // Ignore QR code scanner errors (it logs them internally)
+};
+
+window.showScannerNotification = function(message, type) {
+    const notification = document.createElement('div');
+    notification.className = `px-4 py-3 rounded-lg font-semibold text-sm fixed top-4 right-4 z-[999] ${
+        type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+    }`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
+    }, 3000);
+};
+
+window.updateScannedStudentsList = function() {
+    const courseId = document.getElementById('scanner-course-id').value;
+    const scheduleId = document.getElementById('scanner-schedule-id').value;
+    
+    // Fetch updated scanned students for this course/schedule
+    const params = new URLSearchParams();
+    params.append('course_id', courseId);
+    if (scheduleId) params.append('schedule_id', scheduleId);
+    
+    fetch(`{% url 'dashboard:instructor_get_scanned_students' %}?${params}`)
+        .then(response => response.json())
+        .then(data => {
+            const list = document.getElementById('scanned-students-list');
+            if (list && data.students) {
+                list.innerHTML = data.students.map(student => `
+                    <div class="flex items-center justify-between p-2 bg-green-50 rounded-lg border border-green-200">
+                        <span class="text-sm font-semibold text-gray-900">${student.name}</span>
+                        <span class="text-xs text-gray-500">${student.time}</span>
+                    </div>
+                `).join('');
+            }
+        })
+        .catch(err => console.log('Could not update scanned students list'));
+};
+
+// QR Code Modal Functions
+window.showQRCodeModal = function(courseId, courseCode, courseName, scheduleDay) {
+    try {
+        const modal = document.getElementById('qrCodeModal');
+        if (!modal) {
+            console.error('QR Code modal not found');
+            alert('QR Code modal not found. Please refresh the page.');
+            return;
+        }
+        
+        const modalImage = document.getElementById('qrCodeModalImage');
+        const modalCourseName = document.getElementById('qrCodeModalCourseName');
+        const modalCourseCode = document.getElementById('qrCodeModalCourseCode');
+        
+        if (!modalImage || !modalCourseName || !modalCourseCode) {
+            console.error('QR Code modal elements not found');
+            alert('QR Code modal elements not found. Please refresh the page.');
+            return;
+        }
+        
+        // Set course info
+        modalCourseName.textContent = courseName;
+        modalCourseCode.textContent = courseCode;
+        
+        // Get QR code URL - use the same URL as the small image, preserving the day parameter
+        const smallImage = document.getElementById(`qr-code-img-${courseId}`);
+        let qrCodeUrl = '';
+        if (smallImage && smallImage.dataset.url) {
+            qrCodeUrl = smallImage.dataset.url;
+        } else {
+            qrCodeUrl = `/dashboard/instructor/courses/${courseId}/qr-code/`;
+        }
+        
+        // Get the day from parameter or from the small image's data attribute
+        let dayParam = scheduleDay || '';
+        if (!dayParam && smallImage && smallImage.dataset.scheduleDay) {
+            dayParam = smallImage.dataset.scheduleDay;
+        }
+        
+        // Build URL with day parameter if available
+        if (dayParam) {
+            // Remove existing day parameter if present
+            qrCodeUrl = qrCodeUrl.split('&day=')[0].split('?day=')[0];
+            // Add day parameter
+            const separator = qrCodeUrl.includes('?') ? '&' : '?';
+            qrCodeUrl += `${separator}day=${encodeURIComponent(dayParam)}`;
+        }
+        
+        // Add cache-busting parameter (but don't include timestamp to keep QR stable)
+        const separator = qrCodeUrl.includes('?') ? '&' : '?';
+        qrCodeUrl += `${separator}v=${courseId}&modal=true`;
+        
+        // Set image source
+        modalImage.src = qrCodeUrl;
+        modalImage.alt = `QR Code for ${courseCode} - ${courseName}${dayParam ? ' (' + dayParam + ')' : ''}`;
+        
+        // Show modal
+        modal.classList.remove('hidden');
+        console.log('QR Code modal opened for course:', courseId, 'day:', dayParam || 'all days');
+    } catch (error) {
+        console.error('Error opening QR Code modal:', error);
+        alert('Error opening QR Code modal. Please try again.');
+    }
+};
+
+window.closeQRCodeModal = function() {
+    try {
+        const modal = document.getElementById('qrCodeModal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error closing QR Code modal:', error);
+    }
+};
+
+// Students List Modal Functions
+window.showStudentsListModal = function() {
+    try {
+        const modal = document.getElementById('studentsListModal');
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('Error opening Students List modal:', error);
+    }
+};
+
+window.closeStudentsListModal = function() {
+    try {
+        const modal = document.getElementById('studentsListModal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error closing Students List modal:', error);
+    }
+};
+
+// Quick Pick Active State Management
+(function() {
+    // Get the current schedule ID from URL (not just course ID)
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentScheduleId = urlParams.get('schedule');
+    const currentCourseId = urlParams.get('course');
+    
+    // Set active state on page load based on specific schedule ID
+    if (currentScheduleId) {
+        const quickPickItems = document.querySelectorAll('.quick-pick-item');
+        quickPickItems.forEach(item => {
+            const scheduleId = item.getAttribute('data-schedule-id');
+            if (scheduleId === currentScheduleId) {
+                item.classList.add('border-indigo-500', 'bg-indigo-50', 'shadow-md');
+                item.classList.remove('hover:border-indigo-300', 'hover:bg-indigo-50/40');
+            } else {
+                // Remove active state from other items
+                item.classList.remove('border-indigo-500', 'bg-indigo-50', 'shadow-md');
+                item.classList.add('hover:border-indigo-300', 'hover:bg-indigo-50/40');
+            }
+        });
+    } else if (currentCourseId) {
+        // Fallback: if no schedule ID, highlight first matching course (for backward compatibility)
+        const quickPickItems = document.querySelectorAll('.quick-pick-item');
+        let firstFound = false;
+        quickPickItems.forEach(item => {
+            const courseId = item.getAttribute('data-course-id');
+            if (courseId === currentCourseId && !firstFound) {
+                item.classList.add('border-indigo-500', 'bg-indigo-50', 'shadow-md');
+                item.classList.remove('hover:border-indigo-300', 'hover:bg-indigo-50/40');
+                firstFound = true;
+            } else {
+                item.classList.remove('border-indigo-500', 'bg-indigo-50', 'shadow-md');
+                item.classList.add('hover:border-indigo-300', 'hover:bg-indigo-50/40');
+            }
+        });
+    }
+    
+    // Add click handlers to maintain active state
+    document.querySelectorAll('.quick-pick-item').forEach(item => {
+        item.addEventListener('click', function(e) {
+            // Remove active state from all items
+            document.querySelectorAll('.quick-pick-item').forEach(i => {
+                i.classList.remove('border-indigo-500', 'bg-indigo-50', 'shadow-md');
+                i.classList.add('hover:border-indigo-300', 'hover:bg-indigo-50/40');
+            });
+            
+            // Add active state to clicked item only
+            this.classList.add('border-indigo-500', 'bg-indigo-50', 'shadow-md');
+            this.classList.remove('hover:border-indigo-300', 'hover:bg-indigo-50/40');
+        });
+    });
+})();
+</script>
+{% endblock %}
+

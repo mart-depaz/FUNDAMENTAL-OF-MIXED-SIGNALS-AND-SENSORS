@@ -1,0 +1,110 @@
+<!-- 
+for templates folder dashboard/error.html 
+-->
+
+
+
+{% extends 'partials/base.html' %}
+{% block title %}Error{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<nav class="navbar">
+    <h1><i class="fas fa-exclamation-triangle"></i> Error</h1>
+    <ul>
+        <li><a href="{% url 'login_signup' %}">Home</a></li>
+        <li><a href="{% url 'login_signup' %}">Login/Signup</a></li>
+    </ul>
+</nav>
+
+<div class="main-content">
+    <div class="content">
+        <h2>Error</h2>
+        <p>{{ message }}</p>
+        <a href="{% url 'login_signup' %}" class="btn btn-primary"><i class="fas fa-arrow-left"></i> Back to Login</a>
+    </div>
+</div>
+
+<style>
+    body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        background: linear-gradient(135deg, #f3e5f5 0%, #ffffff 100%);
+        animation: fadeIn 1s ease-in-out;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    .navbar {
+        background: linear-gradient(90deg, #ffffff 0%, #f3e5f5 100%);
+        color: #7b1fa2;
+        padding: 10px 20px;
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        position: relative;
+        z-index: 1000;
+    }
+    .navbar h1 {
+        margin: 0;
+        font-size: 24px;
+        color: #7b1fa2;
+        transition: transform 0.3s ease;
+        display: flex;
+        align-items: center;
+    }
+    .navbar h1 i {
+        margin-right: 8px;
+    }
+    .navbar h1:hover {
+        transform: scale(1.05);
+    }
+    .navbar ul {
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+    }
+    .navbar li {
+        margin-left: 20px;
+    }
+    .navbar a {
+        color: #7b1fa2;
+        text-decoration: none;
+        padding: 8px 12px;
+        transition: all 0.3s ease;
+        border-radius: 5px;
+    }
+    .navbar a:hover {
+        background-color: #e1bee7;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .main-content {
+        display: flex;
+        flex: 1;
+    }
+    .content {
+        flex: 1;
+        padding: 20px;
+        background-color: #fafafa;
+        transition: margin-left 0.3s ease;
+    }
+    .content a.btn {
+        display: inline-block;
+        padding: 10px 20px;
+        background-color: #7b1fa2;
+        color: white;
+        text-decoration: none;
+        border-radius: 5px;
+        transition: background-color 0.3s ease;
+    }
+    .content a.btn:hover {
+        background-color: #9c27b0;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+</style>
+{% endblock %}

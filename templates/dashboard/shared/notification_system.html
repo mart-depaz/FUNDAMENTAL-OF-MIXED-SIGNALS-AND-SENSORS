@@ -1,0 +1,320 @@
+<!-- Global Notification System -->
+<div id="notification-container" style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 999999 !important; pointer-events: none; max-width: 90%; width: auto;"></div>
+
+<style>
+.notification-toast {
+    background: white;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 300px;
+    max-width: 500px;
+    pointer-events: auto;
+    animation: slideInDown 0.3s ease-out;
+    border-left: 4px solid;
+    position: relative;
+    overflow: hidden;
+    z-index: 999999 !important;
+}
+
+.notification-toast.success {
+    border-left-color: #10B981;
+    background: linear-gradient(90deg, #ECFDF5 0%, #FFFFFF 100%);
+}
+
+.notification-toast.error {
+    border-left-color: #EF4444;
+    background: linear-gradient(90deg, #FEF2F2 0%, #FFFFFF 100%);
+}
+
+.notification-toast.warning {
+    border-left-color: #F59E0B;
+    background: linear-gradient(90deg, #FFFBEB 0%, #FFFFFF 100%);
+}
+
+.notification-toast.info {
+    border-left-color: #3B82F6;
+    background: linear-gradient(90deg, #EFF6FF 0%, #FFFFFF 100%);
+}
+
+.notification-toast.fade-out {
+    animation: fadeOutUp 0.5s ease-in forwards;
+}
+
+.notification-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.notification-toast.success .notification-icon {
+    color: #10B981;
+}
+
+.notification-toast.error .notification-icon {
+    color: #EF4444;
+}
+
+.notification-toast.warning .notification-icon {
+    color: #F59E0B;
+}
+
+.notification-toast.info .notification-icon {
+    color: #3B82F6;
+}
+
+.notification-content {
+    flex: 1;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #1F2937;
+    font-weight: 500;
+}
+
+.notification-close {
+    background: none;
+    border: none;
+    color: #6B7280;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.notification-close:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: #1F2937;
+}
+
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeOutUp {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+}
+</style>
+
+<script>
+// Global Notification System - Prevent multiple initializations
+if (typeof window.notificationSystemInitialized === 'undefined') {
+    window.notificationSystemInitialized = true;
+    
+    (function() {
+        const notificationContainer = document.getElementById('notification-container');
+        if (!notificationContainer) {
+            // Create container if it doesn't exist
+            const container = document.createElement('div');
+            container.id = 'notification-container';
+            container.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 999999 !important; pointer-events: none; max-width: 90%; width: auto;';
+            document.body.appendChild(container);
+        }
+
+        // Track shown messages to prevent duplicates
+        const shownMessages = new Set();
+        const messageTimeout = 3000; // 3 seconds cooldown for same message
+
+        // Calculate display duration based on text length
+        function calculateDuration(text) {
+            // Base duration: 2 seconds
+            // Add 0.05 seconds per character
+            // Minimum: 2 seconds, Maximum: 8 seconds
+            const baseDuration = 2000; // 2 seconds
+            const charDuration = 50; // 50ms per character
+            const minDuration = 2000;
+            const maxDuration = 8000;
+            
+            const calculatedDuration = baseDuration + (text.length * charDuration);
+            return Math.min(Math.max(calculatedDuration, minDuration), maxDuration);
+        }
+
+        // Show notification with duplicate prevention
+        function showNotification(message, type = 'info') {
+            const container = document.getElementById('notification-container');
+            if (!container) return;
+
+            // Normalize message for duplicate checking
+            const messageKey = `${type}:${message.trim()}`;
+            
+            // Check if this exact message was shown recently
+            if (shownMessages.has(messageKey)) {
+                return null; // Don't show duplicate
+            }
+            
+            // Add to shown messages
+            shownMessages.add(messageKey);
+            
+            // Remove from shown messages after timeout
+            setTimeout(() => {
+                shownMessages.delete(messageKey);
+            }, messageTimeout);
+
+            // Determine icon and type
+            const icons = {
+                success: 'fa-check-circle',
+                error: 'fa-exclamation-circle',
+                warning: 'fa-exclamation-triangle',
+                info: 'fa-info-circle'
+            };
+
+            const icon = icons[type] || icons.info;
+
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `notification-toast ${type}`;
+            
+            // Function to close notification with animation
+            const closeNotification = function() {
+                notification.classList.add('fade-out');
+                setTimeout(() => {
+                    if (notification.parentElement) {
+                        notification.remove();
+                    }
+                }, 500); // Match fade-out animation duration
+            };
+            
+            notification.innerHTML = `
+                <i class="fas ${icon} notification-icon"></i>
+                <div class="notification-content">${message}</div>
+                <button class="notification-close" title="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            
+            // Add click event to close button
+            const closeButton = notification.querySelector('.notification-close');
+            closeButton.addEventListener('click', closeNotification);
+
+            // Add to container
+            container.appendChild(notification);
+
+            // Calculate duration based on message length
+            const duration = calculateDuration(message);
+
+            // Auto-remove after duration
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.classList.add('fade-out');
+                    setTimeout(() => {
+                        if (notification.parentElement) {
+                            notification.remove();
+                        }
+                    }, 500); // Match fade-out animation duration
+                }
+            }, duration);
+
+            return notification;
+        }
+
+        // Replace window.alert
+        const originalAlert = window.alert;
+        window.alert = function(message) {
+            // Determine type from message content
+            let type = 'info';
+            const msg = String(message).toLowerCase();
+            if (msg.includes('success') || msg.includes('saved') || msg.includes('updated') || msg.includes('created') || msg.includes('added')) {
+                type = 'success';
+            } else if (msg.includes('error') || msg.includes('failed') || msg.includes('invalid') || msg.includes('not found')) {
+                type = 'error';
+            } else if (msg.includes('warning') || msg.includes('caution')) {
+                type = 'warning';
+            }
+            
+            showNotification(String(message), type);
+        };
+
+        // Make function globally accessible
+        window.showNotification = showNotification;
+
+        // Track if Django messages have been processed
+        let djangoMessagesProcessed = false;
+
+        // Handle Django messages on page load (only once)
+        function processDjangoMessages() {
+            if (djangoMessagesProcessed) return;
+            djangoMessagesProcessed = true;
+
+            // Check for Django messages in the page
+            const djangoMessages = document.querySelectorAll('.messages .message, .alert, [class*="message"]');
+            djangoMessages.forEach(function(msg) {
+                const text = msg.textContent || msg.innerText;
+                let type = 'info';
+                
+                // Determine type from classes
+                if (msg.classList.contains('success') || msg.classList.contains('alert-success')) {
+                    type = 'success';
+                } else if (msg.classList.contains('error') || msg.classList.contains('alert-danger') || msg.classList.contains('alert-error')) {
+                    type = 'error';
+                } else if (msg.classList.contains('warning') || msg.classList.contains('alert-warning')) {
+                    type = 'warning';
+                }
+                
+                if (text.trim()) {
+                    showNotification(text.trim(), type);
+                    msg.style.display = 'none'; // Hide original message
+                }
+            });
+            
+            // Check for Django messages framework messages (only if not already processed)
+            // Show all messages including logout messages
+            {% if messages %}
+                {% for message in messages %}
+                    showNotification('{{ message|escapejs }}', '{{ message.tags|default:"info" }}');
+                {% endfor %}
+            {% endif %}
+        }
+
+        // Process messages when DOM is ready - delay to prevent premature display
+        function delayedProcessMessages() {
+            // Check if DOM is ready
+            if (document.readyState === 'loading') {
+                // DOM is still loading, wait for it
+                document.addEventListener('DOMContentLoaded', () => {
+                    // Wait a bit more for any dynamic content to load
+                    setTimeout(processDjangoMessages, 200);
+                });
+            } else {
+                // DOM is already loaded
+                // Use a shorter delay for initial page load to show messages faster
+                setTimeout(processDjangoMessages, 200);
+            }
+        }
+        
+        // Start processing messages
+        delayedProcessMessages();
+        
+        // Also process messages when page is fully loaded (fallback)
+        window.addEventListener('load', () => {
+            // Only process if not already processed
+            if (!djangoMessagesProcessed) {
+                setTimeout(processDjangoMessages, 100);
+            }
+        });
+    })();
+}
+</script>
+

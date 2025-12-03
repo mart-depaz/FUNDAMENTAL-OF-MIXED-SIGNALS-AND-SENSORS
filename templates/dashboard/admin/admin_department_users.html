@@ -1,0 +1,130 @@
+<!-- templates/dashboard/admin_department_users.html -->
+{% extends 'partials/base.html' %}
+{% load static %}
+{% block title %}Admin Dashboard - Department Programs{% endblock %}
+{% block navigation %}
+<!-- Override default navigation - no top bar for admin -->
+{% endblock %}
+{% block content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<style>
+    body { 
+        font-family: 'Inter', sans-serif; 
+        background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);
+    }
+</style>
+
+<!-- Admin Top Bar -->
+{% include 'dashboard/admin/admin_topbar.html' %}
+
+<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+    <!-- Sidebar -->
+    {% include 'dashboard/admin/admin_sidebar.html' %}
+
+    <main id="main-content" class="flex-grow p-2 lg:p-3 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+        <div class="p-2 md:p-3 bg-white lg:bg-gray-50 flex-grow rounded-lg shadow-inner min-h-full">
+            <!-- Back Button - Top Left Corner -->
+            <div class="mb-3">
+                <a href="javascript:history.back()" 
+                   class="inline-flex items-center p-2 rounded-lg bg-white shadow-md border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 hover:shadow-lg transition-all duration-200"
+                   title="Back to previous page">
+                    <i class="fas fa-arrow-left text-base"></i>
+                </a>
+            </div>
+            
+            <!-- Department Header - Left Side Top -->
+            <div class="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200">
+                {% if department.icon %}
+                <img src="{{ department.icon.url }}" alt="{{ department.code }}" class="w-12 h-12 object-contain rounded flex-shrink-0">
+                {% else %}
+                <div class="w-12 h-12 rounded flex items-center justify-center flex-shrink-0" style="background-color: #3C4770; color: white;">
+                    <i class="fas fa-building text-lg"></i>
+                </div>
+                {% endif %}
+                <div>
+                    <h2 class="text-xl font-bold text-gray-900">
+                        {% if department.code %}{{ department.code }}{% else %}N/A{% endif %}
+                    </h2>
+                    <p class="text-base text-gray-600">{{ department.name }}</p>
+                </div>
+            </div>
+            
+            <!-- Page Header: Programs -->
+            <div class="flex items-center mb-4">
+                <i class="fas fa-graduation-cap w-5 h-5 mr-2" style="color: #3C4770;"></i>
+                <h2 class="text-lg font-bold text-gray-900">Programs</h2>
+                <p class="text-xs text-gray-600 ml-2">({{ program_data|length }} Program{{ program_data|length|pluralize }})</p>
+            </div>
+            
+            <!-- Programs Grid (Larger Size) -->
+            {% if program_data %}
+            <div id="programs-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for pd in program_data %}
+                {% with program=pd.program %}
+                <div class="program-card bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 transition hover:shadow-xl" 
+                     data-code="{{ program.code|lower }}"
+                     data-name="{{ program.name|lower }}"
+                     data-program-id="{{ program.id }}"
+                     onclick="viewProgramUsers({{ program.id }})"
+                     style="cursor: pointer;">
+                    <!-- Program Icon Section -->
+                    <div class="h-24 flex items-center justify-center" style="background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);">
+                        {% if program.icon %}
+                        <img src="{{ program.icon.url }}" alt="{{ program.code }}" class="w-16 h-16 object-contain rounded">
+                        {% else %}
+                        <div class="w-16 h-16 rounded flex items-center justify-center" style="background-color: #3C4770; color: white;">
+                            <i class="fas fa-graduation-cap text-3xl"></i>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Program Info Section -->
+                    <div class="p-4">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="flex-1 flex items-center gap-3">
+                                {% if program.icon %}
+                                <img src="{{ program.icon.url }}" alt="{{ program.code }}" class="w-10 h-10 object-contain rounded flex-shrink-0">
+                                {% else %}
+                                <div class="w-10 h-10 rounded flex items-center justify-center flex-shrink-0" style="background-color: #3C4770; color: white;">
+                                    <i class="fas fa-graduation-cap text-base"></i>
+                                </div>
+                                {% endif %}
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-lg font-bold text-gray-800 break-words">{{ program.code }}</h4>
+                                    <p class="text-sm text-gray-600 mt-0.5 break-words">{{ program.name }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-2">
+                            <i class="fas fa-users mr-1"></i>{{ pd.total_users }} User{{ pd.total_users|pluralize }} ({{ pd.teacher_count }} Instructors, {{ pd.student_count }} Students)
+                        </p>
+                        <div class="mt-3 flex items-center text-sm text-gray-600">
+                            <i class="fas fa-arrow-right mr-1"></i>
+                            <span>Click to view</span>
+                        </div>
+                    </div>
+                </div>
+                {% endwith %}
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center p-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+                <i class="fas fa-graduation-cap text-6xl text-gray-400 mb-4"></i>
+                <p class="text-xl text-gray-600 mb-2">No programs found</p>
+                <p class="text-gray-500">Programs will appear here once they are added to this department.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+
+<script>
+    function viewProgramUsers(programId) {
+        // Navigate to program users page with database context
+        window.location.href = '{% url "dashboard:admin_program_users" 0 %}'.replace('0', programId) + '?from=database';
+    }
+</script>
+{% endblock %}
+

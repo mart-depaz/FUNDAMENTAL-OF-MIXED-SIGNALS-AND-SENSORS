@@ -1,0 +1,1923 @@
+<!-- templates/dashboard/admin_program_users.html -->
+{% extends 'partials/base.html' %}
+{% load dashboard_filters %}
+{% load static %}
+{% block title %}Admin Dashboard - Program Users{% endblock %}
+{% block navigation %}
+<!-- Override default navigation - no top bar for admin -->
+{% endblock %}
+{% block content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<style>
+    body { 
+        font-family: 'Inter', sans-serif; 
+        background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);
+    }
+</style>
+
+<!-- Admin Top Bar -->
+{% include 'dashboard/admin/admin_topbar.html' %}
+
+<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+    <!-- Sidebar -->
+    {% include 'dashboard/admin/admin_sidebar.html' %}
+
+    <main id="main-content" class="flex-grow p-2 lg:p-3 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+        <div class="p-2 md:p-3 bg-white lg:bg-gray-50 flex-grow rounded-lg shadow-inner min-h-full">
+            <!-- Back Button - Top Left Corner -->
+            <div class="mb-3">
+                <a href="javascript:history.back()" 
+                   class="inline-flex items-center p-2 rounded-lg bg-white shadow-md border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 hover:shadow-lg transition-all duration-200"
+                   title="Back to previous page">
+                    <i class="fas fa-arrow-left text-base"></i>
+                </a>
+            </div>
+            
+            <!-- Search and Filter Bar - Moved to Top -->
+            <div class="mb-2 relative">
+                <form method="GET" action="{% url 'dashboard:admin_program_users' program.id %}" class="flex gap-2 flex-wrap" id="search-form">
+                    <div class="flex-1 min-w-[200px] relative">
+                        <input type="text" id="search-input" name="search" value="{{ search_query }}" placeholder="Search users..." 
+                               class="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" autocomplete="off">
+                        <i class="fas fa-search absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
+                        <button type="button" id="clear-search-button" class="hidden absolute right-8 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs" title="Clear search">
+                            <i class="fas fa-times-circle"></i>
+                        </button>
+                        <!-- Search Results Modal positioned below input -->
+                        <div id="search-results-modal" class="absolute bg-white rounded-xl shadow-2xl border border-gray-200 hidden z-[120] w-full mt-2" style="top: 100%; left: 0; max-height: 60vh; overflow-y: auto;">
+                            <div class="p-4">
+                                <div class="flex justify-between items-center mb-4 pb-3 border-b">
+                                    <h3 class="text-lg font-bold flex items-center" style="color: #3C4770;">
+                                        <i class="fas fa-search w-5 h-5 mr-2"></i> Search Results
+                                    </h3>
+                                    <button type="button" onclick="closeSearchResultsModal()" class="text-gray-400 hover:text-gray-600">
+                                        <i class="fas fa-times w-5 h-5"></i>
+                                    </button>
+                                </div>
+                                <div id="search-results-content" class="space-y-2">
+                                    <!-- Results will be populated here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="student-filters" class="flex gap-2 flex-wrap items-center hidden">
+                    {% if unique_sections %}
+                    <select id="section-filter" name="section_filter" class="px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="">All Sections</option>
+                        {% for section in unique_sections %}
+                            <option value="{{ section }}" {% if section_filter == section %}selected{% endif %}>{{ section }}</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
+                    {% if unique_year_levels %}
+                    <select id="year-level-filter" name="year_level_filter" class="px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="">All Year Levels</option>
+                        {% for year_level in unique_year_levels %}
+                            <option value="{{ year_level }}" {% if year_level_filter == year_level|stringformat:"s" %}selected{% endif %}>
+                                {% if year_level == 1 %}1st Year
+                                {% elif year_level == 2 %}2nd Year
+                                {% elif year_level == 3 %}3rd Year
+                                {% elif year_level == 4 %}4th Year
+                                {% elif year_level == 5 %}5th Year
+                                {% else %}{{ year_level }}th Year
+                                {% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
+                        {% if unique_school_years %}
+                        <select id="school-year-filter" name="school_year_filter" class="px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500">
+                            <option value="">All School Years</option>
+                            {% for sy in unique_school_years %}
+                                <option value="{{ sy }}" {% if school_year_filter == sy %}selected{% endif %}>{{ sy }}</option>
+                            {% endfor %}
+                        </select>
+                        {% endif %}
+                    </div>
+                    <button type="submit" class="px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition shadow-sm whitespace-nowrap hover:shadow-md" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                        <i class="fas fa-search mr-1 text-xs"></i> Search
+                    </button>
+                    {% if search_query or section_filter or year_level_filter or school_year_filter %}
+                    <a href="{% url 'dashboard:admin_program_users' program.id %}" class="px-2 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-300 transition">
+                        <i class="fas fa-times mr-1 text-xs"></i> Clear
+                    </a>
+                    {% endif %}
+                </form>
+            </div>
+            
+            <div class="flex items-center mb-3">
+                <div class="flex items-center gap-2">
+                    {% if program.icon %}
+                    <img src="{{ program.icon.url }}" alt="{{ program.code }}" class="w-8 h-8 object-contain rounded flex-shrink-0">
+                    {% else %}
+                    <div class="w-8 h-8 rounded flex items-center justify-center flex-shrink-0" style="background-color: #3C4770; color: white;">
+                        <i class="fas fa-graduation-cap text-xs"></i>
+                    </div>
+                    {% endif %}
+                    <div>
+                        <h1 class="text-lg font-bold text-gray-900 flex items-center">
+                            {{ program.code }} - {{ program.name }}
+                        </h1>
+                        <p class="text-xs text-gray-600 mt-0.5">{{ program.department }}</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Statistics -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+                <div class="bg-white p-2 rounded-lg shadow-sm border-l-2" style="border-color: #3C4770;">
+                    <p class="text-xs text-gray-600">Total Users</p>
+                    <p class="text-base font-bold" style="color: #3C4770;">{{ users|length }}</p>
+                </div>
+                <div class="bg-white p-2 rounded-lg shadow-sm border-l-2" style="border-color: #3b82f6;">
+                    <p class="text-xs text-gray-600">Instructors</p>
+                    <p class="text-base font-bold text-blue-600">{{ teachers|length }}</p>
+                </div>
+                <div class="bg-white p-2 rounded-lg shadow-sm border-l-2" style="border-color: #10b981;">
+                    <p class="text-xs text-gray-600">Students</p>
+                    <p class="text-base font-bold text-green-600">{{ students|length }}</p>
+                </div>
+            </div>
+            
+            <!-- User Type Tabs with Add Buttons -->
+            <div class="mb-3 border-b pb-2">
+                <div class="flex justify-between items-center gap-2">
+                    <!-- Tabs on the left -->
+                    <div class="flex space-x-2">
+                        <button id="all-tab" class="px-3 py-1 text-xs rounded-full font-semibold transition hover:bg-gray-100 hover:shadow-sm">
+                            <i class="fas fa-users mr-1 text-xs"></i> All ({{ users|length }})
+                        </button>
+                        <button id="teachers-tab" class="px-3 py-1 text-xs rounded-full font-semibold transition hover:bg-gray-100 hover:shadow-sm">
+                            <i class="fas fa-briefcase mr-1 text-xs"></i> Instructors ({{ teachers|length }})
+                        </button>
+                        <button id="students-tab" class="px-3 py-1 text-xs rounded-full font-semibold transition hover:bg-gray-100 hover:shadow-sm">
+                            <i class="fas fa-graduation-cap mr-1 text-xs"></i> Students ({{ students|length }})
+                        </button>
+                    </div>
+                    <!-- Add Buttons and Filters on the right -->
+                    <div class="flex gap-2 items-center">
+                        {% if request.GET.from != 'database' %}
+                        <!-- Add User Buttons (show based on active tab) - Show by default and for Academics, hide only for Database -->
+                        <div id="add-buttons-all" class="flex gap-2">
+                            <button onclick="openAddTeacherModal()" class="px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition shadow-sm whitespace-nowrap hover:shadow-md" style="background-color: #3b82f6;" onmouseover="this.style.backgroundColor='#2563eb';" onmouseout="this.style.backgroundColor='#3b82f6';">
+                                <i class="fas fa-user-plus mr-1 text-xs"></i> Add Instructor
+                            </button>
+                            <button onclick="openAddStudentModal()" class="px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition shadow-sm whitespace-nowrap hover:shadow-md" style="background-color: #10b981;" onmouseover="this.style.backgroundColor='#059669';" onmouseout="this.style.backgroundColor='#10b981';">
+                                <i class="fas fa-user-graduate mr-1 text-xs"></i> Add Student
+                            </button>
+                        </div>
+                        <div id="add-buttons-teachers" class="flex gap-2 hidden">
+                            <button onclick="openAddTeacherModal()" class="px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition shadow-sm whitespace-nowrap hover:shadow-md" style="background-color: #3b82f6;" onmouseover="this.style.backgroundColor='#2563eb';" onmouseout="this.style.backgroundColor='#3b82f6';">
+                                <i class="fas fa-user-plus mr-1 text-xs"></i> Add Instructor
+                            </button>
+                        </div>
+                        <div id="add-buttons-students" class="flex gap-2 hidden">
+                            <button onclick="openAddStudentModal()" class="px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition shadow-sm whitespace-nowrap hover:shadow-md" style="background-color: #10b981;" onmouseover="this.style.backgroundColor='#059669';" onmouseout="this.style.backgroundColor='#10b981';">
+                                <i class="fas fa-user-graduate mr-1 text-xs"></i> Add Student
+                            </button>
+                        </div>
+                        {% else %}
+                        <!-- Hidden placeholders for Database section (no add buttons) -->
+                        <div id="add-buttons-all" class="flex gap-2 hidden"></div>
+                        <div id="add-buttons-teachers" class="flex gap-2 hidden"></div>
+                        <div id="add-buttons-students" class="flex gap-2 hidden"></div>
+                        {% endif %}
+                        {% if from_database %}
+                        <div class="flex flex-wrap items-center gap-2">
+                            <a id="download-users-button"
+                               data-base-url="{% url 'dashboard:admin_download_users_csv' %}?program_id={{ program.id }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if section_filter %}&section_filter={{ section_filter|urlencode }}{% endif %}{% if year_level_filter %}&year_level_filter={{ year_level_filter|urlencode }}{% endif %}"
+                               href="{% url 'dashboard:admin_download_users_csv' %}?program_id={{ program.id }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if section_filter %}&section_filter={{ section_filter|urlencode }}{% endif %}{% if year_level_filter %}&year_level_filter={{ year_level_filter|urlencode }}{% endif %}&user_type=all&format=csv"
+                               class="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200 transition flex items-center gap-1"
+                               title="Download CSV of current list">
+                                <i class="fas fa-download text-xs"></i> Download All
+                            </a>
+                            <select id="download-format-select" class="px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                <option value="csv">Excel (CSV)</option>
+                                <option value="docx">Word (DOCX)</option>
+                            </select>
+                            <div class="flex items-center gap-2">
+                                <select id="bulk-delete-select" class="px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500">
+                                    <option value="">Select delete option</option>
+                                    <option value="all">Delete all users</option>
+                                    <option value="instructors">Delete all instructors</option>
+                                    <option value="students">Delete all students</option>
+                                    <option value="specific">Delete selected users</option>
+                            </select>
+                                <button type="button" id="bulk-delete-button" onclick="handleBulkDelete()" class="px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition shadow-sm">
+                                    <i class="fas fa-trash mr-1 text-xs"></i> Delete
+                                </button>
+                                <button type="button" id="cancel-selection-button" class="hidden px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-300 transition shadow-sm">
+                                    <i class="fas fa-times mr-1 text-xs"></i> Cancel Selection
+                                </button>
+                        </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- All Users Table -->
+            <div id="all-section">
+                <div class="bg-white rounded-lg shadow-sm overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-xs">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                {% if from_database %}
+                                <th class="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase selection-column hidden">
+                                    <span class="sr-only">Select</span>
+                                </th>
+                                {% endif %}
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Name / ID</th>
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                                <th class="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
+                                {% if from_database %}
+                                <th class="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase">Download</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for user in users %}
+                            <tr class="user-row transition cursor-pointer" 
+                                data-name="{{ user.full_name|default:user.username|lower }}"
+                                data-email="{{ user.email|lower }}"
+                                data-id="{{ user.school_id|lower }}"
+                                data-dept="{{ user.department|default:''|lower }}"
+                                data-year-level="{% if user.year_level %}{{ user.year_level }}{% endif %}"
+                                data-section="{% if user.section %}{{ user.section|lower }}{% endif %}"
+                                data-school-year="{{ user.school_year|default:''|lower }}"
+                                data-profile="{% if user.profile_picture %}{{ user.profile_picture.url|default_if_none:'' }}{% endif %}"
+                                data-display-name="{{ user.full_name|default:user.username|default:''|escape }}"
+                                data-display-email="{{ user.email|default:''|escape }}"
+                                data-display-id="{{ user.school_id|default:''|escape }}"
+                                data-type="{% if user.is_teacher %}Instructor{% else %}Student{% endif %}"
+                                data-user-id="{{ user.id }}"
+                                onclick="handleRowClick(this, {{ user.id }})"
+                                onmouseover="this.style.backgroundColor='#DFCFD5';" 
+                                onmouseout="this.style.backgroundColor='transparent';">
+                                {% if from_database %}
+                                <td class="px-2 py-1.5 text-center align-middle selection-cell hidden">
+                                    <input type="checkbox" class="select-user-checkbox w-4 h-4 text-red-600 border-gray-300 rounded" data-user-id="{{ user.id }}" onclick="event.stopPropagation(); toggleUserSelection(this)">
+                                </td>
+                                {% endif %}
+                                <td class="px-2 py-1.5 whitespace-nowrap">
+                                    <div class="text-xs font-semibold text-gray-900">{{ user.full_name|default:user.username }}</div>
+                                    <div class="text-xs font-mono" style="color: #3C4770;">{{ user.school_id }}</div>
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-xs text-gray-500">{{ user.email }}</td>
+                                <td class="px-2 py-1.5 whitespace-nowrap">
+                                    <span class="px-1.5 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full {% if user.is_teacher %}bg-blue-100 text-blue-800{% else %}bg-green-100 text-green-800{% endif %}">
+                                        {% if user.is_teacher %}Instructor{% else %}Student{% endif %}
+                                    </span>
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-xs text-gray-500">
+                                    {% if user.department %}
+                                        {{ user.department }}
+                                        {% else %}
+                                            -
+                                    {% endif %}
+                                </td>
+ 
+                                <td class="px-2 py-1.5 whitespace-nowrap text-center">
+                                    <span class="px-1.5 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full bg-green-100 text-green-800">
+                                        Active
+                                    </span>
+                                </td>
+                                {% if from_database %}
+                                <td class="px-2 py-1.5 whitespace-nowrap text-center">
+                                    <button type="button" onclick="downloadUserRecord({{ user.id }}, event)" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition" title="Download record">
+                                        <i class="fas fa-download text-xs"></i>
+                                    </button>
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="{% if from_database %}7{% else %}5{% endif %}" class="text-center py-8 text-gray-500">No users found in this program</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Teachers Table -->
+            <div id="teachers-section" class="hidden">
+                <div class="bg-white rounded-xl shadow-lg overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                {% if from_database %}
+                                <th class="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase selection-column hidden">
+                                    <span class="sr-only">Select</span>
+                                </th>
+                                {% endif %}
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Name / ID</th>
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                                <th class="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
+                                {% if from_database %}
+                                <th class="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase">Download</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for teacher in teachers %}
+                            <tr class="user-row transition cursor-pointer" 
+                                data-name="{{ teacher.full_name|default:teacher.username|lower }}"
+                                data-email="{{ teacher.email|lower }}"
+                                data-id="{{ teacher.school_id|lower }}"
+                                data-dept="{{ teacher.department|default:''|lower }}"
+                                data-school-year="{{ teacher.school_year|default:''|lower }}"
+                                data-profile="{% if teacher.profile_picture %}{{ teacher.profile_picture.url|default_if_none:'' }}{% endif %}"
+                                data-display-name="{{ teacher.full_name|default:teacher.username|default:''|escape }}"
+                                data-display-email="{{ teacher.email|default:''|escape }}"
+                                data-display-id="{{ teacher.school_id|default:''|escape }}"
+                                data-type="Instructor"
+                                data-user-id="{{ teacher.id }}"
+                                onclick="handleRowClick(this, {{ teacher.id }})"
+                                onmouseover="this.style.backgroundColor='#DFCFD5';" 
+                                onmouseout="this.style.backgroundColor='transparent';">
+                                {% if from_database %}
+                                <td class="px-2 py-1.5 text-center align-middle selection-cell hidden">
+                                    <input type="checkbox" class="select-user-checkbox w-4 h-4 text-red-600 border-gray-300 rounded" data-user-id="{{ teacher.id }}" onclick="event.stopPropagation(); toggleUserSelection(this)">
+                                </td>
+                                {% endif %}
+                                <td class="px-2 py-1.5 whitespace-nowrap">
+                                    <div class="text-xs font-semibold text-gray-900">{{ teacher.full_name|default:teacher.username }}</div>
+                                    <div class="text-xs font-mono" style="color: #3C4770;">{{ teacher.school_id }}</div>
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-xs text-gray-500">{{ teacher.email }}</td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-xs text-gray-500">{{ teacher.department|default:"-" }}</td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-center">
+                                    <span class="px-1.5 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full {% if teacher.is_approved %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                                        {% if teacher.is_approved %}Active{% else %}Pending{% endif %}
+                                    </span>
+                                </td>
+                                {% if from_database %}
+                                <td class="px-2 py-1.5 whitespace-nowrap text-center">
+                                    <button type="button" onclick="downloadUserRecord({{ teacher.id }}, event)" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition" title="Download record">
+                                        <i class="fas fa-download text-xs"></i>
+                                    </button>
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="{% if from_database %}6{% else %}4{% endif %}" class="text-center py-8 text-gray-500">No instructors found in this program</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Students Table -->
+            <div id="students-section" class="hidden">
+                <div class="bg-white rounded-xl shadow-lg overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                {% if from_database %}
+                                <th class="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase selection-column hidden">
+                                    <span class="sr-only">Select</span>
+                                </th>
+                                {% endif %}
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Name / ID</th>
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Year / Section</th>
+                                <th class="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                                <th class="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
+                                {% if from_database %}
+                                <th class="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase">Download</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for student in students %}
+                            <tr class="user-row transition cursor-pointer" 
+                                data-name="{{ student.full_name|default:student.username|lower }}"
+                                data-email="{{ student.email|lower }}"
+                                data-id="{{ student.school_id|lower }}"
+                                data-dept="{{ student.department|default:''|lower }}"
+                                data-year-level="{% if student.year_level %}{{ student.year_level }}{% endif %}"
+                                data-section="{% if student.section %}{{ student.section|lower }}{% endif %}"
+                                data-school-year="{{ student.school_year|default:''|lower }}"
+                                data-profile="{% if student.profile_picture %}{{ student.profile_picture.url|default_if_none:'' }}{% endif %}"
+                                data-display-name="{{ student.full_name|default:student.username|default:''|escape }}"
+                                data-display-email="{{ student.email|default:''|escape }}"
+                                data-display-id="{{ student.school_id|default:''|escape }}"
+                                data-type="Student"
+                                data-user-id="{{ student.id }}"
+                                onclick="handleRowClick(this, {{ student.id }})"
+                                onmouseover="this.style.backgroundColor='#DFCFD5';" 
+                                onmouseout="this.style.backgroundColor='transparent';">
+                                {% if from_database %}
+                                <td class="px-2 py-1.5 text-center align-middle selection-cell hidden">
+                                    <input type="checkbox" class="select-user-checkbox w-4 h-4 text-red-600 border-gray-300 rounded" data-user-id="{{ student.id }}" onclick="event.stopPropagation(); toggleUserSelection(this)">
+                                </td>
+                                {% endif %}
+                                <td class="px-2 py-1.5 whitespace-nowrap">
+                                    <div class="text-xs font-semibold text-gray-900">{{ student.full_name|default:student.username }}</div>
+                                    <div class="text-xs font-mono" style="color: #3C4770;">{{ student.school_id }}</div>
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-xs text-gray-500">{{ student.email }}</td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-xs text-gray-500">
+                                    {% if student.year_level and student.section %}
+                                        {{ student.year_level }}/{{ student.section }}
+                                    {% elif student.year_level %}
+                                        {{ student.year_level }}
+                                    {% elif student.section %}
+                                        {{ student.section }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-xs text-gray-500">{{ student.department|default:"-" }}</td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-center">
+                                    <span class="px-1.5 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full bg-green-100 text-green-800">
+                                        Active
+                                    </span>
+                                </td>
+                                {% if from_database %}
+                                <td class="px-2 py-1.5 whitespace-nowrap text-center">
+                                    <button type="button" onclick="downloadUserRecord({{ student.id }}, event)" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition" title="Download record">
+                                        <i class="fas fa-download text-xs"></i>
+                                    </button>
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="{% if from_database %}7{% else %}5{% endif %}" class="text-center py-8 text-gray-500">No students found in this program</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+    const programId = {{ program.id }};
+    const canDeleteUsers = {{ from_database|yesno:"true,false" }};
+    const canDownloadUserRecords = {{ from_database|yesno:"true,false" }};
+    const selectedUserIds = new Set();
+    let pendingBulkDeleteScope = null;
+    let pendingBulkDeleteUserIds = [];
+    const downloadUsersBaseUrl = "{% url 'dashboard:admin_download_users_csv' %}";
+
+    function getActiveSectionId() {
+        const storedTabState = sessionStorage.getItem('activeProgramUsersTab');
+        if (!storedTabState) {
+            return 'all-section';
+        }
+        const parts = storedTabState.split(',');
+        return (parts.length > 1 && parts[1]) ? parts[1] : 'all-section';
+    }
+
+    function escapeHTML(value) {
+        if (value === undefined || value === null) {
+            return '';
+        }
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function normalizeValue(value) {
+        if (!value) {
+            return '';
+        }
+        return String(value).toLowerCase().replace(/\s+/g, '');
+    }
+
+    window.toggleUserSelection = function(checkbox, forceChecked = null) {
+        const userId = checkbox.getAttribute('data-user-id');
+        if (!userId) {
+            return;
+        }
+        if (forceChecked !== null) {
+            checkbox.checked = forceChecked;
+        }
+        if (checkbox.checked) {
+            selectedUserIds.add(userId);
+        } else {
+            selectedUserIds.delete(userId);
+        }
+        const row = checkbox.closest('tr');
+        if (row) {
+            row.classList.toggle('bg-red-50', checkbox.checked);
+            row.classList.toggle('text-red-800', checkbox.checked);
+        }
+    };
+
+    window.handleRowClick = function(row, userId) {
+        const bulkSelect = document.getElementById('bulk-delete-select');
+        const isSelectionMode = bulkSelect && bulkSelect.value === 'specific';
+        if (isSelectionMode) {
+            const checkbox = row.querySelector('.select-user-checkbox');
+            if (checkbox) {
+                const shouldCheck = !checkbox.checked;
+                toggleUserSelection(checkbox, shouldCheck);
+            }
+        } else {
+            viewUserDetails(userId);
+        }
+    };
+
+    function clearSelectedUserCheckboxes() {
+        selectedUserIds.clear();
+        document.querySelectorAll('.select-user-checkbox').forEach(cb => {
+            cb.checked = false;
+        });
+        document.querySelectorAll('.user-row').forEach(row => {
+            row.classList.remove('bg-red-50', 'text-red-800');
+        });
+    }
+
+    function updateSelectionVisibility() {
+        if (!canDeleteUsers) {
+            return;
+        }
+        const bulkSelect = document.getElementById('bulk-delete-select');
+        if (!bulkSelect) {
+            return;
+        }
+        const showSelection = bulkSelect.value === 'specific';
+        const selectionColumns = document.querySelectorAll('.selection-column');
+        const selectionCells = document.querySelectorAll('.selection-cell');
+        const cancelButton = document.getElementById('cancel-selection-button');
+        if (cancelButton) {
+            cancelButton.classList.toggle('hidden', !showSelection);
+        }
+        selectionColumns.forEach(col => {
+            col.classList.toggle('hidden', !showSelection);
+        });
+        selectionCells.forEach(cell => {
+            cell.classList.toggle('hidden', !showSelection);
+            if (!showSelection) {
+                const checkbox = cell.querySelector('.select-user-checkbox');
+                if (checkbox) {
+                    checkbox.checked = false;
+                }
+            }
+        });
+        if (!showSelection) {
+            selectedUserIds.clear();
+            document.querySelectorAll('.user-row').forEach(row => {
+                row.classList.remove('bg-red-50', 'text-red-800');
+            });
+        }
+
+    }
+
+    function getSelectedDownloadFormat() {
+        const formatSelect = document.getElementById('download-format-select');
+        return formatSelect ? formatSelect.value : 'csv';
+    }
+
+    window.downloadUserRecord = function(userId, event) {
+        if (!userId) {
+            return;
+        }
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        const formatValue = getSelectedDownloadFormat();
+        const url = `${downloadUsersBaseUrl}?user_id=${userId}&format=${formatValue}`;
+        window.location.href = url;
+    };
+
+    function updateDownloadLink(activeSection) {
+        const downloadBtn = document.getElementById('download-users-button');
+        if (!downloadBtn) {
+            return;
+        }
+        const baseUrl = downloadBtn.dataset.baseUrl || downloadBtn.href.split('&user_type=')[0];
+        const tabMap = {
+            'all-section': 'all',
+            'teachers-section': 'instructors',
+            'students-section': 'students'
+        };
+        const userType = tabMap[activeSection] || 'all';
+        const formatValue = getSelectedDownloadFormat();
+        const formatTitleMap = {
+            'csv': 'Download Excel (CSV) list',
+            'docx': 'Download Word (DOCX) list'
+        };
+        downloadBtn.title = formatTitleMap[formatValue] || 'Download list';
+        const separator = baseUrl.includes('?') ? '&' : '?';
+        downloadBtn.href = `${baseUrl}${separator}user_type=${userType}&format=${formatValue}`;
+    }
+    // Tab switching with persistent active state
+    function switchTab(activeTab, activeSection) {
+        // Hide all sections
+        document.getElementById('all-section').classList.add('hidden');
+        document.getElementById('teachers-section').classList.add('hidden');
+        document.getElementById('students-section').classList.add('hidden');
+        
+        // Check if we're in Database context (no add buttons should show)
+        const urlParams = new URLSearchParams(window.location.search);
+        const isDatabase = urlParams.get('from') === 'database';
+        
+        // Hide all add button groups and filters
+        const addButtonsAll = document.getElementById('add-buttons-all');
+        const addButtonsTeachers = document.getElementById('add-buttons-teachers');
+        const addButtonsStudents = document.getElementById('add-buttons-students');
+        const studentFilters = document.getElementById('student-filters');
+        
+        if (addButtonsAll) addButtonsAll.classList.add('hidden');
+        if (addButtonsTeachers) addButtonsTeachers.classList.add('hidden');
+        if (addButtonsStudents) addButtonsStudents.classList.add('hidden');
+        if (studentFilters) studentFilters.classList.add('hidden');
+        
+        // Show active section
+        document.getElementById(activeSection).classList.remove('hidden');
+        updateDownloadLink(activeSection);
+        
+        // Show appropriate add buttons and filters based on active tab (only if NOT in Database context)
+        if (!isDatabase) {
+            if (activeTab === 'all-tab' && addButtonsAll && addButtonsAll.children.length > 0) {
+                addButtonsAll.classList.remove('hidden');
+            } else if (activeTab === 'teachers-tab' && addButtonsTeachers && addButtonsTeachers.children.length > 0) {
+                addButtonsTeachers.classList.remove('hidden');
+            } else if (activeTab === 'students-tab' && addButtonsStudents && addButtonsStudents.children.length > 0) {
+                    addButtonsStudents.classList.remove('hidden');
+                }
+            }
+        if (studentFilters) {
+            if (activeSection === 'students-section') {
+                studentFilters.classList.remove('hidden');
+        } else {
+                studentFilters.classList.add('hidden');
+            }
+        }
+        
+        // Reset all tabs
+        ['all-tab', 'teachers-tab', 'students-tab'].forEach(tabId => {
+            const tab = document.getElementById(tabId);
+            if (tab) {
+                tab.style.backgroundColor = '#e5e7eb';
+                tab.style.color = '#1f2937';
+                tab.classList.remove('shadow-md');
+                tab.classList.remove('bg-gray-200', 'text-gray-700');
+            }
+        });
+        
+        // Set active tab
+        const activeTabEl = document.getElementById(activeTab);
+        if (activeTabEl) {
+            activeTabEl.style.backgroundColor = '#3C4770';
+            activeTabEl.style.color = 'white';
+            activeTabEl.classList.add('shadow-md');
+            activeTabEl.classList.remove('bg-gray-200', 'text-gray-700');
+        }
+    }
+    
+    // Initialize tab state on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Store active tab in sessionStorage to persist across page interactions
+        const storedTab = sessionStorage.getItem('activeProgramUsersTab');
+        if (storedTab) {
+            const [tabId, sectionId] = storedTab.split(',');
+            switchTab(tabId, sectionId);
+        } else {
+            // Default to "All Users" tab if no stored state
+            switchTab('all-tab', 'all-section');
+            sessionStorage.setItem('activeProgramUsersTab', 'all-tab,all-section');
+        }
+        
+        // Set up click handlers
+        document.getElementById('all-tab').addEventListener('click', function() {
+            switchTab('all-tab', 'all-section');
+            sessionStorage.setItem('activeProgramUsersTab', 'all-tab,all-section');
+        });
+        document.getElementById('teachers-tab').addEventListener('click', function() {
+            switchTab('teachers-tab', 'teachers-section');
+            sessionStorage.setItem('activeProgramUsersTab', 'teachers-tab,teachers-section');
+        });
+        document.getElementById('students-tab').addEventListener('click', function() {
+            switchTab('students-tab', 'students-section');
+            sessionStorage.setItem('activeProgramUsersTab', 'students-tab,students-section');
+        });
+        
+        if (canDeleteUsers) {
+            const bulkSelect = document.getElementById('bulk-delete-select');
+            if (bulkSelect) {
+                bulkSelect.addEventListener('change', function() {
+                    clearSelectedUserCheckboxes();
+                    updateSelectionVisibility();
+                });
+                updateSelectionVisibility();
+            }
+            const cancelSelectionBtn = document.getElementById('cancel-selection-button');
+            if (cancelSelectionBtn) {
+                cancelSelectionBtn.addEventListener('click', function() {
+                    const selectEl = document.getElementById('bulk-delete-select');
+                    if (selectEl) {
+                        selectEl.value = '';
+                    }
+                    clearSelectedUserCheckboxes();
+                    updateSelectionVisibility();
+                });
+            }
+        }
+        
+        // Real-time search functionality
+        const searchInput = document.getElementById('search-input');
+        const sectionFilter = document.getElementById('section-filter');
+        const yearLevelFilter = document.getElementById('year-level-filter');
+        const schoolYearFilterEl = document.getElementById('school-year-filter');
+        const clearSearchButton = document.getElementById('clear-search-button');
+        
+        function applyFilters() {
+            const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+            const activeSection = getActiveSectionId();
+            const isStudentTab = activeSection === 'students-section';
+            const selectedSection = isStudentTab && sectionFilter ? sectionFilter.value.toLowerCase().trim() : '';
+            const selectedYearLevel = isStudentTab && yearLevelFilter ? yearLevelFilter.value : '';
+            const selectedSchoolYear = isStudentTab && schoolYearFilterEl ? schoolYearFilterEl.value.toLowerCase().trim() : '';
+            filterUsers(searchTerm, selectedSection, selectedYearLevel, selectedSchoolYear, activeSection);
+        }
+        
+        // Real-time search - trigger on multiple events and show results modal
+        if (searchInput) {
+            const updateClearButtonVisibility = () => {
+                if (!clearSearchButton) return;
+                const hasValue = searchInput.value && searchInput.value.trim().length > 0;
+                clearSearchButton.classList.toggle('hidden', !hasValue);
+            };
+            if (clearSearchButton) {
+                clearSearchButton.addEventListener('click', function() {
+                    searchInput.value = '';
+                    closeSearchResultsModal();
+                    applyFilters();
+                    updateClearButtonVisibility();
+                    searchInput.focus();
+                });
+            }
+            let searchTimeout;
+            searchInput.addEventListener('input', function() {
+                clearTimeout(searchTimeout);
+                const searchTerm = this.value.toLowerCase().trim();
+                const activeSection = getActiveSectionId();
+                const isStudentTab = activeSection === 'students-section';
+                const selectedSection = isStudentTab && sectionFilter ? sectionFilter.value.toLowerCase().trim() : '';
+                const selectedYearLevel = isStudentTab && yearLevelFilter ? yearLevelFilter.value : '';
+                const selectedSchoolYear = isStudentTab && schoolYearFilterEl ? schoolYearFilterEl.value.toLowerCase().trim() : '';
+                applyFilters();
+                
+                updateClearButtonVisibility();
+                // Show search results modal if there's a search term
+                if (searchTerm.length > 0) {
+                    searchTimeout = setTimeout(() => {
+                        showSearchResultsModal(searchTerm, selectedSection, selectedYearLevel, selectedSchoolYear, activeSection);
+                    }, 300); // Delay to avoid too many updates
+                } else {
+                    closeSearchResultsModal();
+                }
+            });
+            updateClearButtonVisibility();
+            searchInput.addEventListener('keyup', function(e) {
+                if (e.key !== 'Enter') {
+                    applyFilters();
+                } else {
+                    closeSearchResultsModal();
+                }
+            });
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key !== 'Tab' && e.key !== 'Enter' && e.key !== 'Escape' && !e.ctrlKey && !e.metaKey) {
+                    setTimeout(applyFilters, 0);
+                }
+            });
+            searchInput.addEventListener('paste', function() {
+                setTimeout(applyFilters, 10);
+            });
+            // Close modal when clicking outside
+            document.addEventListener('click', function(e) {
+                const modal = document.getElementById('search-results-modal');
+                const searchContainer = searchInput.closest('.relative');
+                if (modal && !modal.contains(e.target) && !searchContainer.contains(e.target)) {
+                    closeSearchResultsModal();
+                }
+            });
+        }
+        
+        if (sectionFilter) {
+            sectionFilter.addEventListener('change', applyFilters);
+        }
+        
+        if (yearLevelFilter) {
+            yearLevelFilter.addEventListener('change', applyFilters);
+        }
+        if (schoolYearFilterEl) {
+            schoolYearFilterEl.addEventListener('change', applyFilters);
+        }
+        
+        if ((searchInput && searchInput.value) || (sectionFilter && sectionFilter.value) || (yearLevelFilter && yearLevelFilter.value) || (schoolYearFilterEl && schoolYearFilterEl.value)) {
+            applyFilters();
+        }
+        
+        const formatSelect = document.getElementById('download-format-select');
+        if (formatSelect) {
+            formatSelect.addEventListener('change', function() {
+                updateDownloadLink(getActiveSectionId());
+            });
+        }
+        updateDownloadLink(getActiveSectionId());
+    });
+    
+    // Real-time search and filter function for users
+    function filterUsers(searchTerm, selectedSection, selectedYearLevel, selectedSchoolYear, activeSection) {
+        const section = document.getElementById(activeSection);
+        if (!section) return;
+        
+        const userRows = section.querySelectorAll('.user-row');
+        const searchLower = (searchTerm || '').toLowerCase();
+        const normalizedSearch = normalizeValue(searchTerm);
+        const sectionFilter = selectedSection.toLowerCase();
+        const yearLevelFilter = selectedYearLevel ? selectedYearLevel : '';
+        const schoolYearFilter = selectedSchoolYear || '';
+        
+        let visibleCount = 0;
+        
+        userRows.forEach(function(row) {
+            const name = (row.getAttribute('data-name') || '').toLowerCase();
+            const email = (row.getAttribute('data-email') || '').toLowerCase();
+            const id = (row.getAttribute('data-id') || '').toLowerCase();
+            const dept = (row.getAttribute('data-dept') || '').toLowerCase();
+            const normalizedName = normalizeValue(row.getAttribute('data-name'));
+            const normalizedEmail = normalizeValue(row.getAttribute('data-email'));
+            const normalizedId = normalizeValue(row.getAttribute('data-id'));
+            const normalizedDept = normalizeValue(row.getAttribute('data-dept'));
+            const yearLevel = row.getAttribute('data-year-level') || '';
+            const sectionValue = (row.getAttribute('data-section') || '').toLowerCase();
+            const schoolYear = (row.getAttribute('data-school-year') || '').toLowerCase();
+            
+            // Check if search term matches
+            const searchMatches = searchLower === '' || 
+                                name.includes(searchLower) || 
+                                email.includes(searchLower) || 
+                                id.includes(searchLower) ||
+                                dept.includes(searchLower) ||
+                                (normalizedSearch !== '' && (
+                                    normalizedName.includes(normalizedSearch) ||
+                                    normalizedEmail.includes(normalizedSearch) ||
+                                    normalizedId.includes(normalizedSearch) ||
+                                    normalizedDept.includes(normalizedSearch)
+                                ));
+            
+            // Check if section filter matches
+            const sectionMatches = sectionFilter === '' || sectionValue === sectionFilter;
+            
+            // Check if year level filter matches
+            const yearLevelMatches = yearLevelFilter === '' || yearLevel === yearLevelFilter;
+            const schoolYearMatches = schoolYearFilter === '' || schoolYear === schoolYearFilter;
+            
+            // Show row only if all filters match
+            if (searchMatches && sectionMatches && yearLevelMatches && schoolYearMatches) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+        
+        // Show "No results" message if no rows are visible
+        const tbody = section.querySelector('tbody');
+        if (tbody) {
+            let noResultsRow = tbody.querySelector('.no-results-row');
+            const hasFilters = searchTerm !== '' || sectionFilter !== '' || yearLevelFilter !== '' || schoolYearFilter !== '';
+            if (visibleCount === 0 && hasFilters) {
+                if (!noResultsRow) {
+                    noResultsRow = document.createElement('tr');
+                    noResultsRow.className = 'no-results-row';
+                    const columnCount = section.querySelectorAll('thead th').length || 5;
+                    noResultsRow.innerHTML = `<td colspan="${columnCount}" class="text-center py-8 text-gray-500">No matching users found</td>`;
+                    tbody.appendChild(noResultsRow);
+                }
+                noResultsRow.style.display = '';
+            } else if (noResultsRow) {
+                noResultsRow.style.display = 'none';
+            }
+        }
+    }
+
+    // Search Results Modal Functions
+    function showSearchResultsModal(searchTerm, selectedSection, selectedYearLevel, selectedSchoolYear, activeSection) {
+        const modal = document.getElementById('search-results-modal');
+        const resultsContainer = document.getElementById('search-results-content');
+        if (!modal || !resultsContainer) return;
+        
+        const section = document.getElementById(activeSection);
+        if (!section) return;
+        
+        const userRows = section.querySelectorAll('.user-row');
+        const searchLower = (searchTerm || '').toLowerCase();
+        const normalizedSearch = normalizeValue(searchTerm);
+        const sectionFilter = selectedSection.toLowerCase();
+        const yearLevelFilter = selectedYearLevel ? selectedYearLevel : '';
+        const schoolYearFilter = selectedSchoolYear || '';
+        
+        const matchingUsers = [];
+        
+        userRows.forEach(function(row) {
+            const name = (row.getAttribute('data-name') || '').toLowerCase();
+            const email = (row.getAttribute('data-email') || '').toLowerCase();
+            const id = (row.getAttribute('data-id') || '').toLowerCase();
+            const dept = (row.getAttribute('data-dept') || '').toLowerCase();
+            const normalizedName = normalizeValue(row.getAttribute('data-name'));
+            const normalizedEmail = normalizeValue(row.getAttribute('data-email'));
+            const normalizedId = normalizeValue(row.getAttribute('data-id'));
+            const normalizedDept = normalizeValue(row.getAttribute('data-dept'));
+            const yearLevel = row.getAttribute('data-year-level') || '';
+            const sectionValue = (row.getAttribute('data-section') || '').toLowerCase();
+            const schoolYear = (row.getAttribute('data-school-year') || '').toLowerCase();
+            const profile = row.dataset && row.dataset.profile ? row.dataset.profile.trim() : '';
+            const typeLabel = row.getAttribute('data-type') || '';
+            const displayName = row.getAttribute('data-display-name') || '';
+            const displayEmail = row.getAttribute('data-display-email') || '';
+            const displayId = row.getAttribute('data-display-id') || '';
+            
+            const searchMatches = searchLower === '' ||
+                                name.includes(searchLower) || 
+                                email.includes(searchLower) || 
+                                id.includes(searchLower) ||
+                                dept.includes(searchLower) ||
+                                (normalizedSearch !== '' && (
+                                    normalizedName.includes(normalizedSearch) ||
+                                    normalizedEmail.includes(normalizedSearch) ||
+                                    normalizedId.includes(normalizedSearch) ||
+                                    normalizedDept.includes(normalizedSearch)
+                                ));
+            const sectionMatches = sectionFilter === '' || sectionValue === sectionFilter;
+            const yearLevelMatches = yearLevelFilter === '' || yearLevel === yearLevelFilter;
+            const schoolYearMatches = schoolYearFilter === '' || schoolYear === schoolYearFilter;
+            
+            if (searchMatches && sectionMatches && yearLevelMatches && schoolYearMatches) {
+                // Get user data from the row
+                const nameCell = row.querySelector('td:first-child');
+                const emailCell = row.querySelector('td:nth-child(2)');
+                const userId = row.getAttribute('data-user-id') || '';
+                
+                if (nameCell && emailCell && userId) {
+                    const idDiv = nameCell.querySelector('.text-xs.font-mono');
+                    matchingUsers.push({
+                        name: displayName || (nameCell.querySelector('.text-xs.font-semibold') ? nameCell.querySelector('.text-xs.font-semibold').textContent.trim() : nameCell.textContent.trim()),
+                        id: displayId || (idDiv ? idDiv.textContent.trim() : ''),
+                        email: displayEmail || emailCell.textContent.trim() || '',
+                        userId: userId,
+                        profile: profile,
+                        type: typeLabel
+                    });
+                }
+            }
+        });
+        
+        // Update modal content
+        if (matchingUsers.length > 0) {
+            let html = '<div class="space-y-2 max-h-96 overflow-y-auto">';
+            matchingUsers.slice(0, 10).forEach(function(user) { // Limit to 10 results
+                html += `
+                    <div class="p-3 hover:bg-gray-50 rounded-lg cursor-pointer border border-gray-200 transition" 
+                         onclick="viewUserDetails(${user.userId}); closeSearchResultsModal();">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                ${user.profile ? `<img src="${user.profile}" alt="${user.name}" class="w-full h-full object-cover">` : `<i class="fas fa-user text-blue-600"></i>`}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center justify-between gap-2">
+                                <p class="font-semibold text-gray-900 truncate">${user.name}</p>
+                                    ${user.type ? `<span class="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-semibold rounded-full flex-shrink-0 truncate">${user.type}</span>` : ''}
+                                </div>
+                                <p class="text-xs text-gray-600 truncate">${user.email}</p>
+                                <p class="text-xs text-gray-500 font-mono truncate">ID: ${user.id}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            if (matchingUsers.length > 10) {
+                html += `<p class="text-xs text-gray-500 text-center pt-2">And ${matchingUsers.length - 10} more results...</p>`;
+            }
+            html += '</div>';
+            resultsContainer.innerHTML = html;
+            modal.classList.remove('hidden');
+        } else {
+            resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-search text-4xl mb-2"></i><p>No matching users found</p></div>';
+            modal.classList.remove('hidden');
+        }
+    }
+    
+    function closeSearchResultsModal() {
+        const modal = document.getElementById('search-results-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    }
+    
+    function viewUserDetails(userId) {
+        const modal = document.getElementById('userModal');
+        const content = document.getElementById('userModalContent');
+        
+        modal.classList.remove('hidden');
+        content.innerHTML = '<div class="text-center"><i class="fas fa-spinner fa-spin text-4xl text-gray-400"></i><p class="mt-4 text-gray-500">Loading...</p></div>';
+        
+        fetch(`/dashboard/admin-dashboard/users/${userId}/`, {
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const user = data.user;
+                const displayName = (user.full_name && user.full_name !== 'N/A') ? user.full_name : (user.username || 'User');
+                const safeDisplayName = escapeHTML(displayName);
+                const safeAlt = safeDisplayName.replace(/"/g, '&quot;');
+                const userTypeLabel = escapeHTML(user.user_type);
+                const avatarHtml = user.profile_picture
+                    ? `<img src="${user.profile_picture}" alt="${safeAlt}" class="w-full h-full object-cover">`
+                    : `<i class="fas fa-user text-3xl text-gray-400"></i>`;
+                const actionButtons = [];
+                if (canDownloadUserRecords) {
+                    const downloadFormat = getSelectedDownloadFormat();
+                    const downloadLink = `${downloadUsersBaseUrl}?user_id=${user.id}&format=${downloadFormat}`;
+                    actionButtons.push(`
+                        <a href="${downloadLink}"
+                           class="px-4 py-2 bg-gray-100 text-gray-800 font-semibold rounded-lg hover:bg-gray-200 transition duration-150 shadow-sm flex items-center gap-2"
+                           onclick="event.stopPropagation();">
+                            <i class="fas fa-download text-sm"></i> Download Record
+                        </a>
+                    `);
+                }
+                if (canDeleteUsers) {
+                    actionButtons.push(`
+                        <button type="button" 
+                                class="delete-user-btn px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-md"
+                                data-user-id="${user.id}"
+                                data-user-name="${String(user.full_name || user.username || 'Unknown').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"
+                                data-user-email="${String(user.email || 'No email').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"
+                                data-user-role="${String(user.user_type || 'User').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}">
+                            <i class="fas fa-trash mr-2"></i> Remove User
+                        </button>
+                    `);
+                }
+                const actionButtonsHtml = actionButtons.length ? `
+                    <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200 mt-4">
+                        ${actionButtons.join('')}
+                    </div>
+                ` : '';
+                content.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-xl">
+                            <div class="flex items-center gap-4">
+                                <div class="w-20 h-20 rounded-full overflow-hidden bg-white border-4 border-white shadow-md flex items-center justify-center text-gray-400">
+                                    ${avatarHtml}
+                                </div>
+                                <div>
+                                    <h3 class="text-2xl font-bold mb-1" style="color: #3C4770;">${safeDisplayName}</h3>
+                                    <p class="text-gray-600">${userTypeLabel}</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500">Email</label>
+                                <p class="text-gray-900">${user.email}</p>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500">ID Number</label>
+                                <p class="text-gray-900">${user.school_id}</p>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500">Username</label>
+                                <p class="text-gray-900">${user.username}</p>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500">School</label>
+                                <p class="text-gray-900">${user.school_name}</p>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500">Department</label>
+                                <p class="text-gray-900">${user.department}</p>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500">Program</label>
+                                <p class="text-gray-900">${user.program}</p>
+                            </div>
+                            ${user.user_type === 'Student' ? `
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500">Year Level</label>
+                                <p class="text-gray-900">${user.year_level}</p>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500">Section</label>
+                                <p class="text-gray-900">${user.section}</p>
+                            </div>
+                            ` : ''}
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500">Status</label>
+                                <p class="text-gray-900">
+                                    <span class="px-3 py-1 rounded-full text-xs font-semibold ${user.is_approved ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                        ${user.is_approved ? 'Active' : 'Pending'}
+                                    </span>
+                                </p>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500">Date Joined</label>
+                                <p class="text-gray-900">${user.date_joined}</p>
+                            </div>
+                            ${user.password ? `
+                            <div class="col-span-2">
+                                <label class="text-xs font-semibold text-gray-500">Password</label>
+                                <p class="text-gray-900 font-mono bg-gray-100 p-2 rounded">${user.password}</p>
+                                <p class="text-xs text-gray-500 mt-1"><i class="fas fa-info-circle"></i> This is the temporary password set during account creation</p>
+                            </div>
+                            ` : ''}
+                        </div>
+                        
+                        ${actionButtonsHtml}
+                    </div>
+                `;
+            } else {
+                content.innerHTML = `<div class="text-center text-red-600"><i class="fas fa-exclamation-circle text-4xl mb-4"></i><p>${data.message || 'Error loading user details'}</p></div>`;
+            }
+        })
+        .catch(error => {
+            content.innerHTML = `<div class="text-center text-red-600"><i class="fas fa-exclamation-circle text-4xl mb-4"></i><p>Error loading user details</p></div>`;
+        });
+    }
+
+    function closeUserModal() {
+        document.getElementById('userModal').classList.add('hidden');
+    }
+    
+    window.openDeleteUserModal = function(userId, userName, userEmail, userRole) {
+        console.log('openDeleteUserModal called with:', {userId, userName, userEmail, userRole});
+        const modal = document.getElementById('delete-user-modal');
+        if (!modal) {
+            console.error('Delete user modal not found');
+            alert('Error: Delete modal not found. Please refresh the page.');
+            return;
+        }
+        console.log('Modal found, showing...');
+        modal.classList.remove('hidden');
+        const userIdInput = document.getElementById('delete-user-id');
+        const userNameEl = document.getElementById('delete-user-name');
+        const userEmailEl = document.getElementById('delete-user-email');
+        const userRoleEl = document.getElementById('delete-user-role');
+        
+        if (userIdInput) {
+            userIdInput.value = userId;
+            console.log('User ID set:', userId);
+        } else {
+            console.error('delete-user-id input not found');
+        }
+        if (userNameEl) {
+            userNameEl.textContent = userName;
+            console.log('User name set:', userName);
+        } else {
+            console.error('delete-user-name element not found');
+        }
+        if (userEmailEl) {
+            userEmailEl.textContent = userEmail;
+            console.log('User email set:', userEmail);
+        } else {
+            console.error('delete-user-email element not found');
+        }
+        if (userRoleEl) {
+            userRoleEl.textContent = userRole;
+            console.log('User role set:', userRole);
+        } else {
+            console.error('delete-user-role element not found');
+        }
+    };
+    
+    window.closeDeleteUserModal = function() {
+        const modal = document.getElementById('delete-user-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    };
+    
+    window.confirmDeleteUser = function() {
+        const userId = document.getElementById('delete-user-id').value;
+        
+        fetch(`/dashboard/admin-dashboard/users/${userId}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message || 'User removed successfully!', 'success');
+                } else {
+                    alert(data.message || 'User removed successfully!');
+                }
+                window.closeDeleteUserModal();
+                closeUserModal();
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                if (typeof showNotification === 'function') {
+                    showNotification('Error: ' + (data.message || 'Failed to remove user'), 'error');
+                } else {
+                    alert('Error: ' + (data.message || 'Failed to remove user'));
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            if (typeof showNotification === 'function') {
+                showNotification('An error occurred while removing the user.', 'error');
+            } else {
+                alert('An error occurred while removing the user.');
+            }
+        });
+    }
+
+    function handleBulkDelete() {
+        if (!canDeleteUsers) {
+            return;
+        }
+        const select = document.getElementById('bulk-delete-select');
+        if (!select) {
+            return;
+        }
+        const scope = select.value;
+        if (!scope) {
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Please select a delete option first.', 'warning');
+            } else {
+                alert('Please select a delete option first.');
+            }
+            return;
+        }
+        if (scope === 'specific' && selectedUserIds.size === 0) {
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Please select at least one user to delete.', 'warning');
+            } else {
+                alert('Please select at least one user to delete.');
+            }
+            return;
+        }
+
+        pendingBulkDeleteScope = scope;
+        pendingBulkDeleteUserIds = scope === 'specific' ? Array.from(selectedUserIds) : [];
+        const descriptionLabels = {
+            'all': 'all users',
+            'instructors': 'all instructors',
+            'students': 'all students',
+            'specific': 'the selected users'
+        };
+        const description = descriptionLabels[scope] || 'the selected users';
+        const modalDescription = document.getElementById('bulk-delete-description');
+        if (modalDescription) {
+            modalDescription.textContent = description;
+        }
+        const modal = document.getElementById('bulk-delete-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
+    }
+
+    function closeBulkDeleteModal() {
+        const modal = document.getElementById('bulk-delete-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+        pendingBulkDeleteScope = null;
+        pendingBulkDeleteUserIds = [];
+    }
+
+    function confirmBulkDelete() {
+        if (!pendingBulkDeleteScope) {
+            return;
+        }
+        const select = document.getElementById('bulk-delete-select');
+        const deleteButton = document.getElementById('bulk-delete-button');
+        if (deleteButton) {
+            deleteButton.disabled = true;
+            deleteButton.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+        const payload = { scope: pendingBulkDeleteScope };
+        if (pendingBulkDeleteScope === 'specific') {
+            payload.user_ids = pendingBulkDeleteUserIds;
+        } else {
+            clearSelectedUserCheckboxes();
+        }
+        fetch(`/dashboard/admin-dashboard/programs/${programId}/users/bulk-delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification(data.message || 'Users removed successfully.', 'success');
+                } else {
+                    alert(data.message || 'Users removed successfully.');
+                }
+                if (select) {
+                    select.value = '';
+                }
+                clearSelectedUserCheckboxes();
+                updateSelectionVisibility();
+                closeBulkDeleteModal();
+                pendingBulkDeleteScope = null;
+                pendingBulkDeleteUserIds = [];
+                setTimeout(() => location.reload(), 800);
+            } else {
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification(data.message || 'Failed to delete users.', 'error');
+                } else {
+                    alert(data.message || 'Failed to delete users.');
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Bulk delete error:', error);
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('An error occurred while deleting users.', 'error');
+            } else {
+                alert('An error occurred while deleting users.');
+            }
+        })
+        .finally(() => {
+            if (deleteButton) {
+                deleteButton.disabled = false;
+                deleteButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('userModal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeUserModal();
+        }
+    });
+    
+    // Close delete user modal when clicking outside
+    document.getElementById('delete-user-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            window.closeDeleteUserModal();
+        }
+    });
+
+    document.getElementById('bulk-delete-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeBulkDeleteModal();
+        }
+    });
+    
+    // Event delegation for delete user button (since it's dynamically created)
+    const cancelSelectionButton = document.getElementById('cancel-selection-button');
+    if (cancelSelectionButton && canDeleteUsers) {
+        cancelSelectionButton.addEventListener('click', function() {
+            const bulkSelectEl = document.getElementById('bulk-delete-select');
+            if (bulkSelectEl) {
+                bulkSelectEl.value = '';
+            }
+            clearSelectedUserCheckboxes();
+            updateSelectionVisibility();
+            cancelSelectionButton.classList.add('hidden');
+        });
+    }
+
+    if (canDeleteUsers) {
+        document.addEventListener('click', function(event) {
+            const deleteBtn = event.target.closest('.delete-user-btn');
+            if (!deleteBtn) {
+                return;
+            }
+            event.preventDefault();
+            const userId = deleteBtn.getAttribute('data-user-id');
+            const userName = deleteBtn.getAttribute('data-user-name') || '';
+            const userEmail = deleteBtn.getAttribute('data-user-email') || '';
+            const userRole = deleteBtn.getAttribute('data-user-role') || '';
+            if (userId && typeof window.openDeleteUserModal === 'function') {
+                window.openDeleteUserModal(userId, userName, userEmail, userRole);
+        }
+    });
+    }
+</script>
+
+<!-- User Details Modal -->
+<div id="userModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="sticky top-0 bg-white border-b px-2 py-1.5 flex justify-between items-center">
+            <h2 class="text-2xl font-bold" style="color: #3C4770;">User Details</h2>
+            <button onclick="closeUserModal()" class="text-gray-500 hover:text-gray-700">
+                <i class="fas fa-times text-2xl"></i>
+            </button>
+        </div>
+        <div id="userModalContent" class="p-6">
+            <div class="text-center">
+                <i class="fas fa-spinner fa-spin text-4xl text-gray-400"></i>
+                <p class="mt-4 text-gray-500">Loading...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Delete Users Modal -->
+<div id="bulk-delete-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-red-600">
+                <i class="fas fa-user-times w-6 h-6 mr-2"></i> Delete Users
+            </h3>
+            <button onclick="closeBulkDeleteModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+
+        <div class="space-y-4">
+            <p class="text-gray-700">Are you sure you want to delete <span class="font-semibold text-red-600" id="bulk-delete-description">the selected users</span>?</p>
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="text-sm text-red-800">This process cannot be undone. All selected accounts and their related records will be permanently removed.</p>
+            </div>
+            <p class="text-sm text-gray-600">Please double check before confirming. You may cancel if you need to review the selection.</p>
+
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="closeBulkDeleteModal()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button onclick="confirmBulkDelete()" class="px-6 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md bg-red-600 hover:bg-red-700">
+                    <i class="fas fa-trash mr-2"></i> Delete Users
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Teacher Modal -->
+<div id="add-teacher-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 p-6 md:p-8 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center" style="color: #3C4770;">
+                <i class="fas fa-user-plus w-6 h-6 mr-2"></i> Add New Instructor
+            </h3>
+            <button onclick="closeAddTeacherModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <form id="add-teacher-form-modal" class="space-y-4">
+            {% csrf_token %}
+            <!-- Basic Information -->
+            <div class="bg-blue-50 p-4 rounded-xl mb-4">
+                <h4 class="text-lg font-semibold text-gray-800 mb-4" style="color: #3C4770;">Basic Information</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Full Name *</label>
+                        <input type="text" name="full_name" id="modal-teacher-full-name" required 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Email *</label>
+                        <input type="email" name="email" id="modal-teacher-email" required 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">ID Number *</label>
+                        <input type="text" name="school_id" id="modal-teacher-school-id" required 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Education Level *</label>
+                        {% if user.education_level %}
+                        <input type="hidden" name="education_level" value="{{ user.education_level }}">
+                        <input type="text" 
+                               value="{% if user.education_level == 'university_college' %}University/College{% else %}High/Senior High{% endif %}" 
+                               readonly
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl bg-gray-100 text-gray-600">
+                        {% else %}
+                        <select name="education_level" id="modal-teacher-education-level" required
+                                class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                            <option value="">Select...</option>
+                            <option value="university_college">University/College</option>
+                            <option value="high_senior">High/Senior High</option>
+                        </select>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Department & Academic Information -->
+            <div class="bg-blue-50 p-4 rounded-xl mb-4">
+                <h4 class="text-lg font-semibold text-gray-800 mb-4" style="color: #3C4770;">Department & Academic Information</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Department *</label>
+                        <input type="text" value="{{ program.department }}" readonly 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed">
+                        <input type="hidden" name="department" id="modal-teacher-department" value="{{ program.department }}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Program/Major *</label>
+                        <input type="text" value="{{ program.code }} - {{ program.name }}" readonly
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed">
+                        <input type="hidden" name="program" id="modal-teacher-program" value="{{ program.id }}">
+                    </div>
+                </div>
+            </div>
+            
+            <input type="hidden" name="school_name" value="{{ user.school_name }}">
+            <input type="hidden" name="program_id" value="{{ program.id }}">
+            
+            <div id="modal-teacher-message" class="hidden p-4 rounded-xl mb-4"></div>
+            
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button type="button" onclick="closeAddTeacherModal()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button type="submit" class="px-6 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                    <i class="fas fa-user-plus mr-2"></i> Add Instructor
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Delete User Modal -->
+<div id="delete-user-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-red-600">
+                <i class="fas fa-exclamation-triangle w-6 h-6 mr-2"></i> Remove User
+            </h3>
+            <button onclick="window.closeDeleteUserModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <div class="space-y-4">
+            <p class="text-gray-700">Are you sure you want to remove this user?</p>
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="font-semibold text-red-800" id="delete-user-name"></p>
+                <p class="text-sm text-red-600 mt-1" id="delete-user-email"></p>
+                <p class="text-xs text-red-500 mt-1" id="delete-user-role"></p>
+            </div>
+            <p class="text-sm text-gray-600">This action cannot be undone. The user will be permanently removed from the system.</p>
+            
+            <input type="hidden" id="delete-user-id">
+            
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="window.closeDeleteUserModal()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button onclick="window.confirmDeleteUser()" class="px-6 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md bg-red-600 hover:bg-red-700">
+                    <i class="fas fa-trash mr-2"></i> Remove User
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Student Modal -->
+<div id="add-student-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 p-6 md:p-8 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center" style="color: #3C4770;">
+                <i class="fas fa-user-graduate w-6 h-6 mr-2"></i> Add New Student
+            </h3>
+            <button onclick="closeAddStudentModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <form id="add-student-form-modal" class="space-y-4">
+            {% csrf_token %}
+            <!-- Basic Information -->
+            <div class="bg-blue-50 p-4 rounded-xl mb-4">
+                <h4 class="text-lg font-semibold text-gray-800 mb-4" style="color: #3C4770;">Basic Information</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Full Name *</label>
+                        <input type="text" name="full_name" id="modal-student-full-name" required 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Email *</label>
+                        <input type="email" name="email" id="modal-student-email" required 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">ID Number *</label>
+                        <input type="text" name="school_id" id="modal-student-school-id" required 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Education Level *</label>
+                        {% if user.education_level %}
+                        <input type="hidden" name="education_level" value="{{ user.education_level }}">
+                        <input type="text" 
+                               value="{% if user.education_level == 'university_college' %}University/College{% else %}High/Senior High{% endif %}" 
+                               readonly
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl bg-gray-100 text-gray-600">
+                        {% else %}
+                        <select name="education_level" id="modal-student-education-level" required
+                                class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                            <option value="">Select...</option>
+                            <option value="university_college">University/College</option>
+                            <option value="high_senior">High/Senior High</option>
+                        </select>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Department & Academic Information -->
+            <div class="bg-blue-50 p-4 rounded-xl mb-4">
+                <h4 class="text-lg font-semibold text-gray-800 mb-4" style="color: #3C4770;">Department & Academic Information</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Department *</label>
+                        <input type="text" value="{{ program.department }}" readonly 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed">
+                        <input type="hidden" name="department" id="modal-student-department" value="{{ program.department }}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Program/Major *</label>
+                        <input type="text" value="{{ program.code }} - {{ program.name }}" readonly
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed">
+                        <input type="hidden" name="program" id="modal-student-program" value="{{ program.id }}">
+                    </div>
+                </div>
+                
+                <!-- Year Level and Section (for University/College) -->
+                 <div id="modal-student-year-section" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Year Level *</label>
+                        <select name="year_level" id="modal-student-year-level"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                            <option value="">Select Year Level...</option>
+                            <option value="1">1st Year</option>
+                            <option value="2">2nd Year</option>
+                            <option value="3">3rd Year</option>
+                            <option value="4">4th Year</option>
+                            <option value="5">5th Year</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-2">Section *</label>
+                        <input type="text" name="section" id="modal-student-section"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                               placeholder="e.g., A, B, 1, 2">
+                    </div>
+                </div>
+            </div>
+            
+            <input type="hidden" name="school_name" value="{{ user.school_name }}">
+            <input type="hidden" name="program_id" value="{{ program.id }}">
+            
+            <div id="modal-student-message" class="hidden p-4 rounded-xl mb-4"></div>
+            
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button type="button" onclick="closeAddStudentModal()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button type="submit" class="px-6 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md" style="background-color: #10b981;" onmouseover="this.style.backgroundColor='#059669';" onmouseout="this.style.backgroundColor='#10b981';">
+                    <i class="fas fa-user-graduate mr-2"></i> Add Student
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Modal functions for Add Teacher
+    function openAddTeacherModal() {
+        document.getElementById('add-teacher-modal').classList.remove('hidden');
+        // Pre-fill program and department
+        document.getElementById('modal-teacher-department').value = '{{ program.department }}';
+        document.getElementById('modal-teacher-program').value = '{{ program.id }}';
+    }
+    
+    function closeAddTeacherModal() {
+        document.getElementById('add-teacher-modal').classList.add('hidden');
+        document.getElementById('add-teacher-form-modal').reset();
+        document.getElementById('modal-teacher-department').value = '{{ program.department }}';
+        document.getElementById('modal-teacher-program').value = '{{ program.id }}';
+        document.getElementById('modal-teacher-message').classList.add('hidden');
+    }
+    
+    // Modal functions for Add Student
+    function openAddStudentModal() {
+        document.getElementById('add-student-modal').classList.remove('hidden');
+        // Pre-fill program and department
+        document.getElementById('modal-student-department').value = '{{ program.department }}';
+        document.getElementById('modal-student-program').value = '{{ program.id }}';
+        const sectionInput = document.getElementById('modal-student-section');
+        if (sectionInput) {
+            sectionInput.addEventListener('input', handleSectionInputUppercase);
+        }
+    }
+    
+    function closeAddStudentModal() {
+        document.getElementById('add-student-modal').classList.add('hidden');
+        document.getElementById('add-student-form-modal').reset();
+        document.getElementById('modal-student-department').value = '{{ program.department }}';
+        document.getElementById('modal-student-program').value = '{{ program.id }}';
+        document.getElementById('modal-student-message').classList.add('hidden');
+        const sectionInput = document.getElementById('modal-student-section');
+        if (sectionInput) {
+            sectionInput.removeEventListener('input', handleSectionInputUppercase);
+        }
+    }
+
+    function handleSectionInputUppercase(event) {
+        event.target.value = event.target.value.toUpperCase();
+    }
+    
+    // Handle form submissions
+    let isSubmittingTeacher = false;
+    let isSubmittingStudent = false;
+    
+    document.getElementById('add-teacher-form-modal')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (isSubmittingTeacher) return;
+        
+        const formData = new FormData(this);
+        const submitBtn = this.querySelector('button[type="submit"]');
+        const messageDiv = document.getElementById('modal-teacher-message');
+        
+        // Validate
+        if (!formData.get('full_name') || !formData.get('email') || !formData.get('school_id') || !formData.get('department')) {
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Please fill in all required fields', 'error');
+            } else {
+                alert('Please fill in all required fields');
+            }
+            return;
+        }
+        
+        isSubmittingTeacher = true;
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Adding...';
+        }
+        
+        fetch('{% url "dashboard:admin_add_teacher" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            isSubmittingTeacher = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-user-plus mr-2"></i> Add Instructor';
+            }
+            
+            if (data.success) {
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification(data.message, 'success');
+                }
+                closeAddTeacherModal();
+                setTimeout(() => location.reload(), 500);
+            } else {
+                let errorMsg = data.message || 'An error occurred.';
+                if (data.errors) {
+                    const errorList = [];
+                    for (const [field, error] of Object.entries(data.errors)) {
+                        errorList.push(`${field}: ${error}`);
+                    }
+                    errorMsg = errorMsg + '\n' + errorList.join('\n');
+                }
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification(errorMsg, 'error');
+                } else if (messageDiv) {
+                    messageDiv.classList.remove('hidden');
+                    messageDiv.className = 'p-4 rounded-xl mb-4 bg-red-100 text-red-800 border border-red-300';
+                    messageDiv.innerHTML = '<i class="fas fa-exclamation-circle mr-2"></i>' + errorMsg;
+                }
+            }
+        })
+        .catch(error => {
+            isSubmittingTeacher = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-user-plus mr-2"></i> Add Instructor';
+            }
+            const errorMsg = 'Network error. Please try again.';
+            if (typeof window.showNotification === 'function') {
+                window.showNotification(errorMsg, 'error');
+            }
+        });
+    });
+    
+    document.getElementById('add-student-form-modal')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (isSubmittingStudent) return;
+        
+        const formData = new FormData(this);
+        const submitBtn = this.querySelector('button[type="submit"]');
+        const messageDiv = document.getElementById('modal-student-message');
+        
+        // Validate
+        if (!formData.get('full_name') || !formData.get('email') || !formData.get('school_id') || !formData.get('department')) {
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Please fill in all required fields', 'error');
+            } else {
+                alert('Please fill in all required fields');
+            }
+            return;
+        }
+        
+        isSubmittingStudent = true;
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Adding...';
+        }
+        
+        fetch('{% url "dashboard:admin_add_student" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            isSubmittingStudent = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+            }
+            
+            if (data.success) {
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification(data.message, 'success');
+                }
+                closeAddStudentModal();
+                setTimeout(() => location.reload(), 500);
+            } else {
+                let errorMsg = data.message || 'An error occurred.';
+                if (data.errors) {
+                    const errorList = [];
+                    for (const [field, error] of Object.entries(data.errors)) {
+                        errorList.push(`${field}: ${error}`);
+                    }
+                    errorMsg = errorMsg + '\n' + errorList.join('\n');
+                }
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification(errorMsg, 'error');
+                } else if (messageDiv) {
+                    messageDiv.classList.remove('hidden');
+                    messageDiv.className = 'p-4 rounded-xl mb-4 bg-red-100 text-red-800 border border-red-300';
+                    messageDiv.innerHTML = '<i class="fas fa-exclamation-circle mr-2"></i>' + errorMsg;
+                }
+            }
+        })
+        .catch(error => {
+            isSubmittingStudent = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-user-graduate mr-2"></i> Add Student';
+            }
+            const errorMsg = 'Network error. Please try again.';
+            if (typeof window.showNotification === 'function') {
+                window.showNotification(errorMsg, 'error');
+            }
+        });
+    });
+    
+    // Close modals when clicking outside
+    document.getElementById('add-teacher-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeAddTeacherModal();
+        }
+    });
+    
+    document.getElementById('add-student-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeAddStudentModal();
+        }
+    });
+</script>
+{% endblock %}
+
+

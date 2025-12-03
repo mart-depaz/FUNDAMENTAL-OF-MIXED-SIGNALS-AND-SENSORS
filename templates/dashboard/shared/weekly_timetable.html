@@ -1,0 +1,1957 @@
+<!--
+templates folder : library_system/templates/dashboard/weekly_timetable.html
+-->
+
+{% extends 'partials/base.html' %}
+{% load static dashboard_filters %}
+{% block title %}Class Schedule{% endblock %}
+{% block navigation %}
+<!-- Override default navigation - no top bar for teacher -->
+{% endblock %}
+{% block extra_head %}
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+{% endblock %}
+{% block content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+{% include 'dashboard/shared/notification_system.html' %}
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+    body { 
+        font-family: 'Inter', sans-serif;
+        background: #f4f5fb;
+    }
+    /* Unified Grey Scrollbar Styling */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #f5f5f5;
+        border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 10px;
+        border: 2px solid #f5f5f5;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+    }
+    .modal-content {
+        overflow-y: auto;
+        max-height: 80vh;
+        padding-right: 8px;
+    }
+    .modal-content::-webkit-scrollbar {
+        width: 10px;
+    }
+    .modal-content::-webkit-scrollbar-track {
+        background: #f5f5f5;
+        border-radius: 10px;
+    }
+    .modal-content::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 10px;
+        border: 2px solid #f5f5f5;
+    }
+    .modal-content::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+    }
+    
+    /* Timetable Base Styles */
+    .schedule-table {
+        border-collapse: collapse;
+        width: 100%;
+        table-layout: fixed;
+    }
+    
+    .schedule-table th, .schedule-table td {
+        border: 1px solid #e5e7eb;
+        height: 48px;
+    }
+    
+    .time-cell {
+        width: 140px;
+        background-color: #f3f4f6;
+        text-align: center;
+        padding: 0 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #4b5563;
+        position: sticky;
+        left: 0;
+        z-index: 10;
+        white-space: nowrap;
+    }
+    .timetable-course-title {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        word-break: break-word;
+    }
+    
+    /* Class Block Styles */
+    .class-block {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
+        padding: 6px 8px;
+        border-radius: 8px;
+        cursor: pointer;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        will-change: transform, opacity, box-shadow;
+        min-height: 48px;
+        border-left: 4px solid;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .class-block::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%);
+        pointer-events: none;
+        border-radius: 8px;
+    }
+    
+    .class-block:hover {
+        transform: translateY(-2px) scale(1.02);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.18), 0 2px 4px rgba(0,0,0,0.12);
+    }
+    
+    .class-block:active {
+        transform: translateY(0) scale(0.98);
+    }
+    
+    /* Animation Styles */
+    @keyframes fadeInScale {
+        from {
+            opacity: 0;
+            transform: scale(0.95);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+    
+    .animate-class-block {
+        opacity: 0;
+        animation: fadeInScale 0.4s ease-out forwards;
+    }
+    
+    .timetable-row {
+        animation: fadeInSlide 0.4s ease-out;
+        animation-fill-mode: both;
+    }
+    
+    @keyframes fadeInSlide {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .timetable-row:nth-child(1) { animation-delay: 0.05s; }
+    .timetable-row:nth-child(2) { animation-delay: 0.1s; }
+    .timetable-row:nth-child(3) { animation-delay: 0.15s; }
+    .timetable-row:nth-child(4) { animation-delay: 0.2s; }
+    .timetable-row:nth-child(5) { animation-delay: 0.25s; }
+    .timetable-row:nth-child(6) { animation-delay: 0.3s; }
+    .timetable-row:nth-child(7) { animation-delay: 0.35s; }
+    .timetable-row:nth-child(8) { animation-delay: 0.4s; }
+    .timetable-row:nth-child(9) { animation-delay: 0.45s; }
+    .timetable-row:nth-child(10) { animation-delay: 0.5s; }
+    
+    /* Mobile adjustment */
+    @media (max-width: 640px) {
+        .class-block p {
+            font-size: 0.65rem;
+            line-height: 1;
+        }
+    }
+    .content {
+        overflow-y: auto !important;
+        max-height: calc(100vh - 60px);
+    }
+    body.blur-navbar .navbar {
+        filter: blur(5px);
+        transition: filter 0.3s ease;
+        pointer-events: none;
+    }
+    body.blur-sidebar .sidebar {
+        filter: blur(5px);
+        transition: filter 0.3s ease;
+        pointer-events: none;
+    }
+    body.blur-background {
+        overflow: hidden;
+    }
+</style>
+
+<!-- Top Bar -->
+{% if user.is_teacher %}
+{% include 'dashboard/instructor/teacher_topbar.html' %}
+{% elif user.is_student %}
+{% include 'dashboard/student/student_topbar.html' %}
+{% endif %}
+
+<div class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex flex-col lg:flex-row">
+    <!-- Sidebar -->
+    {% if user.is_teacher %}
+    {% include 'dashboard/instructor/teacher_sidebar.html' %}
+    {% elif user.is_student %}
+    {% include 'dashboard/student/student_sidebar.html' %}
+    {% endif %}
+
+    
+    <main id="main-content" class="flex-grow p-3 lg:p-6 {% if user.is_teacher or user.is_student %}lg:ml-64{% endif %} mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+        <div class="max-w-7xl mx-auto space-y-4">
+            <div class="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl shadow-2xl p-6 relative overflow-hidden">
+                <div class="absolute inset-0 opacity-10">
+                    <div class="w-64 h-64 bg-white rounded-full blur-3xl -mt-40 -mr-10 absolute right-0"></div>
+                </div>
+                <div class="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div class="w-full relative">
+                        <p class="text-xs uppercase tracking-wide text-white/70 font-semibold">Weekly Overview</p>
+                        <h2 class="text-3xl font-bold text-white drop-shadow">Class Schedule</h2>
+                        <!-- Centered clock overlay that doesn't alter layout and avoids the right button -->
+                        {% if not user.is_teacher %}
+                        <!-- For students: Center date and time like instructor view -->
+                        <div class="absolute top-12 left-0 right-0 flex items-center justify-center pointer-events-none" style="bottom: 50%">
+                            <div class="relative flex items-center pointer-events-auto justify-center">
+                                <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-white/20 text-white ring-1 ring-white/30 backdrop-blur-md">
+                                    <i class="fas fa-clock text-sm"></i>
+                                </span>
+                                <div class="ml-2 text-center">
+                                    <p id="ph-day" class="text-[10px] font-semibold text-white/80 leading-tight uppercase tracking-wide"></p>
+                                    <p id="ph-date" class="text-xs font-semibold text-white/90 leading-tight"></p>
+                                    <p id="ph-time" class="text-sm font-bold text-white leading-tight"></p>
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <!-- For instructors: Keep original positioning -->
+                        <div class="absolute top-12 left-0 right-0 flex items-center justify-center pointer-events-none" style="bottom: 50%">
+                            <div class="relative flex items-center pointer-events-auto"
+                                 style="max-width: calc(100% - 280px); margin-left: 50%; margin-right: auto;">
+                                <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-white/20 text-white ring-1 ring-white/30 backdrop-blur-md">
+                                    <i class="fas fa-clock text-sm"></i>
+                                </span>
+                                <div class="ml-2 text-center">
+                                    <p id="ph-day" class="text-[10px] font-semibold text-white/80 leading-tight uppercase tracking-wide"></p>
+                                    <p id="ph-date" class="text-xs font-semibold text-white/90 leading-tight"></p>
+                                    <p id="ph-time" class="text-sm font-bold text-white leading-tight"></p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        <p class="text-white/80 text-sm mt-1">{% if not user.is_teacher %}Your schedule is curated by your instructors.{% else %}Manage courses from the Manage Courses page.{% endif %}</p>
+                    </div>
+                    {% if user.is_teacher %}
+                    <a href="{% url 'dashboard:instructor_courses' %}" class="inline-flex items-center gap-2 px-5 py-2 bg-white text-indigo-600 text-sm font-semibold rounded-xl shadow-lg hover:shadow-2xl transition whitespace-nowrap">
+                        <i class="fas fa-cog text-base"></i> Manage Courses
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if user.is_teacher and filter_options %}
+            <!-- Filters for Instructors -->
+            <div class="bg-white rounded-2xl shadow-xl p-4 mb-4 border border-gray-100">
+                <div class="flex flex-wrap gap-3 items-end">
+                    <div class="flex-1 min-w-[150px]">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">School Year</label>
+                        <select id="filter-school-year" class="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            <option value="">Select School Year</option>
+                            {% if filter_options.school_years %}
+                                {% for sy in filter_options.school_years %}
+                                <option value="{{ sy }}" {% if current_filters.school_year == sy %}selected{% endif %}>{{ sy }}</option>
+                                {% endfor %}
+                            {% else %}
+                                <option value="">No school years available</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    {% if filter_options.sections %}
+                    <div class="flex-1 min-w-[120px]">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Section</label>
+                        <select id="filter-section" class="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            <option value="" {% if not current_filters.section or current_filters.section == '' %}selected{% endif %}>Select Section</option>
+                                {% for sec in filter_options.sections %}
+                                <option value="{{ sec }}" {% if current_filters.section == sec %}selected{% endif %}>{{ sec }}</option>
+                                {% endfor %}
+                            <option value="ALL" {% if current_filters.section == 'ALL' %}selected{% endif %}>All Sections</option>
+                        </select>
+                    </div>
+                    {% endif %}
+                    <div class="flex-1 min-w-[120px]">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Semester</label>
+                        <select id="filter-semester" class="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            <option value="">Select Semester</option>
+                            {% if filter_options.semesters %}
+                                {% for sem_code, sem_name in filter_options.semesters %}
+                                <option value="{{ sem_code }}" {% if current_filters.semester == sem_code %}selected{% endif %}>{{ sem_name }}</option>
+                                {% endfor %}
+                            {% else %}
+                                <option value="">No semesters available</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="applyTimetableFilters()" class="px-4 py-1.5 text-xs font-semibold text-white rounded-lg transition shadow-sm hover:shadow-md" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                            <i class="fas fa-filter mr-1"></i> Apply
+                        </button>
+                        <button onclick="clearTimetableFilters()" class="px-4 py-1.5 text-xs font-semibold text-gray-700 bg-gray-200 rounded-lg transition shadow-sm hover:shadow-md hover:bg-gray-300">
+                            <i class="fas fa-times mr-1"></i> Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <section id="schedule-view" class="bg-white rounded-2xl shadow-2xl p-4 md:p-6 overflow-x-auto border border-gray-100 ml-auto w-full">
+                <div id="loading-spinner" class="text-center py-6 text-gray-500 hidden text-xs">
+                    <svg class="animate-spin h-6 w-6 text-gray-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Loading schedule...
+                </div>
+                <div class="shadow-xl rounded-xl overflow-hidden bg-white border border-gray-200">
+                    <table id="schedule-table" class="schedule-table">
+                        <thead class="sticky top-0 z-20" style="background-color: #4c51bf; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <tr>
+                                <th class="time-cell text-white" style="background-color: #4c51bf !important; border-color: #4c51bf !important; border-top-left-radius: 12px;">Time</th>
+                                <th class="px-2 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Monday</th>
+                                <th class="px-2 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Tuesday</th>
+                                <th class="px-2 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Wednesday</th>
+                                <th class="px-2 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Thursday</th>
+                                <th class="px-2 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Friday</th>
+                                <th class="px-2 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Saturday</th>
+                                <th class="px-2 py-3 text-center text-xs font-bold text-white uppercase tracking-wider" style="border-top-right-radius: 12px;">Sunday</th>
+                        </tr>
+                    </thead>
+                        <tbody id="schedule-body" class="bg-white">
+                <!-- Rows generated by JS -->
+                    </tbody>
+                </table>
+                </div>
+                <p id="no-classes-message" class="text-center text-xs text-gray-400 py-4 hidden">
+                    {% if user.is_teacher %}
+                    No classes scheduled yet. Click "Manage Courses" to add courses.
+                    {% elif user.is_student %}
+                    No enrolled courses yet. Go to "Enroll Course" to enroll in courses using the enrollment code provided by your instructor.
+                    {% else %}
+                    No classes scheduled yet.
+                    {% endif %}
+                </p>
+                <p id="select-filters-message" class="text-center text-sm text-gray-600 py-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-4 hidden">
+                    <i class="fas fa-info-circle text-xl mb-2 text-yellow-600"></i><br>
+                    <span class="font-semibold">Select filters:</span> Please choose School Year, Section, and Semester to display your timetable.
+                </p>
+            </section>
+
+            <!-- Modal for viewing course details -->
+            <div id="course-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 backdrop-blur-sm hidden z-50 transition-opacity duration-300">
+                <div class="flex items-center justify-center min-h-screen p-4">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl transform transition-all duration-300 scale-95 modal-content overflow-hidden" style="max-height: 90vh;">
+                        <!-- Modal Header with Gradient -->
+                        <div id="modal-header" class="px-6 py-5 text-white rounded-t-2xl" style="background: linear-gradient(135deg, #4c51bf 0%, #667eea 100%);">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h3 id="modal-title" class="text-2xl font-bold mb-1">Course Details</h3>
+                                    <p class="text-sm opacity-90">View complete course information</p>
+                </div>
+                                <button id="close-modal-btn" class="text-white hover:bg-white/20 rounded-full p-2 transition-all duration-200 hover:rotate-90" style="min-width: 40px; min-height: 40px;">
+                                    <i class="fas fa-times text-lg"></i>
+                    </button>
+                            </div>
+                        </div>
+                        <!-- Modal Body -->
+                        <div class="px-6 py-6 overflow-y-auto" style="max-height: calc(90vh - 120px); width: 100%;">
+                            <div id="course-details" style="width: 100%;">
+                                <!-- Course details will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Course data stored in hidden divs - no JSON parsing needed -->
+        <div id="courses-data-container" style="display: none;">
+            {% for course in courses_list %}
+            <div class="course-data-item" 
+                 data-id="{{ course.id }}"
+                 data-code="{{ course.code|default:course.courseCode|default:'' }}"
+                 data-name="{{ course.name|default:course.courseName|default:'' }}"
+                 data-days="{{ course.days|join:',' }}"
+                 data-start-time="{{ course.startTime|default:course.classStartTime|default:'' }}"
+                 data-end-time="{{ course.endTime|default:course.classEndTime|default:'' }}"
+                 data-room="{{ course.room|default:'' }}"
+                 data-color="{{ course.color|default:course.themeColor|default:'#3b82f6' }}"
+                 data-school-type="{{ course.schoolType|default:initial_school_type }}"
+                 data-section="{{ course.section|default:'' }}"
+                 data-semester="{{ course.semester|default:'' }}"
+                 data-school-year="{{ course.schoolYear|default:'' }}"
+                 data-instructor="{{ course.instructor|default:course.teacherName|default:'' }}"
+                 {% if user.is_teacher %}data-instructor-id="{{ user.id }}"{% endif %}
+                 >
+            </div>
+            {% endfor %}
+        </div>
+    <script>
+        var initialSchoolType = "{{ initial_school_type }}";
+        var isTeacher = "{{ user.is_teacher|yesno:'true,false' }}" === "true";
+        var currentInstructorId = {% if user.is_teacher %}{{ user.id }}{% else %}null{% endif %};
+        var COURSES_KEY;
+        if (isTeacher && currentInstructorId) {
+            COURSES_KEY = 'schedule_manager_courses_v1_instructor_' + currentInstructorId;
+        } else {
+            COURSES_KEY = 'schedule_manager_courses_v1';
+        }
+        let allCourses = [];
+        let currentSchoolType = 'HighSchool';
+
+        const COLORS = [
+            { value: '#3b82f6', name: 'Blue' },
+            { value: '#10b981', name: 'Green' },
+            { value: '#f97316', name: 'Orange' },
+            { value: '#f43f5e', name: 'Red' },
+            { value: '#a855f7', name: 'Purple' },
+            { value: '#fbbf24', name: 'Yellow' },
+            { value: '#06b6d4', name: 'Cyan' },
+            { value: '#8b5cf6', name: 'Violet' },
+            { value: '#ec4899', name: 'Pink' },
+            { value: '#14b8a6', name: 'Teal' },
+            { value: '#f59e0b', name: 'Amber' },
+            { value: '#ef4444', name: 'Rose' },
+        ];
+
+        function getTextColorForBackground(hexColor) {
+            const hex = hexColor.replace('#', '');
+            const r = parseInt(hex.substr(0, 2), 16);
+            const g = parseInt(hex.substr(2, 2), 16);
+            const b = parseInt(hex.substr(4, 2), 16);
+            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            return brightness > 155 ? '#1f2937' : '#ffffff';
+        }
+        
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+
+        const scheduleBody = document.getElementById('schedule-body');
+        const modal = document.getElementById('course-modal');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const noClassesMessage = document.getElementById('no-classes-message');
+        const courseDetails = document.getElementById('course-details');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+
+        // === HELPER FUNCTIONS ===
+        function timeToMinutes(time) {
+            if (!time) {
+                console.warn('timeToMinutes: No time provided');
+                return 0;
+            }
+            try {
+                // Handle 12-hour format (e.g., "01:30 PM" or "1:30 PM" or "1:30PM")
+                if (time.includes('AM') || time.includes('PM') || time.includes('am') || time.includes('pm')) {
+                    const timeParts = time.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)/i);
+                if (timeParts) {
+                    let hours = parseInt(timeParts[1]);
+                    const minutes = parseInt(timeParts[2]);
+                        const period = timeParts[3].toUpperCase();
+                        if (period === 'PM' && hours !== 12) hours += 12;
+                        if (period === 'AM' && hours === 12) hours = 0;
+                    return hours * 60 + minutes;
+                }
+            }
+                // Handle 24-hour format (e.g., "13:30" or "13:30:00")
+                const timeStr = time.split(':');
+                if (timeStr.length >= 2) {
+                    const h = parseInt(timeStr[0]);
+                    const m = parseInt(timeStr[1]);
+                    if (isNaN(h) || isNaN(m)) {
+                        console.warn(`timeToMinutes: Invalid time format: ${time}`);
+                        return 0;
+                    }
+            return h * 60 + m;
+                }
+                console.warn(`timeToMinutes: Could not parse time: ${time}`);
+                return 0;
+            } catch (e) {
+                console.error(`timeToMinutes: Error parsing time ${time}:`, e);
+                return 0;
+            }
+        }
+
+        function alignStartToSlot(minutes) {
+            if (!Number.isFinite(minutes)) return null;
+            return Math.floor(minutes / 30) * 30;
+        }
+
+        function alignEndToSlot(minutes, alignedStart) {
+            if (!Number.isFinite(minutes)) return alignedStart + 30;
+            const ceilAligned = Math.ceil(minutes / 30) * 30;
+            return Math.max(alignedStart + 30, ceilAligned);
+        }
+
+        function calculateRowspanAndEnd(startMin, endMin, timeSlots) {
+            if (!Number.isFinite(startMin)) {
+                console.warn(`Could not align start time: ${startMin}`);
+                return null;
+            }
+            const alignedStart = alignStartToSlot(startMin);
+            const alignedEnd = alignEndToSlot(endMin, alignedStart);
+            const startIndex = timeSlots.findIndex(t => timeToMinutes(t) === alignedStart);
+            if (startIndex === -1) {
+                console.warn(`Start time ${alignedStart} not found in slots`);
+                return null;
+            }
+            const totalSlots = Math.max(1, Math.ceil((alignedEnd - alignedStart) / 30));
+            return { startIndex, rowspan: totalSlots };
+        }
+
+        // Save timetable filter state to localStorage
+        function saveTimetableFilters() {
+            try {
+                const schoolYear = document.getElementById('filter-school-year')?.value || '';
+                const section = document.getElementById('filter-section')?.value || '';
+                const semester = document.getElementById('filter-semester')?.value || '';
+                
+                const filterState = {
+                    schoolYear,
+                    section,
+                    semester
+                };
+                localStorage.setItem('timetable_filters', JSON.stringify(filterState));
+            } catch (e) {
+                console.error('Error saving timetable filters:', e);
+            }
+        }
+        
+        // Restore timetable filter state from localStorage
+        function restoreTimetableFilters() {
+            try {
+                const savedState = localStorage.getItem('timetable_filters');
+                if (savedState) {
+                    const filterState = JSON.parse(savedState);
+                    const schoolYearSelect = document.getElementById('filter-school-year');
+                    const sectionSelect = document.getElementById('filter-section');
+                    const semesterSelect = document.getElementById('filter-semester');
+                    
+                    if (schoolYearSelect && filterState.schoolYear) {
+                        schoolYearSelect.value = filterState.schoolYear;
+                    }
+                    if (sectionSelect && filterState.section) {
+                        sectionSelect.value = filterState.section;
+                    }
+                    if (semesterSelect && filterState.semester) {
+                        semesterSelect.value = filterState.semester;
+                    }
+                }
+            } catch (e) {
+                console.error('Error restoring timetable filters:', e);
+            }
+        }
+
+        // Apply URL query params to filter controls (so UI reflects ?school_year=&section=&semester=)
+        function applyUrlFiltersToControls() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const sy = params.get('school_year') || '';
+                const sec = params.get('section') || '';
+                const sem = params.get('semester') || '';
+                
+                const sySelect = document.getElementById('filter-school-year');
+                const secSelect = document.getElementById('filter-section');
+                const semSelect = document.getElementById('filter-semester');
+                
+                if (sySelect && sy) sySelect.value = sy;
+                if (semSelect && sem) semSelect.value = sem;
+                // Section is set after we rebuild options below
+                if (secSelect && sec && !Array.from(secSelect.options).some(o => o.value === sec)) {
+                    // Defer setting section until options are rebuilt
+                    secSelect.setAttribute('data-url-section', sec);
+                } else if (secSelect && sec) {
+                    secSelect.value = sec;
+                }
+            } catch (e) {
+                console.warn('Could not apply URL filters to controls:', e);
+            }
+        }
+
+        // Build Section options dynamically from courses, based on selected School Year and Semester
+        function rebuildSectionOptions() {
+            try {
+                const sectionSelect = document.getElementById('filter-section');
+                if (!sectionSelect) return;
+                
+                const schoolYear = (document.getElementById('filter-school-year')?.value || '').trim();
+                const semesterRaw = (document.getElementById('filter-semester')?.value || '').trim();
+                const semester = semesterRaw.toLowerCase();
+                
+                // Collect unique sections from courses matching school type + selected SY + sem
+                const sectionSet = new Set();
+                allCourses.forEach(c => {
+                    if (!c) return;
+                    // Students: respect currentSchoolType; Instructors: allow across types
+                    if (!isTeacher && currentSchoolType && c.schoolType !== currentSchoolType) return;
+                    const cSy = (c.schoolYear || '').trim();
+                    const cSem = (c.semester || '').trim().toLowerCase();
+                    const cSection = ((c.section || '').trim()).toUpperCase();
+                    if (!cSection) return;
+                    
+                    const syOk = !schoolYear || cSy === schoolYear;
+                    const semOk = !semester || cSem === semester;
+                    if (syOk && semOk) {
+                        sectionSet.add(cSection);
+                    }
+                });
+                
+                // Preserve current selection if still available
+                const prev = sectionSelect.value;
+                
+                // Rebuild options in required order: Select -> specifics -> All
+                const sections = Array.from(sectionSet).sort();
+                sectionSelect.innerHTML = '';
+                const defaultOpt = document.createElement('option');
+                defaultOpt.value = '';
+                defaultOpt.textContent = 'Select Section';
+                sectionSelect.appendChild(defaultOpt);
+                sections.forEach(sec => {
+                    const opt = document.createElement('option');
+                    opt.value = sec;
+                    opt.textContent = sec;
+                    sectionSelect.appendChild(opt);
+                });
+                const allOpt = document.createElement('option');
+                allOpt.value = 'ALL';
+                allOpt.textContent = 'All Sections';
+                sectionSelect.appendChild(allOpt);
+                
+                // Restore previous value if still valid; otherwise clear
+                const urlDesired = sectionSelect.getAttribute('data-url-section');
+                const desiredRaw = (urlDesired || prev || '');
+                const desired = desiredRaw.toUpperCase();
+                if (desired === 'ALL') {
+                    sectionSelect.value = 'ALL';
+                } else if (desired && sectionSet.has(desired)) {
+                    sectionSelect.value = desired;
+                } else {
+                    sectionSelect.value = '';
+                }
+                if (urlDesired) sectionSelect.removeAttribute('data-url-section');
+            } catch (e) {
+                console.error('Error rebuilding section options:', e);
+            }
+        }
+
+        // Filter functions
+        function applyTimetableFilters() {
+            const schoolYear = document.getElementById('filter-school-year')?.value || '';
+            const section = document.getElementById('filter-section')?.value || '';
+            const semester = document.getElementById('filter-semester')?.value || '';
+            
+            // Save filter state
+            saveTimetableFilters();
+            
+            // Update URL without reloading
+            const params = new URLSearchParams();
+            if (schoolYear) params.set('school_year', schoolYear); else params.delete('school_year');
+            if (section) params.set('section', section); else params.delete('section');
+            if (semester) params.set('semester', semester); else params.delete('semester');
+            const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+            try {
+                window.history.replaceState({}, '', newUrl);
+            } catch (e) {
+                // Fallback: ignore history errors
+            }
+            
+            // Rebuild sections based on current SY/Sem and re-render without page reload
+            rebuildSectionOptions();
+            if (window.CourseViewer) {
+                CourseViewer.initStorage();
+                CourseViewer.loadAndRenderCourses();
+            }
+        }
+        
+        function refreshTimetable() {
+            // Force reload courses from server
+            if (window.CourseViewer) {
+                // Clear localStorage to force fresh load
+                try {
+                    localStorage.removeItem('timetable_courses');
+                } catch (e) {
+                    console.warn('Could not clear localStorage:', e);
+                }
+                // Reload page to get fresh data
+                window.location.reload();
+            }
+        }
+        
+        // Expose refresh function globally
+        window.refreshTimetable = refreshTimetable;
+        
+        // Auto-refresh timetable when page becomes visible (e.g., after adding a course)
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && window.CourseViewer) {
+                // Check if a course was added while away
+                try {
+                    const courseAdded = localStorage.getItem('course_added');
+                    if (courseAdded) {
+                        // Clear the flag and refresh
+                        localStorage.removeItem('course_added');
+                        // Reload courses from server
+                setTimeout(() => {
+                            CourseViewer.initStorage();
+                            CourseViewer.loadAndRenderCourses();
+                        }, 300);
+                    }
+                } catch (e) {
+                    console.warn('Could not check course_added flag:', e);
+                }
+            }
+        });
+        
+        // Listen for storage events (if course is added in another tab or same tab)
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'course_added' && e.newValue) {
+                // Reload courses from server
+                if (window.CourseViewer) {
+                    CourseViewer.initStorage();
+                    CourseViewer.loadAndRenderCourses();
+                }
+            }
+        });
+        
+        // Also listen for custom events (same-tab communication)
+        window.addEventListener('courseAdded', function() {
+            if (window.CourseViewer) {
+                CourseViewer.initStorage();
+                CourseViewer.loadAndRenderCourses();
+            }
+        });
+        
+        function clearTimetableFilters() {
+            // Clear all filters and reload to show all courses
+            const schoolYearSelect = document.getElementById('filter-school-year');
+            const sectionSelect = document.getElementById('filter-section');
+            const semesterSelect = document.getElementById('filter-semester');
+            
+            if (schoolYearSelect) schoolYearSelect.value = '';
+            if (sectionSelect) sectionSelect.value = '';
+            if (semesterSelect) semesterSelect.value = '';
+            
+            // Clear saved filter state
+            try {
+                localStorage.removeItem('timetable_filters');
+            } catch (e) {
+                console.warn('Could not clear saved filters:', e);
+            }
+            
+            // Reload page without filters to show all courses
+            window.location.href = window.location.pathname;
+        }
+
+        function formatTimeDisplay(time) {
+            if (!time) return 'N/A';
+            try {
+                // Handle 12-hour format (e.g., "01:30 PM" or "1:30 PM")
+                if (time.includes('AM') || time.includes('PM') || time.includes('am') || time.includes('pm')) {
+                    return time; // Already formatted
+                }
+                // Handle 24-hour format (e.g., "13:30" or "07:00")
+            const [h, m] = time.split(':').map(Number);
+                if (isNaN(h) || isNaN(m)) return time; // Return as-is if can't parse
+            const period = h >= 12 ? 'PM' : 'AM';
+            const hour = h % 12 || 12;
+            return `${hour}:${m.toString().padStart(2, '0')} ${period}`;
+            } catch (e) {
+                return time; // Return as-is if error
+            }
+        }
+
+        function formatTimeRange(time) {
+            if (!time) return 'N/A';
+            try {
+                const startMinutes = timeToMinutes(time);
+                const endMinutes = startMinutes + 30;
+                const endHour = Math.floor(endMinutes / 60) % 24;
+                const endMinute = endMinutes % 60;
+                const endTime = `${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
+                return `${formatTimeDisplay(time)} - ${formatTimeDisplay(endTime)}`;
+            } catch (e) {
+                return time;
+            }
+        }
+
+        function formatDateDisplay(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return new Date(date.getTime() + date.getTimezoneOffset() * 60000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function generateTimeSlots() {
+            const slots = [];
+            let currentMin = 5 * 60; // 5:00 AM
+            const endMinTotal = 21 * 60; // 9:00 PM
+            while (currentMin <= endMinTotal) {
+                const h = Math.floor(currentMin / 60) % 24;
+                const m = currentMin % 60;
+                slots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
+                currentMin += 30;
+            }
+            return slots;
+        }
+
+        // === RENDER ===
+        const CourseViewer = {
+            initStorage() {
+                try {
+                    console.log('🔍 ========== INIT STORAGE START ==========');
+                    // Load courses from database (stored in hidden divs - no JSON parsing needed!)
+                    const coursesContainer = document.getElementById('courses-data-container');
+                    let coursesFromDb = [];
+                    
+                    if (!coursesContainer) {
+                        console.warn('⚠️ courses-data-container not found - no courses to load');
+                        allCourses = [];
+                        return;
+                    }
+                    
+                    // Read course data from DOM data attributes
+                    const courseElements = coursesContainer.querySelectorAll('.course-data-item');
+                    console.log(`📦 Found ${courseElements.length} course element(s) in DOM`);
+                    
+                    courseElements.forEach((element, index) => {
+                        try {
+                            // Parse days from comma-separated string
+                            const daysStr = element.getAttribute('data-days') || '';
+                            const days = daysStr ? daysStr.split(',').map(d => d.trim()).filter(d => d) : [];
+                            
+                            const course = {
+                                id: element.getAttribute('data-id') || '',
+                                code: element.getAttribute('data-code') || '',
+                                courseCode: element.getAttribute('data-code') || '',
+                                name: element.getAttribute('data-name') || '',
+                                courseName: element.getAttribute('data-name') || '',
+                                days: days,
+                                startTime: element.getAttribute('data-start-time') || '',
+                                classStartTime: element.getAttribute('data-start-time') || '',
+                                endTime: element.getAttribute('data-end-time') || '',
+                                classEndTime: element.getAttribute('data-end-time') || '',
+                                room: element.getAttribute('data-room') || '',
+                                color: element.getAttribute('data-color') || '#3b82f6',
+                                themeColor: element.getAttribute('data-color') || '#3b82f6',
+                                schoolType: element.getAttribute('data-school-type') || initialSchoolType,
+                                yearLevel: parseInt(element.getAttribute('data-year-level')) || 0,
+                                section: element.getAttribute('data-section') || '',
+                                semester: element.getAttribute('data-semester') || '',
+                                schoolYear: element.getAttribute('data-school-year') || '',
+                                instructor: element.getAttribute('data-instructor') || '',
+                                teacherName: element.getAttribute('data-instructor') || '',
+                                instructorId: isTeacher && currentInstructorId ? currentInstructorId : (element.getAttribute('data-instructor-id') || null),
+                            };
+                            
+                            coursesFromDb.push(course);
+                        } catch (e) {
+                            console.warn(`⚠️ Error reading course ${index + 1}:`, e.message);
+                        }
+                    });
+                    
+                    console.log(`✅ Loaded ${coursesFromDb.length} course(s) from DOM`);
+                    if (coursesFromDb.length > 0) {
+                        console.log(`   First course:`, coursesFromDb[0]);
+                    }
+                    
+                    // CRITICAL: For students, ONLY use courses from database (enrolled courses)
+                    // Do NOT load from localStorage for students to prevent showing unenrolled courses
+                    if (!isTeacher) {
+                        // Student view: Only use enrolled courses from database
+                        console.log('👤 Student view: Using ONLY enrolled courses from database (no localStorage)');
+                        allCourses = coursesFromDb;
+                        // Clear any old localStorage data for students
+                        try {
+                            localStorage.removeItem(COURSES_KEY);
+                            console.log('🧹 Cleared localStorage for student view');
+                        } catch (e) {
+                            console.warn('⚠️ Could not clear localStorage:', e);
+                        }
+                    } else {
+                        // Instructor view: Load courses from localStorage and merge
+                        let localCourses = [];
+                        try {
+                    const coursesJson = localStorage.getItem(COURSES_KEY);
+                            if (coursesJson) {
+                                localCourses = JSON.parse(coursesJson);
+                                if (!Array.isArray(localCourses)) {
+                                    localCourses = [];
+                                }
+                                console.log(`📱 Loaded ${localCourses.length} course(s) from localStorage`);
+                            }
+                        } catch (e) {
+                            console.warn('⚠️ Error loading from localStorage:', e);
+                            localCourses = [];
+                        }
+                        
+                        // CRITICAL: Filter localStorage courses by instructor ID to prevent showing other instructors' courses
+                        let filteredLocalCourses = localCourses;
+                        if (currentInstructorId) {
+                            filteredLocalCourses = localCourses.filter(c => {
+                                const courseInstructorId = c.instructorId || null;
+                                // Only include courses that match current instructor ID or have no instructor ID (legacy data)
+                                // For legacy data without instructorId, we'll be conservative and exclude them
+                                return courseInstructorId === currentInstructorId;
+                            });
+                            console.log(`🔒 Filtered localStorage courses: ${localCourses.length} -> ${filteredLocalCourses.length} (matching instructor ID: ${currentInstructorId})`);
+                        }
+                        
+                        // CRITICAL: For instructors, ONLY use courses from database (server data)
+                        // Permanently deleted courses are removed from database, so they won't be in coursesFromDb
+                        // Remove any localStorage courses that are not in the database (they may have been permanently deleted)
+                        const dbCourseIds = new Set(coursesFromDb.map(c => {
+                            // Use both id and code+name+section as identifiers
+                            const id = c.id || '';
+                            const code = c.code || c.courseCode || '';
+                            const name = c.name || c.courseName || '';
+                            const section = c.section || '';
+                            return `${id}_${code}_${name}_${section}`;
+                        }));
+                        
+                        // Filter localStorage courses: only keep those that exist in database
+                        // This ensures permanently deleted courses are removed
+                        const validLocalCourses = filteredLocalCourses.filter(c => {
+                            const id = c.id || '';
+                            const code = c.code || c.courseCode || '';
+                            const name = c.name || c.courseName || '';
+                            const section = c.section || '';
+                            const identifier = `${id}_${code}_${name}_${section}`;
+                            const existsInDb = dbCourseIds.has(identifier);
+                            if (!existsInDb) {
+                                console.log(`   🗑️ Removing course from localStorage (not in database - may be permanently deleted): ${code || id}`);
+                            }
+                            return existsInDb;
+                        });
+                        
+                        // CRITICAL: For instructors, ONLY use database courses (prioritize server data)
+                        // This ensures permanently deleted courses are never shown
+                        allCourses = coursesFromDb;  // Use ONLY database courses, ignore localStorage
+                        console.log(`📊 Using ONLY database courses: ${allCourses.length} (removed ${filteredLocalCourses.length - validLocalCourses.length} from localStorage)`);
+                        
+                        // Update localStorage to remove permanently deleted courses
+                        try {
+                            localStorage.setItem(COURSES_KEY, JSON.stringify(allCourses));
+                            console.log(`💾 Updated localStorage with only valid courses`);
+                        } catch (e) {
+                            console.warn('⚠️ Could not update localStorage:', e);
+                        }
+                    }
+                    
+                    // Filter out test courses - only show real instructor courses
+                    // Also filter by instructor ID for instructors to ensure data isolation
+                    allCourses = allCourses.filter(c => {
+                        const courseId = c.id || '';
+                        const isTest = courseId.toString().startsWith('test_') || 
+                                     courseId.toString().startsWith('TEST_') ||
+                                     (c.code && c.code.toUpperCase().includes('TEST'));
+                        if (isTest) {
+                            console.log(`   Filtering out test course: ${c.code || c.courseCode}`);
+                            return false;
+                        }
+                        
+                        // For instructors, ensure course belongs to current instructor
+                        if (isTeacher && currentInstructorId) {
+                            const courseInstructorId = c.instructorId || null;
+                            if (courseInstructorId !== null && courseInstructorId !== currentInstructorId) {
+                                console.log(`   Filtering out course from different instructor: ${c.code || c.courseCode} (instructor ID: ${courseInstructorId}, current: ${currentInstructorId})`);
+                                return false;
+                            }
+                        }
+                        
+                        return true;
+                    });
+                    
+                    console.log(`✅ Final allCourses count: ${allCourses.length}`);
+                    if (allCourses.length > 0) {
+                        console.log(`   Sample course:`, allCourses[0]);
+                    }
+                    
+                    // Save courses back to localStorage (only for instructors)
+                    // Note: We already saved above when filtering, but save again to ensure consistency
+                    if (isTeacher) {
+                        try {
+                            localStorage.setItem(COURSES_KEY, JSON.stringify(allCourses));
+                            console.log(`💾 Saved ${allCourses.length} course(s) to localStorage`);
+                        } catch (e) {
+                            console.warn('⚠️ Could not save to localStorage:', e);
+                        }
+                    } else {
+                        console.log('👤 Student view: Not saving to localStorage');
+                    }
+                    
+                    currentSchoolType = initialSchoolType;
+                    console.log(`🏫 School type: ${initialSchoolType}`);
+                    console.log('========== INIT STORAGE END ==========\n');
+                } catch (error) {
+                    console.error("❌ Error initializing storage:", error);
+                    console.error("   Error stack:", error.stack);
+                    allCourses = [];
+                }
+            },
+            loadAndRenderCourses() {
+                try {
+                    console.log('🔄 ========== LOAD AND RENDER START ==========');
+                    // Show loading spinner
+                    if (loadingSpinner) {
+                loadingSpinner.classList.remove('hidden');
+                    }
+                    
+                    console.log(`📊 Initial state: allCourses.length = ${allCourses.length}`);
+                    
+                    // Ensure initStorage was called first
+                    if (allCourses.length === 0) {
+                        console.log('⚠️ allCourses is empty, calling initStorage...');
+                        this.initStorage();
+                        console.log(`   After initStorage: allCourses.length = ${allCourses.length}`);
+                        
+                        // Double-check if still empty
+                        if (allCourses.length === 0) {
+                            const coursesContainer = document.getElementById('courses-data-container');
+                            if (coursesContainer) {
+                                const courseElements = coursesContainer.querySelectorAll('.course-data-item');
+                                console.error('❌ CRITICAL: courses-data-container has content but allCourses is still empty!');
+                                console.error(`   Found ${courseElements.length} course element(s) in DOM`);
+                                if (courseElements.length > 0) {
+                                    console.error('   First course element:', courseElements[0]);
+                                    console.error('   First course data-id:', courseElements[0].getAttribute('data-id'));
+                                    console.error('   First course data-code:', courseElements[0].getAttribute('data-code'));
+                                }
+                            } else {
+                                console.error('❌ courses-data-container element is missing!');
+                            }
+                        }
+                    } else {
+                        console.log(`✅ allCourses already loaded: ${allCourses.length} course(s)`);
+                    }
+                
+                // Restore filters from localStorage first (if not in URL)
+                const urlParams = new URLSearchParams(window.location.search);
+                if (!urlParams.has('school_year') && 
+                    !urlParams.has('section') && !urlParams.has('semester')) {
+                    restoreTimetableFilters();
+                }
+
+                const cleanValue = (value) => {
+                    if (value === null || value === undefined) return '';
+                    return value.toString().trim();
+                };
+
+                // Get filter values from URL or form (URL takes priority) and normalize
+                const filterSchoolYear = cleanValue(urlParams.get('school_year') || document.getElementById('filter-school-year')?.value || '');
+                const filterSectionRaw = cleanValue(urlParams.get('section') || document.getElementById('filter-section')?.value || '');
+                const filterSemesterRaw = cleanValue(urlParams.get('semester') || document.getElementById('filter-semester')?.value || '');
+                const normalizedFilterSection = filterSectionRaw ? filterSectionRaw.toUpperCase() : '';
+                const normalizedFilterSemester = filterSemesterRaw.toLowerCase();
+                
+                // Save current filter state
+                saveTimetableFilters();
+                
+                // Filter courses by schoolType first (students only). Instructors can teach across school types.
+                let filteredCourses = allCourses;
+                if (!isTeacher && currentSchoolType) {
+                    filteredCourses = allCourses.filter(c => c.schoolType === currentSchoolType);
+                }
+                
+                // For instructors: Show all courses when filters are selected
+                // For students: Show all courses for this school type
+                const sectionFilterExists = document.getElementById('filter-section') !== null;
+                const requireAllThreeSelected = Boolean(
+                    filterSchoolYear &&
+                    filterSemesterRaw &&
+                    (sectionFilterExists ? filterSectionRaw : true)
+                );
+                const selectFiltersMessage = document.getElementById('select-filters-message');
+
+                if (isTeacher) {
+                    if (!requireAllThreeSelected && selectFiltersMessage) {
+                        // Show reminder and prevent rendering any courses until filters are chosen
+                        selectFiltersMessage.classList.remove('hidden');
+                    } else if (selectFiltersMessage) {
+                        selectFiltersMessage.classList.add('hidden');
+                    }
+                }
+                
+                // CRITICAL: Filter out archived/deleted courses (safety check)
+                // Even though server should already filter these, add client-side check as backup
+                filteredCourses = filteredCourses.filter(c => {
+                    // Check if course ID indicates it's from database (starts with 'db_')
+                    // If it's a database course, we trust the server filtering
+                    // But add additional safety: filter out any courses that might be archived/deleted
+                    const courseId = c.id || '';
+                    // Filter out test courses
+                    if (courseId.toString().startsWith('test_') || 
+                        courseId.toString().startsWith('TEST_') ||
+                        (c.code && c.code.toUpperCase().includes('TEST'))) {
+                        return false;
+                    }
+                    // All courses from server should already be filtered, but this is a safety check
+                    return true;
+                });
+
+                filteredCourses = filteredCourses.filter(c => {
+                    const courseSchoolYear = cleanValue(c.schoolYear);
+                    const courseSection = cleanValue(c.section).toUpperCase();
+                    const courseSemester = cleanValue(c.semester).toLowerCase();
+
+                    const matchesSchoolYear = !filterSchoolYear || courseSchoolYear === filterSchoolYear;
+                    // Section rule:
+                    // - 'ALL' means include all sections
+                    // - empty (student view or no filter) also includes all
+                    // - If a course has no section, it should still display for any selected section
+                    const matchesSection = (normalizedFilterSection === 'ALL' || !normalizedFilterSection) 
+                        ? true 
+                        : (courseSection === normalizedFilterSection || courseSection === '');
+                    const matchesSemester = !normalizedFilterSemester || courseSemester === normalizedFilterSemester;
+
+                    return matchesSchoolYear && matchesSection && matchesSemester;
+                });
+
+                // If instructor hasn't selected all three filters, do not show any classes and show reminder
+                if (isTeacher && !requireAllThreeSelected) {
+                    filteredCourses = [];
+                }
+                
+                console.log(`📋 Final filteredCourses count: ${filteredCourses.length}`);
+                if (filteredCourses.length > 0) {
+                    console.log(`   Sample filtered course:`, filteredCourses[0]);
+                } else if (allCourses.length > 0) {
+                    console.warn(`⚠️ WARNING: ${allCourses.length} courses in allCourses but 0 after filtering!`);
+                    console.warn(`   This means all courses were filtered out.`);
+                } else {
+                    console.warn(`⚠️ WARNING: allCourses is empty, so filteredCourses is also empty.`);
+                    }
+                
+                // Render courses
+                console.log(`🎨 About to call renderSchedule with ${filteredCourses.length} course(s)`);
+                try {
+                this.renderSchedule(filteredCourses);
+                } catch (error) {
+                    console.error('❌ Error rendering schedule:', error);
+                    console.error('   Error stack:', error.stack);
+                }
+                
+                if (noClassesMessage) {
+                noClassesMessage.classList.toggle('hidden', filteredCourses.length > 0);
+                }
+                
+                console.log('========== LOAD AND RENDER END ==========\n');
+            } catch (error) {
+                console.error('❌ Error in loadAndRenderCourses:', error);
+                console.error('   Error stack:', error.stack);
+            } finally {
+                // ALWAYS hide loading spinner at the end, even if there was an error
+                if (loadingSpinner) {
+                loadingSpinner.classList.add('hidden');
+                    console.log('✅ Loading spinner hidden (finally block)');
+                } else {
+                    console.warn('⚠️ Loading spinner element not found!');
+                }
+            }
+            },
+            renderSchedule(courses) {
+                console.log('🎨 ========== RENDER SCHEDULE START ==========');
+                console.log('renderSchedule called with courses:', courses.length);
+                console.log('scheduleBody element exists:', !!scheduleBody);
+                
+                if (!scheduleBody) {
+                    console.error('❌ scheduleBody element not found! Cannot render timetable.');
+                    return;
+                }
+                
+                if (courses.length === 0) {
+                    console.warn('⚠️ No courses to render! Clearing timetable.');
+                    scheduleBody.innerHTML = '';
+                    if (noClassesMessage) {
+                        noClassesMessage.classList.remove('hidden');
+                    }
+                    return;
+                }
+                
+                console.log('✅ Courses to render:', courses.length);
+                console.log('First course sample:', courses[0]);
+                
+                // Clear any existing content
+                scheduleBody.innerHTML = '';
+                if (noClassesMessage) {
+                    noClassesMessage.classList.add('hidden');
+                }
+                
+                const timeSlots = generateTimeSlots();
+                const days = ["M", "T", "W", "Th", "F", "S", "Su"];
+                
+                const scheduleMap = timeSlots.map(time => {
+                    const row = { time };
+                    days.forEach(day => row[day] = []);
+                    return row;
+                });
+
+                let coursesRendered = 0;
+                let coursesSkipped = 0;
+                
+                courses.forEach((course, index) => {
+                    // Skip test courses
+                    const courseId = course.id || '';
+                    if (courseId.toString().startsWith('test_') || 
+                        courseId.toString().startsWith('TEST_') ||
+                        (course.code && course.code.toUpperCase().includes('TEST'))) {
+                        coursesSkipped++;
+                        return;
+                    }
+                    
+                    // Check if this is a day-specific schedule (asynchronized)
+                    const isDaySpecific = courseId.toString().startsWith('db_') && courseId.toString().includes('_');
+                    
+                    console.log(`\n📚 Processing course ${index + 1}: ${course.code || course.courseCode || 'N/A'} - ${course.name || course.courseName || 'N/A'}`);
+                    console.log(`   Course ID: ${courseId} ${isDaySpecific ? '(Day-Specific Schedule)' : '(Synchronized Schedule)'}`);
+                    console.log(`   Days:`, course.days, `(type: ${typeof course.days})`);
+                    console.log(`   Start: ${course.startTime || course.classStartTime || 'N/A'}, End: ${course.endTime || course.classEndTime || 'N/A'}`);
+                    
+                    let startTime = course.startTime || course.classStartTime || '';
+                    let endTime = course.endTime || course.classEndTime || '';
+                    
+                    // Validate times
+                    if (!startTime || !endTime) {
+                        console.warn(`   ❌ Missing times - skipping`);
+                        coursesSkipped++;
+                        return;
+                    }
+                    
+                    let startMin = timeToMinutes(startTime);
+                    let endMin = timeToMinutes(endTime);
+                    
+                    console.log(`   Time in minutes: ${startMin} to ${endMin}`);
+                    
+                    if (endMin <= startMin || startMin === 0) {
+                        console.warn(`   ❌ Invalid time range - skipping`);
+                        coursesSkipped++;
+                        return;
+                    }
+
+                    let placement = calculateRowspanAndEnd(startMin, endMin, timeSlots);
+                    if (!placement) {
+                        console.warn(`   ❌ Could not find time slot placement - skipping`);
+                        coursesSkipped++;
+                        return;
+                    }
+                    let { startIndex, rowspan } = placement;
+                    
+                    // Verify the end slot is correct and matches the actual end time
+                    let endSlotIndex = startIndex + rowspan - 1;
+                    let endSlotTime = endSlotIndex < timeSlots.length ? timeSlots[endSlotIndex] : 'N/A';
+                    let endSlotMin = endSlotIndex < timeSlots.length ? timeToMinutes(timeSlots[endSlotIndex]) : 0;
+                    let endSlotEndMin = endSlotMin + 30;
+                    
+                    console.log(`   ✅ Placement: slot ${startIndex} (${timeSlots[startIndex]}) to slot ${endSlotIndex} (${endSlotTime}), rowspan: ${rowspan}`);
+                    console.log(`   📍 Course: ${startMin}min (${formatTimeDisplay(startTime)}) to ${endMin}min (${formatTimeDisplay(endTime)})`);
+                    console.log(`   📍 End slot covers ${endSlotMin}min (${timeSlots[endSlotIndex]}) to ${endSlotEndMin}min`);
+                    
+                    // Final verification: ensure end time is within the calculated end slot
+                    // Recalculate based on actual duration to ensure 100% accuracy
+                    const actualDuration = endMin - startMin;
+                    const expectedSlots = Math.ceil(actualDuration / 30);
+                    
+                    // If calculated rowspan doesn't match expected, use expected
+                    if (rowspan < expectedSlots) {
+                        console.log(`   ⚠️ Rowspan ${rowspan} is less than expected ${expectedSlots} based on duration, correcting...`);
+                        rowspan = expectedSlots;
+                        placement.rowspan = rowspan;
+                        // Recalculate end slot
+                        endSlotIndex = startIndex + rowspan - 1;
+                        endSlotTime = endSlotIndex < timeSlots.length ? timeSlots[endSlotIndex] : 'N/A';
+                        endSlotMin = endSlotIndex < timeSlots.length ? timeToMinutes(timeSlots[endSlotIndex]) : 0;
+                        endSlotEndMin = endSlotMin + 30;
+                    }
+                    
+                    // Double-check: if end time still exceeds the end slot, extend further
+                    if (endSlotIndex < timeSlots.length && endMin > endSlotEndMin) {
+                        const additionalSlots = Math.ceil((endMin - endSlotEndMin) / 30);
+                        rowspan = rowspan + additionalSlots;
+                        console.log(`   ⚠️ End time ${endMin}min exceeds end slot ${endSlotEndMin}min, extending rowspan to ${rowspan}`);
+                        placement.rowspan = rowspan;
+                        // Recalculate end slot after extension
+                        endSlotIndex = startIndex + rowspan - 1;
+                        endSlotTime = endSlotIndex < timeSlots.length ? timeSlots[endSlotIndex] : 'N/A';
+                    }
+                    
+                    // Use the final rowspan value (may have been corrected)
+                    rowspan = placement.rowspan;
+                    
+                    console.log(`   ✅ Final placement: rowspan=${rowspan}, covers ${timeSlots[startIndex]} to ${endSlotTime || 'end'}`);
+
+                    // Handle days - could be array or comma-separated string
+                    let courseDays = course.days;
+                    
+                    if (!courseDays) {
+                        console.warn(`  ⚠️ Skipping course - no days specified`);
+                        coursesSkipped++;
+                        return;
+                    }
+                    
+                    if (!Array.isArray(courseDays)) {
+                        // Convert comma-separated string to array
+                        if (typeof courseDays === 'string') {
+                            courseDays = courseDays.split(',').map(d => d.trim()).filter(d => d);
+                            console.log(`  Parsed days from string:`, courseDays);
+                        } else {
+                            console.warn(`  ⚠️ Skipping course - invalid days format:`, courseDays, typeof courseDays);
+                            coursesSkipped++;
+                            return;
+                        }
+                    }
+                    
+                    if (courseDays.length === 0) {
+                        console.warn(`  ⚠️ Empty days array after parsing - using default (Monday)`);
+                        // Use Monday as default if empty
+                        courseDays = ['M'];
+                        console.warn(`     ✅ Using default day: M (Monday)`);
+                    }
+                    
+                    // Normalize day names to match timetable format (M, T, W, Th, F, S, Su)
+                    const dayNormalizeMap = {
+                        'Mon': 'M', 'Monday': 'M', 'MON': 'M', 'MONDAY': 'M',
+                        'Tue': 'T', 'Tuesday': 'T', 'TUE': 'T', 'TUESDAY': 'T',
+                        'Wed': 'W', 'Wednesday': 'W', 'WED': 'W', 'WEDNESDAY': 'W',
+                        'Thu': 'Th', 'Thursday': 'Th', 'THU': 'Th', 'THURSDAY': 'Th',
+                        'Fri': 'F', 'Friday': 'F', 'FRI': 'F', 'FRIDAY': 'F',
+                        'Sat': 'S', 'Saturday': 'S', 'SAT': 'S', 'SATURDAY': 'S',
+                        'Sun': 'Su', 'Sunday': 'Su', 'SUN': 'Su', 'SUNDAY': 'Su',
+                        'M': 'M', 'T': 'T', 'W': 'W', 'Th': 'Th', 'F': 'F', 'S': 'S', 'Su': 'Su'
+                    };
+                    
+                    const originalDays = [...courseDays];
+                    courseDays = courseDays.map(day => {
+                        const trimmed = String(day).trim();
+                        const normalized = dayNormalizeMap[trimmed] || 
+                                         dayNormalizeMap[trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase()] || 
+                                         trimmed;
+                        return normalized;
+                    }).filter(day => {
+                        const isValid = days.includes(day);
+                        if (!isValid) {
+                            console.warn(`   ⚠️ Day "${day}" not in valid days list`);
+                        }
+                        return isValid;
+                    });
+                    
+                    console.log(`   Days: ${originalDays.join(', ')} -> ${courseDays.join(', ')}`);
+                    
+                    if (courseDays.length === 0) {
+                        console.warn(`   ⚠️ No valid days - skipping course`);
+                        coursesSkipped++;
+                        return;
+                    }
+                    
+                    // For day-specific schedules, each entry should only appear on its specific day
+                    // The backend creates separate entries for each day, so courseDays should only have one day
+                    // But we need to ensure all day-specific entries are processed
+                    courseDays.forEach(dayKey => {
+                        const courseData = { ...course, days: courseDays, rowspan, isContinuation: false };
+                        if (startIndex < scheduleMap.length) {
+                            scheduleMap[startIndex][dayKey].push(courseData);
+                            coursesRendered++;
+                            console.log(`   ✅ Added to scheduleMap: row ${startIndex}, day ${dayKey}, rowspan: ${rowspan}`);
+                            // Add continuation markers for rowspan
+                        for (let i = 1; i < rowspan; i++) {
+                            const nextIndex = startIndex + i;
+                            if (nextIndex < scheduleMap.length) {
+                                scheduleMap[nextIndex][dayKey].push({ isContinuation: true });
+                            }
+                            }
+                        } else {
+                            console.warn(`   ⚠️ startIndex ${startIndex} out of bounds (max: ${scheduleMap.length - 1})`);
+                        }
+                    });
+                });
+                
+                // Count day-specific schedules
+                const daySpecificCount = courses.filter(c => {
+                    const courseId = c.id || '';
+                    return courseId.toString().startsWith('db_') && courseId.toString().includes('_');
+                }).length;
+                
+                console.log(`\n📊 Rendering Summary:`);
+                console.log(`   Total courses processed: ${courses.length}`);
+                console.log(`   Day-specific schedules: ${daySpecificCount}`);
+                console.log(`   Synchronized schedules: ${courses.length - daySpecificCount}`);
+                console.log(`   Courses rendered: ${coursesRendered}`);
+                console.log(`   Courses skipped: ${coursesSkipped}`);
+                
+                // Log all day-specific schedules by base course ID
+                if (daySpecificCount > 0) {
+                    const daySpecificByCourse = {};
+                    courses.forEach(c => {
+                        const courseId = c.id || '';
+                        if (courseId.toString().startsWith('db_') && courseId.toString().includes('_')) {
+                            const parts = courseId.toString().split('_');
+                            if (parts.length >= 2) {
+                                const baseId = parts[1];
+                                if (!daySpecificByCourse[baseId]) {
+                                    daySpecificByCourse[baseId] = [];
+                                }
+                                daySpecificByCourse[baseId].push({
+                                    id: courseId,
+                                    day: c.days && c.days[0] ? c.days[0] : 'Unknown',
+                                    time: `${c.startTime || c.classStartTime || ''} - ${c.endTime || c.classEndTime || ''}`
+                                });
+                            }
+                        }
+                    });
+                    
+                    console.log(`\n📅 Day-Specific Schedules by Course:`);
+                    Object.keys(daySpecificByCourse).forEach(baseId => {
+                        const schedules = daySpecificByCourse[baseId];
+                        console.log(`   Course ID ${baseId}: ${schedules.length} day schedule(s)`);
+                        schedules.forEach(s => {
+                            console.log(`     - ${s.day}: ${s.time}`);
+                        });
+                    });
+                }
+                
+                if (coursesRendered === 0 && courses.length > 0) {
+                    console.warn(`❌ No courses could be rendered!`);
+                    noClassesMessage.classList.remove('hidden');
+                } else if (coursesRendered > 0) {
+                    console.log(`✅ ${coursesRendered} course(s) added to scheduleMap`);
+                }
+
+                let html = '';
+                let cellsWithCourses = 0;
+                scheduleMap.forEach((row, rowIndex) => {
+                    const time = row.time;
+                    html += `<tr class="h-12 timetable-row">`;
+                    html += `<td class="time-cell">${formatTimeRange(time)}</td>`;
+                    days.forEach(dayKey => {
+                        const cellContent = row[dayKey];
+                        if (cellContent.length === 0) {
+                            html += `<td class="text-gray-400 text-center text-xs"></td>`;
+                        } else {
+                            const firstItem = cellContent[0];
+                            // Skip continuation cells - they're covered by rowspan from previous rows
+                            if (firstItem.isContinuation) {
+                                return; // Continue to next day
+                            }
+                            const course = firstItem;
+                            cellsWithCourses++;
+                            console.log(`   📍 Generating HTML for course "${course.code || course.courseCode}" at row ${rowIndex} (${time}), day ${dayKey}, rowspan: ${course.rowspan}`);
+                            const bgColor = course.color || course.themeColor || '#3b82f6';
+                            const isHighSchool = course.schoolType === 'HighSchool';
+                            const courseName = course.courseName || course.name || 'Unnamed Course';
+                            const mainIdentifier = courseName;
+                            const locationDisplay = course.room || 'TBA';
+                            
+                            // Create full-color vibrant background with beautiful gradient
+                            const rgb = hexToRgb(bgColor);
+                            if (!rgb) {
+                                // Fallback if color parsing fails
+                                const fallbackBg = bgColor || '#3b82f6';
+                                const textColor = '#ffffff';
+                            html += `
+                                    <td rowspan="${course.rowspan}" class="p-1 align-top relative">
+                                        <div class="class-block animate-class-block" 
+                                             style="background: ${fallbackBg}; border-left-color: ${fallbackBg}; color: ${textColor}; animation-delay: ${rowIndex * 0.05}s;"
+                                    onclick="CourseViewer.viewCourse('${course.id}')"
+                                             title="Click for details: ${mainIdentifier}"
+                                             data-id="${course.id}">
+                                            <p class="font-bold text-sm leading-tight timetable-course-title" style="color: ${textColor}; text-shadow: 0 1px 3px rgba(0,0,0,0.3);">${mainIdentifier}</p>
+                                            <p class="text-xs text-center mt-0.5 leading-tight" style="color: ${textColor}; opacity: 0.95; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">${locationDisplay}</p>
+                                    </div>
+                                    </td>
+                                `;
+                            } else {
+                                // Create vibrant full-color gradient (darker to lighter for depth)
+                                const darkR = Math.max(0, rgb.r - 15);
+                                const darkG = Math.max(0, rgb.g - 15);
+                                const darkB = Math.max(0, rgb.b - 15);
+                                
+                                const lightR = Math.min(255, rgb.r + 20);
+                                const lightG = Math.min(255, rgb.g + 20);
+                                const lightB = Math.min(255, rgb.b + 20);
+                                
+                                // Determine text color based on background brightness
+                                const brightness = (rgb.r * 0.299 + rgb.g * 0.587 + rgb.b * 0.114);
+                                const textColor = brightness > 180 ? '#1e293b' : '#ffffff';
+                                const textColorSecondary = brightness > 180 ? '#475569' : 'rgba(255,255,255,0.95)';
+                                
+                                // Create beautiful full-color gradient background
+                                const gradientBg = `linear-gradient(135deg, 
+                                    rgb(${darkR}, ${darkG}, ${darkB}) 0%, 
+                                    rgb(${rgb.r}, ${rgb.g}, ${rgb.b}) 50%,
+                                    rgb(${lightR}, ${lightG}, ${lightB}) 100%)`;
+                                
+                                // Hover gradient (slightly brighter)
+                                const hoverR = Math.min(255, rgb.r + 30);
+                                const hoverG = Math.min(255, rgb.g + 30);
+                                const hoverB = Math.min(255, rgb.b + 30);
+                                const hoverGradient = `linear-gradient(135deg, 
+                                    rgb(${rgb.r}, ${rgb.g}, ${rgb.b}) 0%, 
+                                    rgb(${hoverR}, ${hoverG}, ${hoverB}) 100%)`;
+                                
+                                // Border color - use darker shade for contrast
+                                const borderColor = `rgb(${darkR}, ${darkG}, ${darkB})`;
+                                
+                                html += `
+                                    <td rowspan="${course.rowspan}" class="p-1 align-top relative">
+                                        <div class="class-block animate-class-block" 
+                                             style="background: ${gradientBg}; border-left-color: ${borderColor}; color: ${textColor}; animation-delay: ${rowIndex * 0.05}s;"
+                                             onclick="CourseViewer.viewCourse('${course.id}')"
+                                             title="Click for details: ${mainIdentifier}"
+                                             data-id="${course.id}"
+                                             onmouseover="this.style.background='${hoverGradient}'"
+                                             onmouseout="this.style.background='${gradientBg}'">
+                                            <p class="font-bold text-sm leading-tight timetable-course-title" style="color: ${textColor}; text-shadow: 0 1px 3px rgba(0,0,0,0.3);">${mainIdentifier}</p>
+                                            <p class="text-xs text-center mt-0.5 leading-tight" style="color: ${textColorSecondary}; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">${locationDisplay}</p>
+                                    </div>
+                                </td>
+                            `;
+                            }
+                        }
+                    });
+                    html += `</tr>`;
+                });
+                
+                // Update the schedule body
+                if (scheduleBody) {
+                    console.log(`\n🔨 Inserting HTML into schedule body...`);
+                    console.log(`   HTML length: ${html.length} characters`);
+                    console.log(`   Cells with courses: ${cellsWithCourses}`);
+                    console.log(`   Total rows in HTML: ${(html.match(/<tr/g) || []).length}`);
+                    
+                scheduleBody.innerHTML = html;
+                    
+                    // Verify insertion
+                    const courseCells = scheduleBody.querySelectorAll('.class-block');
+                    const allRows = scheduleBody.querySelectorAll('tr');
+                    
+                    console.log(`   Course cells found in DOM: ${courseCells.length}`);
+                    console.log(`   Total rows in DOM: ${allRows.length}`);
+                    
+                    if (courseCells.length > 0) {
+                        console.log(`✅ Timetable rendered successfully with ${courseCells.length} visible course cell(s)`);
+                        // Hide loading spinner if courses are displayed
+                        if (loadingSpinner) {
+                            loadingSpinner.classList.add('hidden');
+                        }
+                    } else if (cellsWithCourses > 0) {
+                        console.error(`❌ ERROR: ${cellsWithCourses} courses were added to HTML but ${courseCells.length} found in DOM!`);
+                        console.error(`   This means the HTML was generated but courses are not visible.`);
+                        console.error(`   Check CSS or HTML structure.`);
+                        // Still hide loading spinner
+                        if (loadingSpinner) {
+                            loadingSpinner.classList.add('hidden');
+                        }
+                    } else {
+                        console.warn(`⚠️ No course cells found in DOM`);
+                        // Hide loading spinner
+                        if (loadingSpinner) {
+                            loadingSpinner.classList.add('hidden');
+                        }
+                    }
+                } else {
+                    console.error(`❌ scheduleBody element not found!`);
+                    // Hide loading spinner even if scheduleBody is missing
+                    if (loadingSpinner) {
+                        loadingSpinner.classList.add('hidden');
+                    }
+                }
+            },
+            viewCourse(courseId) {
+                const course = allCourses.find(c => c.id === courseId);
+                if (!course) return;
+
+                // Check if this is a day-specific schedule (asynchronized)
+                // Backend creates IDs like "db_{courseId}_{day}" for day-specific schedules
+                // But we need to verify it's actually day-specific by checking if schedules have different times
+                const hasDaySpecificId = courseId.toString().startsWith('db_') && courseId.toString().includes('_');
+                let baseCourseId = courseId;
+                let allDaySchedules = [];
+                let isDaySpecific = false;
+                
+                if (hasDaySpecificId) {
+                    // Extract base course ID (e.g., "db_123_Mon" -> "123")
+                    const parts = courseId.toString().split('_');
+                    if (parts.length >= 2) {
+                        baseCourseId = parts[1];
+                        // Find all day-specific schedules for this course
+                        allDaySchedules = allCourses.filter(c => {
+                            if (c.id.toString().startsWith(`db_${baseCourseId}_`)) {
+                                return true;
+                            }
+                            return false;
+                        }).sort((a, b) => {
+                            // Sort by day order
+                            const dayOrder = { 'M': 1, 'T': 2, 'W': 3, 'Th': 4, 'F': 5, 'S': 6, 'Su': 7 };
+                            const aDay = a.days && a.days[0] ? a.days[0] : '';
+                            const bDay = b.days && b.days[0] ? b.days[0] : '';
+                            return (dayOrder[aDay] || 99) - (dayOrder[bDay] || 99);
+                        });
+                        
+                        // Check if schedules have different times (true day-specific) or same times (synchronized)
+                        if (allDaySchedules.length > 1) {
+                            const firstSchedule = allDaySchedules[0];
+                            const firstStartTime = firstSchedule.startTime || firstSchedule.classStartTime;
+                            const firstEndTime = firstSchedule.endTime || firstSchedule.classEndTime;
+                            
+                            // Check if any schedule has different times
+                            isDaySpecific = allDaySchedules.some(schedule => {
+                                const scheduleStartTime = schedule.startTime || schedule.classStartTime;
+                                const scheduleEndTime = schedule.endTime || schedule.classEndTime;
+                                return scheduleStartTime !== firstStartTime || scheduleEndTime !== firstEndTime;
+                            });
+                        } else {
+                            // Single schedule - not day-specific
+                            isDaySpecific = false;
+                        }
+                    }
+                }
+
+                const isHighSchool = course.schoolType === 'HighSchool';
+                const mainIdentifier = course.courseName || course.name || 'Unnamed Course';
+                const locationDisplay = course.room ? course.room : 'N/A';
+                const daysMap = { 'M': 'Monday', 'T': 'Tuesday', 'W': 'Wednesday', 'Th': 'Thursday', 'F': 'Friday', 'S': 'Saturday', 'Su': 'Sunday' };
+                
+                // For day-specific schedules, collect all days from all schedules
+                let daysList = [];
+                if (isDaySpecific && allDaySchedules.length > 0) {
+                    // Get all unique days from all day-specific schedules
+                    const allDaysSet = new Set();
+                    allDaySchedules.forEach(schedule => {
+                        if (schedule.days && Array.isArray(schedule.days)) {
+                            schedule.days.forEach(day => allDaysSet.add(day));
+                        } else if (schedule.days) {
+                            allDaysSet.add(schedule.days);
+                        }
+                    });
+                    daysList = Array.from(allDaysSet).map(d => daysMap[d] || d).sort((a, b) => {
+                        const dayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 6, 'Sunday': 7 };
+                        return (dayOrder[a] || 99) - (dayOrder[b] || 99);
+                    });
+                } else {
+                    // For synchronized schedules, use the course's days
+                    daysList = (course.days || []).map(d => daysMap[d] || d);
+                }
+                
+                // Get course color for modal header
+                const courseColor = course.color || course.themeColor || '#4c51bf';
+                const rgb = hexToRgb(courseColor);
+                let headerGradient = `linear-gradient(135deg, #4c51bf 0%, #667eea 100%)`;
+                if (rgb) {
+                    const darkR = Math.max(0, rgb.r - 20);
+                    const darkG = Math.max(0, rgb.g - 20);
+                    const darkB = Math.max(0, rgb.b - 20);
+                    const lightR = Math.min(255, rgb.r + 30);
+                    const lightG = Math.min(255, rgb.g + 30);
+                    const lightB = Math.min(255, rgb.b + 30);
+                    headerGradient = `linear-gradient(135deg, rgb(${darkR}, ${darkG}, ${darkB}) 0%, rgb(${rgb.r}, ${rgb.g}, ${rgb.b}) 50%, rgb(${lightR}, ${lightG}, ${lightB}) 100%)`;
+                }
+                
+                // Update modal header color
+                const modalHeader = document.getElementById('modal-header');
+                if (modalHeader) {
+                    modalHeader.style.background = headerGradient;
+                }
+
+                // Format the beautiful, organized modal content
+                let scheduleHtml = '';
+                
+                if (isDaySpecific && allDaySchedules.length > 0) {
+                    // Display all day-specific schedules
+                    scheduleHtml = `
+                        <div class="mb-6">
+                            <h4 class="text-base font-bold text-gray-800 mb-3 flex items-center">
+                                <i class="fas fa-clock text-indigo-600 mr-2"></i>Class Schedule (Day-Specific)
+                            </h4>
+                            <div class="space-y-3">
+                                ${allDaySchedules.map(schedule => {
+                                    const dayName = schedule.days && schedule.days[0] ? daysMap[schedule.days[0]] || schedule.days[0] : 'Unknown';
+                                    const startTime = formatTimeDisplay(schedule.startTime || schedule.classStartTime || '');
+                                    const endTime = formatTimeDisplay(schedule.endTime || schedule.classEndTime || '');
+                                    const room = schedule.room || 'N/A';
+                                    return `
+                                        <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4 border-l-4 shadow-sm" style="border-left-color: ${courseColor};">
+                                            <div class="flex items-center justify-between mb-3">
+                                                <h5 class="text-lg font-bold text-gray-900">${dayName}</h5>
+                        </div>
+                                            <div class="grid grid-cols-2 gap-3 mb-3">
+                        <div>
+                                                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Time</label>
+                                                    <p class="text-base font-bold text-indigo-700">${startTime} - ${endTime}</p>
+                        </div>
+                                                <div>
+                                                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Room</label>
+                                                    <p class="text-base font-bold text-gray-900">${room}</p>
+                        </div>
+                        </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Synchronized schedule - single time for all days
+                    const startTimeDisplay = formatTimeDisplay(course.startTime || course.classStartTime || '');
+                    const endTimeDisplay = formatTimeDisplay(course.endTime || course.classEndTime || '');
+                    
+                    scheduleHtml = `
+                        <!-- Schedule Time Section -->
+                        <div class="mb-6">
+                            <h4 class="text-base font-bold text-gray-800 mb-3 flex items-center">
+                                <i class="fas fa-clock text-indigo-600 mr-2"></i>Class Schedule
+                            </h4>
+                            <div class="grid grid-cols-3 gap-4">
+                                <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
+                                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Start Time</label>
+                                    <p class="text-lg font-bold text-indigo-700">${startTimeDisplay || 'N/A'}</p>
+                        </div>
+                                <div class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-100">
+                                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">End Time</label>
+                                    <p class="text-lg font-bold text-purple-700">${endTimeDisplay || 'N/A'}</p>
+                                </div>
+                                <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+                                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Room</label>
+                                    <p class="text-lg font-bold text-gray-900">${locationDisplay || 'N/A'}</p>
+                                </div>
+                        </div>
+                    </div>
+
+                    `;
+                }
+                
+                const courseCodeDisplay = course.code || course.courseCode || '';
+                const headerDisplay = courseCodeDisplay ? `${courseCodeDisplay} - ${mainIdentifier}` : mainIdentifier;
+                
+                const canEdit = isTeacher && course.id;
+                // Normalize base course id for edit (handles day-specific ids like "db_123_Mon")
+                let editTargetId = course.id;
+                try {
+                    const m = course.id && course.id.toString().match(/^db_(\d+)/i);
+                    if (m && m[1]) editTargetId = m[1];
+                } catch (e) {}
+                const sectionDisplay = (course.section || '').toString().trim().toUpperCase();
+                courseDetails.innerHTML = `
+                    <!-- Course Header Section -->
+                    <div class="mb-6">
+                        <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-5 border-l-4 shadow-sm" style="border-left-color: ${courseColor}; width: 100%;">
+                            <div class="flex items-center justify-between">
+                                <div class="flex-1">
+                                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">
+                                        <i class="fas fa-book text-indigo-600 mr-2"></i>Course Information
+                                    </label>
+                                    <p class="text-2xl font-bold text-gray-900 mt-1">${headerDisplay}</p>
+                                    <p class="text-sm font-semibold text-gray-700 mt-1">${sectionDisplay ? 'Section ' + sectionDisplay : ''}</p>
+                        </div>
+                                ${canEdit ? `
+                                <div class="ml-4">
+                                    <a href="{% url 'dashboard:instructor_courses' %}?edit_course=${editTargetId}" class="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg shadow hover:bg-indigo-700">
+                                        <i class="fas fa-edit"></i> Edit
+                                    </a>
+                                </div>
+                                ` : ``}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Course Details Grid -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                            <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+                                <i class="fas fa-chalkboard-teacher text-purple-500 mr-2"></i>Instructor
+                            </label>
+                            <p class="text-base font-semibold text-gray-900">${course.teacherName || course.instructor || 'N/A'}</p>
+                        </div>
+                    </div>
+
+                    ${scheduleHtml}
+
+                    <!-- Days of the Week -->
+                    <div class="mb-4">
+                        <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
+                            <i class="fas fa-calendar-week text-indigo-600 mr-2"></i>Days of the Week
+                        </label>
+                        <div class="flex flex-wrap gap-2">
+                            ${daysList.map(day => `
+                                <span class="px-4 py-2 rounded-full font-bold text-white shadow-md" style="background: linear-gradient(135deg, ${courseColor} 0%, ${courseColor}dd 100%);">
+                                    ${day}
+                                </span>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+
+                document.body.classList.add('blur-navbar', 'blur-sidebar', 'blur-background');
+                modal.classList.remove('hidden');
+                // Animate modal appearance
+                const modalContent = modal.querySelector('.bg-white');
+                if (modalContent) {
+                    modalContent.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        modalContent.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+                        modalContent.style.transform = 'scale(1)';
+                    }, 10);
+                }
+            },
+            hideModal() {
+                document.body.classList.remove('blur-navbar', 'blur-sidebar', 'blur-background');
+                modal.classList.add('hidden');
+                // Reset modal header to default
+                const modalHeader = document.getElementById('modal-header');
+                if (modalHeader) {
+                    modalHeader.style.background = 'linear-gradient(135deg, #4c51bf 0%, #667eea 100%)';
+                }
+            }
+        };
+
+        window.CourseViewer = CourseViewer;
+
+        document.getElementById('close-modal-btn').addEventListener('click', () => CourseViewer.hideModal());
+        modal.addEventListener('click', e => { if (e.target === modal) CourseViewer.hideModal(); });
+
+        window.onload = () => {
+            console.log('🚀 Page loaded, initializing timetable...');
+            
+            try {
+                // Start PH clock (UTC+8)
+                (function startPhClock() {
+                    const dayEl = document.getElementById('ph-day');
+                    const dateEl = document.getElementById('ph-date');
+                    const timeEl = document.getElementById('ph-time');
+                    if (!dateEl || !timeEl) return;
+                    function tick() {
+                        try {
+                            const now = new Date();
+                            // format in Asia/Manila
+                            const dayFmt = new Intl.DateTimeFormat('en-PH', {
+                                timeZone: 'Asia/Manila',
+                                weekday: 'long'
+                            });
+                            const dateFmt = new Intl.DateTimeFormat('en-PH', {
+                                timeZone: 'Asia/Manila',
+                                year: 'numeric', month: 'long', day: '2-digit'
+                            });
+                            const timeFmt = new Intl.DateTimeFormat('en-PH', {
+                                timeZone: 'Asia/Manila',
+                                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                                hour12: true
+                            });
+                            if (dayEl) dayEl.textContent = dayFmt.format(now);
+                            dateEl.textContent = dateFmt.format(now);
+                            timeEl.textContent = timeFmt.format(now);
+                        } catch (e) {
+                            if (dayEl) dayEl.textContent = '';
+                            dateEl.textContent = '';
+                            timeEl.textContent = '';
+                        }
+                    }
+                    tick();
+                    setInterval(tick, 1000);
+                })();
+                // Restore filters first
+                // 1) Apply URL params to controls so UI reflects the link
+                applyUrlFiltersToControls();
+                restoreTimetableFilters();
+                // Rebuild section options after restoring filters (uses current SY and Semester)
+                rebuildSectionOptions();
+                
+                // Check if course was added
+                try {
+                    const courseAdded = localStorage.getItem('course_added');
+                    if (courseAdded) {
+                        console.log('📝 Course was added, clearing cache...');
+                        // Clear the flag
+                        localStorage.removeItem('course_added');
+                        // Clear courses cache to force fresh load
+                        try {
+                            localStorage.removeItem('schedule_manager_courses_v1');
+                            console.log('✅ Cache cleared');
+                        } catch (e) {
+                            console.warn('Could not clear courses cache:', e);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Could not check course_added flag:', e);
+                }
+                
+                // Initialize and load courses
+                console.log('📚 Initializing storage...');
+            CourseViewer.initStorage();
+                
+                // Small delay to ensure DOM is ready
+                setTimeout(() => {
+                    try {
+                        console.log('🎨 Loading and rendering courses...');
+            CourseViewer.loadAndRenderCourses();
+                        // After courses load, rebuild section options again in case new data changes availability
+                        rebuildSectionOptions();
+                    } catch (error) {
+                        console.error('❌ Error in loadAndRenderCourses:', error);
+                        // ALWAYS hide spinner on error
+                        if (loadingSpinner) {
+                            loadingSpinner.classList.add('hidden');
+                        }
+                    }
+                }, 100);
+            } catch (error) {
+                console.error('❌ Error in window.onload:', error);
+                // ALWAYS hide spinner on error
+                if (loadingSpinner) {
+                    loadingSpinner.classList.add('hidden');
+                }
+            }
+        };
+        
+        // Save filters whenever they change
+        document.addEventListener('DOMContentLoaded', function() {
+            const filterInputs = ['filter-school-year', 'filter-section', 'filter-semester'];
+            filterInputs.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.addEventListener('change', function() {
+                        saveTimetableFilters();
+                        // When School Year or Semester changes, rebuild sections list to reflect available sections
+                        if (id === 'filter-school-year' || id === 'filter-semester') {
+                            rebuildSectionOptions();
+                        }
+                    });
+                }
+            });
+        });
+    </script>
+</div>
+{% endblock %}
+

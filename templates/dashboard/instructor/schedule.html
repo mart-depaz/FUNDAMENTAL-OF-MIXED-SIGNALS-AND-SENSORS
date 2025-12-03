@@ -1,0 +1,933 @@
+<!--
+templates folder : library_system/templates/dashboard/schedule.html
+-->
+
+
+
+{% extends user.is_teacher|yesno:"dashboard/instructor/teacher.html,dashboard/student/student.html" %}
+{% load static %}
+{% block title %}Class Schedule{% endblock %}
+{% block dashboard_content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+    body { 
+        font-family: 'Inter', sans-serif;
+        background: #f4f5fb;
+    }
+    /* Unified Grey Scrollbar Styling */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #f5f5f5;
+        border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 10px;
+        border: 2px solid #f5f5f5;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+    }
+    .modal-content {
+        overflow-y: auto;
+        max-height: 80vh;
+        padding-right: 8px;
+    }
+    .modal-content::-webkit-scrollbar {
+        width: 10px;
+    }
+    .modal-content::-webkit-scrollbar-track {
+        background: #f5f5f5;
+        border-radius: 10px;
+    }
+    .modal-content::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 10px;
+        border: 2px solid #f5f5f5;
+    }
+    .modal-content::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+    }
+    .content {
+        overflow-y: auto !important;
+        max-height: calc(100vh - 60px);
+    }
+    body.blur-navbar .navbar {
+        filter: blur(5px);
+        transition: filter 0.3s ease;
+        pointer-events: none;
+    }
+    body.blur-sidebar .sidebar {
+        filter: blur(5px);
+        transition: filter 0.3s ease;
+        pointer-events: none;
+    }
+    body.blur-background {
+        overflow: hidden;
+    }
+    .timetable-course-title {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        word-break: break-word;
+    }
+</style>
+
+<div>
+    {% if is_student %}
+    <h2 class="text-2xl font-bold mb-4 text-indigo-800">My Class Schedule</h2>
+    <p class="text-gray-600 mb-4">
+        View your courses for {{ current_semester }} Semester{% if school_year %} - {{ school_year }}{% endif %}.
+        {% if user.program %}<strong>Program:</strong> {{ user.program.code }} - {{ user.program.name }}{% endif %}
+        {% if user.year_level %}<strong>Year Level:</strong> {{ user.year_level }}{% endif %}
+        {% if user.section %}<strong>Section:</strong> {{ user.section }}{% endif %}
+    </p>
+    
+    {% if not user.program or not user.year_level or not user.section %}
+    <div class="mb-4 text-sm font-medium text-yellow-600 bg-yellow-100 p-3 rounded-lg shadow-sm border border-yellow-300">
+        <i class="fas fa-exclamation-triangle mr-2"></i>
+        Please complete your profile information (Program, Year Level, and Section) to view your class schedule.
+    </div>
+    {% endif %}
+    {% if student_schedule_entries|length == 0 %}
+    <div class="mb-4 text-sm font-medium text-indigo-700 bg-indigo-50 p-3 rounded-lg shadow-sm border border-indigo-200">
+        <i class="fas fa-info-circle mr-2"></i>
+        You are not enrolled in any courses yet. Use the <strong>Enroll Course</strong> page to join a class and your timetable will appear here automatically.
+    </div>
+    {% endif %}
+    
+    <section id="controls" class="mb-6 flex justify-between items-center gap-3">
+        <div class="flex gap-2">
+            <select id="semester-select" class="px-4 py-2 border border-gray-300 rounded-xl focus:border-indigo-500 focus:ring-indigo-500">
+                <option value="1st" {% if current_semester == '1st' %}selected{% endif %}>1st Semester</option>
+                <option value="2nd" {% if current_semester == '2nd' %}selected{% endif %}>2nd Semester</option>
+                <option value="summer" {% if current_semester == 'summer' %}selected{% endif %}>Summer</option>
+            </select>
+            <input type="text" id="school-year-input" placeholder="School Year (e.g., 2024-2025)" value="{{ school_year|default:'' }}" class="px-4 py-2 border border-gray-300 rounded-xl focus:border-indigo-500 focus:ring-indigo-500">
+            <button onclick="filterSchedule()" class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition duration-150">
+                <i class="fas fa-filter mr-2"></i>Filter
+            </button>
+        </div>
+    </section>
+    {% else %}
+    <h2 class="text-2xl font-bold mb-4 text-indigo-800">Course Schedule Manager (Local)</h2>
+    <p class="text-gray-600 mb-4">
+        Manage your academic schedule, adding subjects, rooms, and attendance periods.
+        Courses are separated by School Type and data is saved to your browser's local storage.
+    </p>
+    <div class="mb-4 text-sm font-medium text-gray-500 bg-gray-100 p-2 rounded-lg shadow-sm">
+        Status: Data saved locally in this browser instance.
+    </div>
+
+    <section id="controls" class="mb-6 flex justify-end gap-3">
+        {% if is_teacher %}
+        <a href="{% url 'dashboard:courses' %}" class="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition duration-150 shadow-lg shadow-indigo-200">
+            <i class="fas fa-book mr-2"></i>
+            <span>Manage Courses</span>
+        </a>
+        <a href="{% url 'dashboard:weekly_timetable' %}" class="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-xl hover:bg-green-700 transition duration-150 shadow-lg">
+            <i class="fas fa-calendar mr-2"></i>
+            <span>View Weekly Timetable</span>
+        </a>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    <section id="schedule-view" class="bg-white rounded-3xl shadow-2xl p-4 md:p-6 overflow-x-auto ml-auto w-full">
+        <h3 class="text-xl font-semibold mb-4 text-indigo-800">Weekly Timetable</h3>
+        <div id="loading-spinner" class="text-center py-12 text-gray-500 hidden">
+            <svg class="animate-spin h-8 w-8 text-indigo-500 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Loading schedule...
+        </div>
+        <table id="schedule-table" class="min-w-full divide-y divide-indigo-200 border border-indigo-200 rounded-xl overflow-hidden">
+            <thead class="bg-indigo-50">
+                <tr>
+                    <th class="px-3 py-3 text-center text-xs font-bold text-indigo-600 uppercase tracking-wider w-32" style="min-width: 140px;">Time</th>
+                    <th class="px-3 py-3 text-left text-xs font-bold text-indigo-600 uppercase tracking-wider">Monday</th>
+                    <th class="px-3 py-3 text-left text-xs font-bold text-indigo-600 uppercase tracking-wider">Tuesday</th>
+                    <th class="px-3 py-3 text-left text-xs font-bold text-indigo-600 uppercase tracking-wider">Wednesday</th>
+                    <th class="px-3 py-3 text-left text-xs font-bold text-indigo-600 uppercase tracking-wider">Thursday</th>
+                    <th class="px-3 py-3 text-left text-xs font-bold text-indigo-600 uppercase tracking-wider">Friday</th>
+                    <th class="px-3 py-3 text-left text-xs font-bold text-indigo-600 uppercase tracking-wider">Saturday</th>
+                    <th class="px-3 py-3 text-left text-xs font-bold text-indigo-600 uppercase tracking-wider">Sunday</th>
+                </tr>
+            </thead>
+            <tbody id="schedule-body" class="bg-white divide-y divide-indigo-100">
+                <!-- Rows generated by JS -->
+            </tbody>
+        </table>
+        <p id="no-classes-message" class="text-center text-gray-400 py-6 hidden">
+            {% if is_student %}
+            You are not enrolled in any courses yet. Go to the Enroll Course page and join a class to see your timetable here.
+            {% else %}
+            No classes scheduled yet. Click "Add New Course" to get started!
+            {% endif %}
+        </p>
+        
+        {% if is_student and courses %}
+        <div class="mt-6">
+            <h4 class="text-lg font-semibold mb-4 text-indigo-800">My Courses</h4>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for course in courses %}
+                <div class="bg-white border-2 border-indigo-200 rounded-xl p-4 shadow-md hover:shadow-lg transition duration-200">
+                    <div class="flex items-start justify-between mb-2">
+                        <div>
+                            <h5 class="font-bold text-indigo-800 text-lg">{{ course.code }}</h5>
+                            <p class="text-gray-700 text-sm mt-1">{{ course.name }}</p>
+                        </div>
+                    </div>
+                    <div class="space-y-2 text-sm text-gray-600">
+                        {% if course.instructor %}
+                        <p><i class="fas fa-user-tie mr-2 text-indigo-600"></i><strong>Instructor:</strong> {{ course.instructor.full_name|default:course.instructor.username }}</p>
+                        {% endif %}
+                        {% if course.room %}
+                        <p><i class="fas fa-door-open mr-2 text-indigo-600"></i><strong>Room:</strong> {{ course.room }}</p>
+                        {% endif %}
+                        <p><i class="fas fa-clock mr-2 text-indigo-600"></i><strong>Time:</strong> {{ course.start_time|time:"g:i A" }} - {{ course.end_time|time:"g:i A" }}</p>
+                        <p><i class="fas fa-calendar-week mr-2 text-indigo-600"></i><strong>Days:</strong> {{ course.days }}</p>
+                        {% if course.attendance_start and course.attendance_end %}
+                        <p><i class="fas fa-check-circle mr-2 text-green-600"></i><strong>Attendance:</strong> {{ course.attendance_start|time:"g:i A" }} - {{ course.attendance_end|time:"g:i A" }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% elif is_student and user.program and user.year_level and user.section %}
+        <div class="text-center py-12 text-gray-400">
+            <i class="fas fa-book-open text-6xl mb-4"></i>
+            <p class="text-lg">No courses found for your program, year level, and section.</p>
+            <p class="text-sm mt-2">Please contact your administrator if you believe this is an error.</p>
+        </div>
+        {% endif %}
+    </section>
+
+    {% if is_student %}
+    {{ student_schedule_entries|json_script:"student-course-data" }}
+    {% endif %}
+    {% if is_teacher and teacher_schedule_entries %}
+    {{ teacher_schedule_entries|json_script:"teacher-course-data" }}
+    {% endif %}
+
+    <!-- Modal -->
+    <div id="course-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-50 transition-opacity duration-300">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="bg-white p-6 md:p-8 rounded-3xl shadow-2xl w-full max-w-lg m-4 transform transition-all duration-300 scale-95 modal-content overflow-y-auto max-h-[80vh]">
+                <h3 id="modal-title" class="text-2xl font-bold mb-6 text-indigo-700">Add New Course</h3>
+                <form id="course-form">
+                    <input type="hidden" id="course-id">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div class="md:col-span-2">
+                            <label for="course-name" id="course-name-label" class="block text-sm font-medium text-gray-700">Course Name / Subject</label>
+                            <input type="text" id="course-name" required class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div id="course-code-group">
+                            <label for="course-code" class="block text-sm font-medium text-gray-700">Course Code</label>
+                            <input type="text" id="course-code" class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div id="room-group">
+                            <label for="room" class="block text-sm font-medium text-gray-700">Room / Location</label>
+                            <input type="text" id="room" class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="teacher-name" class="block text-sm font-medium text-gray-700">Teacher/Instructor Name</label>
+                            <input type="text" id="teacher-name" required class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <h4 class="text-lg font-semibold mt-4 mb-3 text-indigo-600">Class Schedule Time</h4>
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <label for="start-time" class="block text-sm font-medium text-gray-700">Class Start Time</label>
+                            <input type="time" id="start-time" required class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label for="end-time" class="block text-sm font-medium text-gray-700">Class End Time</label>
+                            <input type="time" id="end-time" required class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <h4 class="text-lg font-semibold mt-4 mb-3 text-indigo-600">Attendance Window</h4>
+                    <p class="text-xs text-gray-500 mb-4">Attendance will close at the assigned End Time.</p>
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <label for="attendance-time-in" class="block text-sm font-medium text-gray-700">Time In</label>
+                            <input type="time" id="attendance-time-in" required class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label for="attendance-time-end" class="block text-sm font-medium text-gray-700">Time End (Auto-Close)</label>
+                            <input type="time" id="attendance-time-end" required class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Days of the Week</label>
+                        <div id="day-checkboxes" class="flex flex-wrap gap-2">
+                            <label class="day-label"><input type="checkbox" name="days" value="M" class="hidden"> <span class="checkbox-span">Mon</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="T" class="hidden"> <span class="checkbox-span">Tue</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="W" class="hidden"> <span class="checkbox-span">Wed</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="Th" class="hidden"> <span class="checkbox-span">Thu</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="F" class="hidden"> <span class="checkbox-span">Fri</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="S" class="hidden"> <span class="checkbox-span">Sat</span></label>
+                            <label class="day-label"><input type="checkbox" name="days" value="Su" class="hidden"> <span class="checkbox-span">Sun</span></label>
+                        </div>
+                        <style>
+                            .checkbox-span {
+                                display: block;
+                                padding: 8px 12px;
+                                border: 2px solid #e5e7eb;
+                                border-radius: 12px;
+                                cursor: pointer;
+                                transition: all 0.2s;
+                                font-weight: 500;
+                                color: #4b5563;
+                                background-color: #f9fafb;
+                            }
+                            input[type="checkbox"]:checked + .checkbox-span {
+                                background-color: #818cf8;
+                                color: white;
+                                border-color: #6366f1;
+                                box-shadow: 0 4px 6px -1px rgba(129, 140, 248, 0.4);
+                            }
+                        </style>
+                    </div>
+
+                    <h4 class="text-lg font-semibold mt-4 mb-3 text-indigo-600">Appearance</h4>
+                    <div class="mb-6" id="color-section">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Select Color Theme</label>
+                        <div id="color-selector" class="flex flex-wrap gap-3"></div>
+                        <input type="hidden" id="course-color" value="#3b82f6">
+                    </div>
+
+                    <h4 class="text-lg font-semibold mt-4 mb-3 text-indigo-600">Attendance Period</h4>
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <label for="start-date" class="block text-sm font-medium text-gray-700">Semester Start</label>
+                            <input type="date" id="start-date" required class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label for="end-date" class="block text-sm font-medium text-gray-700">Semester End</label>
+                            <input type="date" id="end-date" required class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end space-x-3">
+                        <button type="button" id="delete-course-btn" class="hidden px-4 py-2 bg-red-500 text-white font-semibold rounded-xl hover:bg-red-600 transition duration-150">
+                            Delete Course
+                        </button>
+                        <button type="button" id="cancel-modal-btn" class="px-4 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-6 py-2 bg-green-500 text-white font-semibold rounded-xl hover:bg-green-600 transition duration-150 shadow-md">
+                            Save Course
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var initialSchoolType = "{{ initial_school_type }}";
+        var isTeacher = "{{ is_teacher|yesno:'true,false' }}" === "true";
+        var isStudent = "{{ is_student|yesno:'true,false' }}" === "true";
+        const COURSES_KEY = 'schedule_manager_courses_v1';
+        const SETTINGS_KEY = 'schedule_manager_settings_v1';
+        
+        // Filter schedule for students
+        function filterSchedule() {
+            if (!isStudent) return;
+            const semester = document.getElementById('semester-select').value;
+            const schoolYear = document.getElementById('school-year-input').value;
+            let url = window.location.pathname + '?semester=' + semester;
+            if (schoolYear) {
+                url += '&school_year=' + encodeURIComponent(schoolYear);
+            }
+            window.location.href = url;
+        }
+        let allCourses = [];
+        let currentSchoolType = 'HighSchool';
+
+        const COLORS = [
+            { value: '#3b82f6', name: 'Blue' },
+            { value: '#10b981', name: 'Green' },
+            { value: '#f97316', name: 'Orange' },
+            { value: '#f43f5e', name: 'Red' },
+            { value: '#a855f7', name: 'Purple' },
+            { value: '#fbbf24', name: 'Yellow' },
+        ];
+
+        function getTextColorForBackground(hexColor) {
+            const hex = hexColor.replace('#', '');
+            const r = parseInt(hex.substr(0, 2), 16);
+            const g = parseInt(hex.substr(2, 2), 16);
+            const b = parseInt(hex.substr(4, 2), 16);
+            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            return brightness > 155 ? '#1f2937' : '#ffffff';
+        }
+
+        const scheduleBody = document.getElementById('schedule-body');
+        const modal = document.getElementById('course-modal');
+        const form = document.getElementById('course-form');
+        const modalTitle = document.getElementById('modal-title');
+        const courseIdInput = document.getElementById('course-id');
+        const deleteBtn = document.getElementById('delete-course-btn');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const noClassesMessage = document.getElementById('no-classes-message');
+        const colorInput = document.getElementById('course-color');
+        const colorSelectorDiv = document.getElementById('color-selector');
+        const courseCodeGroup = document.getElementById('course-code-group');
+        const roomGroup = document.getElementById('room-group');
+        const courseNameLabel = document.getElementById('course-name-label');
+        const saveBtn = form.querySelector('button[type="submit"]');
+        const cancelBtn = document.getElementById('cancel-modal-btn');
+
+        // === HELPER FUNCTIONS ===
+        function timeToMinutes(time) {
+            if (!time) return 0;
+            const [h, m] = time.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        function alignStartToSlot(minutes) {
+            if (!Number.isFinite(minutes)) return null;
+            return Math.floor(minutes / 30) * 30;
+        }
+
+        function alignEndToSlot(minutes, alignedStart) {
+            if (!Number.isFinite(minutes)) return alignedStart + 30;
+            const ceilAligned = Math.ceil(minutes / 30) * 30;
+            if (!Number.isFinite(alignedStart)) return ceilAligned;
+            return Math.max(alignedStart + 30, ceilAligned);
+        }
+
+        function calculateRowspanAndEnd(startMin, endMin, timeSlots) {
+            if (!Number.isFinite(startMin)) return null;
+            const alignedStart = alignStartToSlot(startMin);
+            const alignedEnd = alignEndToSlot(endMin, alignedStart);
+            const startIndex = timeSlots.findIndex(t => timeToMinutes(t) === alignedStart);
+            if (startIndex === -1) return null;
+            const totalSlots = Math.max(1, Math.ceil((alignedEnd - alignedStart) / 30));
+            return { startIndex, rowspan: totalSlots };
+        }
+
+        function formatTimeDisplay(time) {
+            if (!time) return 'N/A';
+            const [h, m] = time.split(':').map(Number);
+            const period = h >= 12 ? 'PM' : 'AM';
+            const hour = h % 12 || 12;
+            return `${hour}:${m.toString().padStart(2, '0')} ${period}`;
+        }
+
+        function formatTimeRange(time) {
+            if (!time) return 'N/A';
+            const parts = time.split(':').map(Number);
+            if (parts.length < 2 || parts.some(isNaN)) return time;
+            const startMinutes = parts[0] * 60 + parts[1];
+            const endMinutes = startMinutes + 30;
+            const endHour = Math.floor(endMinutes / 60) % 24;
+            const endMinute = endMinutes % 60;
+            const endTime = `${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
+            return `${formatTimeDisplay(time)} - ${formatTimeDisplay(endTime)}`;
+        }
+
+        function formatDateDisplay(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return new Date(date.getTime() + date.getTimezoneOffset() * 60000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        const DAY_SYMBOL_MAP = {
+            'Mon': 'M', 'Monday': 'M', 'MON': 'M', 'M': 'M',
+            'Tue': 'T', 'Tuesday': 'T', 'TUE': 'T', 'T': 'T',
+            'Wed': 'W', 'Wednesday': 'W', 'WED': 'W', 'W': 'W',
+            'Thu': 'Th', 'Thursday': 'Th', 'THU': 'Th', 'TH': 'Th',
+            'Fri': 'F', 'Friday': 'F', 'FRI': 'F', 'F': 'F',
+            'Sat': 'S', 'Saturday': 'S', 'SAT': 'S', 'S': 'S',
+            'Sun': 'Su', 'Sunday': 'Su', 'SUN': 'Su', 'SU': 'Su'
+        };
+
+        function normalizeDaySymbol(day) {
+            if (!day) return '';
+            const trimmed = day.toString().trim();
+            if (DAY_SYMBOL_MAP[trimmed]) return DAY_SYMBOL_MAP[trimmed];
+            const titleCase = trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+            return DAY_SYMBOL_MAP[titleCase] || '';
+        }
+
+        function generateTimeSlots() {
+            const slots = [];
+            let currentMin = 5 * 60; // 5:00 AM
+            const endMinTotal = 21 * 60; // 9:00 PM
+            while (currentMin <= endMinTotal) {
+                const h = Math.floor(currentMin / 60) % 24;
+                const m = currentMin % 60;
+                slots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
+                currentMin += 30;
+            }
+            return slots;
+        }
+
+        function loadStudentCoursesFromJSON() {
+            const scriptElement = document.getElementById('student-course-data');
+            if (!scriptElement) {
+                console.warn('Student course data not found.');
+                return [];
+            }
+            try {
+                const rawData = JSON.parse(scriptElement.textContent);
+                return (rawData || []).map(entry => {
+                    const days = Array.isArray(entry.days) ? entry.days : [];
+                    return {
+                        id: entry.id || '',
+                        courseCode: entry.courseCode || '',
+                        courseName: entry.courseName || '',
+                        teacherName: entry.teacherName || '',
+                        room: entry.room || '',
+                        days,
+                        startTime: entry.start || entry.startTime || '',
+                        endTime: entry.end || entry.endTime || '',
+                        attendanceTimeIn: entry.attendance_start || entry.attendanceStart || '',
+                        attendanceTimeEnd: entry.attendance_end || entry.attendanceEnd || '',
+                        color: entry.color || '#3b82f6',
+                        schoolType: entry.schoolType || initialSchoolType,
+                    };
+                });
+            } catch (error) {
+                console.error('Error parsing student course JSON:', error);
+                return [];
+            }
+        }
+
+        function loadTeacherCoursesFromJSON() {
+            const scriptElement = document.getElementById('teacher-course-data');
+            if (!scriptElement) {
+                return [];
+            }
+            try {
+                const rawData = JSON.parse(scriptElement.textContent);
+                return (rawData || []).map(entry => {
+                    const days = Array.isArray(entry.days) ? entry.days : [];
+                    return {
+                        id: entry.id || '',
+                        courseCode: entry.courseCode || entry.code || '',
+                        courseName: entry.courseName || entry.name || '',
+                        teacherName: entry.teacherName || '',
+                        room: entry.room || '',
+                        days,
+                        startTime: entry.startTime || entry.start || '',
+                        endTime: entry.endTime || entry.end || '',
+                        attendanceTimeIn: entry.attendanceTimeIn || entry.attendance_start || '',
+                        attendanceTimeEnd: entry.attendanceTimeEnd || entry.attendance_end || '',
+                        color: entry.color || '#3b82f6',
+                        schoolType: entry.schoolType || initialSchoolType,
+                        startDate: entry.start_date || '',
+                        endDate: entry.end_date || '',
+                    };
+                });
+            } catch (error) {
+                console.error('Error parsing teacher course JSON:', error);
+                return [];
+            }
+        }
+
+        function renderStudentSchedule(courses) {
+            const timeSlots = generateTimeSlots();
+            const days = ["M", "T", "W", "Th", "F", "S", "Su"];
+            const scheduleMap = timeSlots.map(time => {
+                const row = { time };
+                days.forEach(day => row[day] = []);
+                return row;
+            });
+
+            courses.forEach(course => {
+                const start = course.startTime || course.start || '';
+                const end = course.endTime || course.end || '';
+                if (!start || !end) return;
+                const startMin = timeToMinutes(start);
+                const endMin = timeToMinutes(end);
+                if (endMin <= startMin) return;
+                const placement = calculateRowspanAndEnd(startMin, endMin, timeSlots);
+                if (!placement) return;
+                const { startIndex, rowspan } = placement;
+                const normalizedDays = (course.days || []).map(normalizeDaySymbol).filter(Boolean);
+                if (!normalizedDays.length) return;
+
+                normalizedDays.forEach(dayKey => {
+                    if (startIndex >= scheduleMap.length) return;
+                    scheduleMap[startIndex][dayKey].push({
+                        ...course,
+                        rowspan,
+                        isContinuation: false
+                    });
+                    for (let i = 1; i < rowspan; i++) {
+                        const nextIndex = startIndex + i;
+                        if (nextIndex < scheduleMap.length) {
+                            scheduleMap[nextIndex][dayKey].push({ isContinuation: true });
+                        }
+                    }
+                });
+            });
+
+            let html = '';
+            scheduleMap.forEach(row => {
+                html += `<tr class="hover:bg-indigo-50 transition duration-100">`;
+                html += `<td class="px-3 py-2 text-sm font-semibold text-gray-800 border-r border-indigo-100 whitespace-nowrap text-center">${formatTimeRange(row.time)}</td>`;
+                days.forEach(dayKey => {
+                    const cellContent = row[dayKey];
+                    if (!cellContent.length) {
+                        html += `<td class="px-3 py-2 text-xs text-gray-400 border-r border-indigo-100"></td>`;
+                    } else {
+                        const firstItem = cellContent[0];
+                        if (firstItem.isContinuation) {
+                            html += `<td class="border-r border-indigo-100"></td>`;
+                            return;
+                        }
+                        const course = firstItem;
+                        const bgColor = course.color || '#3b82f6';
+                        const textColor = getTextColorForBackground(bgColor);
+                        const mainIdentifier = course.courseName || course.name || 'Untitled Course';
+                        const locationDisplay = course.room ? ` in ${course.room}` : '';
+                        html += `
+                            <td rowspan="${course.rowspan}"
+                                class="p-2 cursor-pointer transition duration-150 rounded-xl border shadow-md relative"
+                                style="background-color: ${bgColor}20; border-color: ${bgColor}60; color: ${textColor};"
+                                onclick="Modal.view ? Modal.view('${course.id}') : null;">
+                                <div class="font-bold text-sm timetable-course-title" style="color: ${bgColor};">${mainIdentifier}</div>
+                                <div class="text-xs text-gray-700 font-medium">
+                                    <span class="font-semibold">Instructor:</span> ${course.teacherName || 'N/A'}
+                                </div>
+                                <div class="text-xs text-gray-700 mt-1">
+                                    ${formatTimeDisplay(start)} - ${formatTimeDisplay(end)}${locationDisplay}
+                                </div>
+                                <div class="text-xs text-gray-600 mt-2 border-t border-dashed border-gray-400 pt-1">
+                                    <span class="font-semibold">Attendance:</span> ${formatTimeDisplay(course.attendanceTimeIn)} - ${formatTimeDisplay(course.attendanceTimeEnd)}
+                                </div>
+                            </td>
+                        `;
+                    }
+                });
+                html += `</tr>`;
+            });
+
+            scheduleBody.innerHTML = html;
+        }
+
+        // === CRUD & RENDER ===
+        const CourseCRUD = {
+            initStorage() {
+                if (isStudent) {
+                    allCourses = loadStudentCoursesFromJSON();
+                    currentSchoolType = initialSchoolType;
+                    return;
+                }
+                // For teachers: ALWAYS prioritize server courses (which are already filtered for archived/deleted)
+                // Server courses come from the backend which excludes archived/deleted courses
+                const serverCourses = loadTeacherCoursesFromJSON();
+                if (serverCourses.length > 0) {
+                    // Server courses are already filtered - use them exclusively
+                    allCourses = serverCourses;
+                    // CRITICAL: Clear localStorage to remove any old archived/deleted courses
+                    try {
+                        localStorage.removeItem(COURSES_KEY);
+                        console.log('✅ Cleared localStorage - using fresh server data (archived/deleted courses excluded)');
+                    } catch (e) {
+                        console.warn('⚠️ Could not clear localStorage:', e);
+                    }
+                } else {
+                    // No server courses available - don't use localStorage to avoid showing archived/deleted courses
+                    // Show empty schedule instead
+                    allCourses = [];
+                    try {
+                        localStorage.removeItem(COURSES_KEY);
+                        console.log('✅ No server courses - cleared localStorage to prevent showing archived/deleted courses');
+                    } catch (e) {
+                        console.warn('⚠️ Could not clear localStorage:', e);
+                    }
+                }
+                currentSchoolType = initialSchoolType;
+            },
+            saveAllCoursesToStorage() {
+                if (isStudent) return;
+                // Only save courses that come from server (already filtered for archived/deleted)
+                // This ensures localStorage never contains archived/deleted courses
+                const serverCourses = loadTeacherCoursesFromJSON();
+                if (serverCourses.length > 0) {
+                    // Only save server courses to localStorage (they're already filtered)
+                    try {
+                        localStorage.setItem(COURSES_KEY, JSON.stringify(serverCourses));
+                        console.log('✅ Saved server courses to localStorage (archived/deleted excluded)');
+                    } catch (e) {
+                        console.error("Error saving to localStorage:", e);
+                    }
+                } else {
+                    // If no server courses, clear localStorage to prevent stale data
+                    try {
+                        localStorage.removeItem(COURSES_KEY);
+                        console.log('✅ Cleared localStorage - no server courses available');
+                    } catch (e) {
+                        console.warn("Could not clear localStorage:", e);
+                    }
+                }
+            },
+            loadAndRenderCourses() {
+                // Always reload from server to get latest data (ensures archived/deleted courses are excluded)
+                // This prevents showing stale courses from localStorage
+                this.initStorage();
+                loadingSpinner.classList.remove('hidden');
+                const filteredCourses = isStudent 
+                    ? allCourses 
+                    : allCourses.filter(c => c.schoolType === currentSchoolType);
+                this.renderSchedule(filteredCourses);
+                noClassesMessage.classList.toggle('hidden', filteredCourses.length > 0);
+                loadingSpinner.classList.add('hidden');
+            },
+            saveCourse(courseData, courseId) {
+                if (isStudent) return;
+                if (courseId) {
+                    const index = allCourses.findIndex(c => c.id === courseId);
+                    if (index !== -1) allCourses[index] = { id: courseId, ...courseData };
+                } else {
+                    const newId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+                    allCourses.push({ id: newId, ...courseData });
+                }
+                this.saveAllCoursesToStorage();
+                this.loadAndRenderCourses();
+                Modal.hide();
+            },
+            deleteCourse(courseId) {
+                if (isStudent) return;
+                if (!confirm("Delete this course?")) return;
+                allCourses = allCourses.filter(c => c.id !== courseId);
+                this.saveAllCoursesToStorage();
+                this.loadAndRenderCourses();
+                Modal.hide();
+            },
+            renderSchedule(courses) {
+                const timeSlots = generateTimeSlots();
+                const days = ["M", "T", "W", "Th", "F", "S", "Su"];
+                const scheduleMap = timeSlots.map(time => {
+                    const row = { time };
+                    days.forEach(day => row[day] = []);
+                    return row;
+                });
+
+                courses.forEach(course => {
+                    if (!course.startTime || !course.endTime) return;
+                    const startMin = timeToMinutes(course.startTime);
+                    const endMin = timeToMinutes(course.endTime);
+                    if (endMin <= startMin) return;
+
+                    const placement = calculateRowspanAndEnd(startMin, endMin, timeSlots);
+                    if (!placement) return;
+                    const { startIndex, rowspan } = placement;
+
+                    course.days.forEach(dayKey => {
+                        if (!days.includes(dayKey)) return;
+                        const courseData = { ...course, rowspan, isContinuation: false };
+                        if (startIndex < scheduleMap.length) {
+                            scheduleMap[startIndex][dayKey].push(courseData);
+                        }
+                        for (let i = 1; i < rowspan; i++) {
+                            const nextIndex = startIndex + i;
+                            if (nextIndex < scheduleMap.length) {
+                                scheduleMap[nextIndex][dayKey].push({ isContinuation: true });
+                            }
+                        }
+                    });
+                });
+
+                let html = '';
+                scheduleMap.forEach(row => {
+                    const time = row.time;
+                    html += `<tr class="hover:bg-indigo-50 transition duration-100">`;
+                    html += `<td class="px-3 py-2 text-sm font-semibold text-gray-800 border-r border-indigo-100 whitespace-nowrap text-center">${formatTimeRange(time)}</td>`;
+                    days.forEach(dayKey => {
+                        const cellContent = row[dayKey];
+                        if (cellContent.length === 0) {
+                            html += `<td class="px-3 py-2 text-xs text-gray-400 border-r border-indigo-100"></td>`;
+                        } else {
+                            const firstItem = cellContent[0];
+                            if (firstItem.isContinuation) return;
+                            const course = firstItem;
+                            const bgColor = course.color || '#3b82f6';
+                            const textColor = getTextColorForBackground(bgColor);
+                            const isHighSchool = course.schoolType === 'HighSchool';
+                            const mainIdentifier = course.courseName || course.name || 'Untitled Course';
+                            const locationDisplay = course.room ? ` in ${course.room}` : '';
+                            const startDisplay = formatDateDisplay(course.startDate);
+                            const endDisplay = formatDateDisplay(course.endDate);
+
+                            html += `
+                                <td rowspan="${course.rowspan}" data-id="${course.id}"
+                                    class="p-2 cursor-pointer transition duration-150 rounded-xl border shadow-md relative group"
+                                    style="background-color: ${bgColor}20; border-color: ${bgColor}60; color: ${textColor};"
+                                    onmouseover="this.style.backgroundColor='${bgColor}30';"
+                                    onmouseout="this.style.backgroundColor='${bgColor}20';"
+                                    onclick="${isTeacher ? `Modal.edit('${course.id}')` : `Modal.view('${course.id}')`}"
+                                 >
+                                    <div class="font-bold text-sm timetable-course-title" style="color: ${bgColor};">${mainIdentifier}</div>
+                                    <div class="text-xs text-gray-700 font-medium">
+                                        <span class="font-semibold">Instructor:</span> ${course.teacherName}
+                                    </div>
+                                    <div class="text-xs text-gray-700 mt-1">
+                                        ${formatTimeDisplay(course.startTime)} - ${formatTimeDisplay(course.endTime)}${locationDisplay}
+                                    </div>
+                                    <div class="text-xs text-gray-600 mt-2 border-t border-dashed border-gray-400 pt-1">
+                                        <span class="font-semibold">Attendance:</span> ${formatTimeDisplay(course.attendanceTimeIn)} - ${formatTimeDisplay(course.attendanceTimeEnd)}
+                                    </div>
+                                    <div class="text-xs text-gray-500 mt-1">
+                                        <span class="font-semibold">Period:</span> ${startDisplay} to ${endDisplay}
+                                    </div>
+                                </td>
+                            `;
+                        }
+                    });
+                    html += `</tr>`;
+                });
+                scheduleBody.innerHTML = html;
+            }
+        };
+
+        // === MODAL ===
+        function renderColorSelector(defaultColor) {
+            colorSelectorDiv.innerHTML = COLORS.map(c => `
+                <label class="cursor-pointer p-1 rounded-full border-2 border-transparent hover:border-gray-400 transition">
+                    <input type="radio" name="color-select" value="${c.value}" class="hidden">
+                    <span title="${c.name}" class="inline-block w-8 h-8 rounded-full border-4 border-white shadow-md"
+                          style="background-color: ${c.value};"></span>
+                </label>
+            `).join('');
+            const update = (v) => {
+                colorInput.value = v;
+                colorSelectorDiv.querySelectorAll('input[name="color-select"]').forEach(i => {
+                    const label = i.closest('label');
+                    if (i.value === v) {
+                        i.checked = true;
+                        label.classList.add('ring-2', 'ring-indigo-500');
+                    } else {
+                        i.checked = false;
+                        label.classList.remove('ring-2', 'ring-indigo-500');
+                    }
+                });
+            };
+            update(defaultColor || COLORS[0].value);
+            colorSelectorDiv.querySelectorAll('input[name="color-select"]').forEach(i => i.addEventListener('change', e => update(e.target.value)));
+        }
+
+        const Modal = {
+            show: (mode, courseData = {}) => {
+                const isEdit = mode === 'edit', isView = mode === 'view';
+                modalTitle.textContent = isView ? 'View Course Details' : (isEdit ? 'Edit Course Details' : 'Add New Course');
+                deleteBtn.classList.toggle('hidden', !isEdit);
+                saveBtn.classList.toggle('hidden', isView);
+                form.reset();
+                courseIdInput.value = '';
+                renderColorSelector(courseData.color || COLORS[0].value);
+
+                const isHighSchool = currentSchoolType === 'HighSchool';
+                courseCodeGroup.classList.toggle('hidden', isHighSchool);
+                roomGroup.classList.toggle('hidden', isHighSchool);
+                courseNameLabel.textContent = isHighSchool ? 'Subject Name' : 'Course Name / Subject';
+
+                const inputs = form.querySelectorAll('input:not([type="hidden"]), select');
+                inputs.forEach(i => i.disabled = isView);
+                document.querySelectorAll('input[name="days"]').forEach(cb => cb.disabled = isView);
+                document.getElementById('color-section').style.display = (isView || (!isTeacher && isView)) ? 'none' : 'block';
+                colorSelectorDiv.style.display = (isView || (!isTeacher && isView)) ? 'none' : 'flex';
+
+                if (isEdit || isView) {
+                    courseIdInput.value = courseData.id || '';
+                    document.getElementById('course-name').value = courseData.courseName || '';
+                    document.getElementById('course-code').value = courseData.courseCode || '';
+                    document.getElementById('room').value = courseData.room || '';
+                    document.getElementById('teacher-name').value = courseData.teacherName || '';
+                    document.getElementById('start-time').value = courseData.startTime || '';
+                    document.getElementById('end-time').value = courseData.endTime || '';
+                    document.getElementById('attendance-time-in').value = courseData.attendanceTimeIn || '';
+                    document.getElementById('attendance-time-end').value = courseData.attendanceTimeEnd || '';
+                    document.getElementById('start-date').value = courseData.startDate || '';
+                    document.getElementById('end-date').value = courseData.endDate || '';
+                    document.getElementsByName('days').forEach(cb => {
+                        cb.checked = (courseData.days || []).includes(cb.value);
+                    });
+                    if (isEdit) deleteBtn.onclick = () => CourseCRUD.deleteCourse(courseData.id);
+                }
+
+                document.body.classList.add('blur-navbar', 'blur-sidebar', 'blur-background');
+                modal.classList.remove('hidden');
+            },
+            hide: () => {
+                document.body.classList.remove('blur-navbar', 'blur-sidebar', 'blur-background');
+                modal.classList.add('hidden');
+            },
+            edit: (id) => { const c = allCourses.find(x => x.id === id); if (c) Modal.show('edit', c); },
+            view: (id) => { const c = allCourses.find(x => x.id === id); if (c) Modal.show('view', c); },
+            add: () => Modal.show('add')
+        };
+        window.Modal = Modal;
+
+        if (isTeacher) {
+            const addBtn = document.getElementById('add-course-btn');
+            if (addBtn) addBtn.addEventListener('click', Modal.add);
+        }
+
+        cancelBtn.addEventListener('click', Modal.hide);
+        modal.addEventListener('click', e => { if (e.target === modal) Modal.hide(); });
+
+        form.addEventListener('submit', e => {
+            e.preventDefault();
+            if (!isTeacher) return;
+            const courseId = courseIdInput.value;
+            const selectedDays = Array.from(document.querySelectorAll('input[name="days"]:checked')).map(cb => cb.value);
+            if (selectedDays.length === 0) { alert("Select at least one day."); return; }
+
+            const startTime = document.getElementById('start-time').value;
+            const endTime = document.getElementById('end-time').value;
+            if (timeToMinutes(endTime) <= timeToMinutes(startTime)) { alert("End time must be after start time."); return; }
+
+            const isHighSchool = currentSchoolType === 'HighSchool';
+            const courseData = {
+                courseName: document.getElementById('course-name').value.trim(),
+                teacherName: document.getElementById('teacher-name').value.trim(),
+                startTime, endTime,
+                attendanceTimeIn: document.getElementById('attendance-time-in').value,
+                attendanceTimeEnd: document.getElementById('attendance-time-end').value,
+                startDate: document.getElementById('start-date').value,
+                endDate: document.getElementById('end-date').value,
+                days: selectedDays,
+                color: colorInput.value,
+                schoolType: currentSchoolType,
+                courseCode: isHighSchool ? '' : document.getElementById('course-code').value.trim(),
+                room: isHighSchool ? '' : document.getElementById('room').value.trim(),
+            };
+            CourseCRUD.saveCourse(courseData, courseId);
+        });
+
+        window.onload = () => {
+            if (isStudent) {
+                loadingSpinner.classList.remove('hidden');
+                allCourses = loadStudentCoursesFromJSON();
+                currentSchoolType = initialSchoolType;
+                renderStudentSchedule(allCourses);
+                noClassesMessage.classList.toggle('hidden', allCourses.length > 0);
+                loadingSpinner.classList.add('hidden');
+            } else {
+            CourseCRUD.initStorage();
+            CourseCRUD.loadAndRenderCourses();
+            }
+        };
+    </script>
+</div>
+{% endblock %}

@@ -1,0 +1,557 @@
+<!-- templates/dashboard/instructor/teacher_topbar.html -->
+{% load static %}
+<style>
+    .topbar-brand { text-decoration: none; }
+    .topbar-brand:hover .topbar-brand-text { text-decoration: underline; }
+    
+    /* Mobile hamburger menu toggle */
+    .mobile-sidebar-toggle {
+        display: none;
+    }
+    
+    @media (max-width: 1024px) {
+        .mobile-sidebar-toggle {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            cursor: pointer;
+            border-radius: 0.5rem;
+            transition: all 0.3s ease;
+            color: white;
+            font-size: 20px;
+            margin-right: 0.5rem;
+        }
+        
+        .mobile-sidebar-toggle:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+    }
+</style>
+<header id="teacher-top-bar" class="fixed top-0 left-0 right-0 z-50 w-full shadow-md" style="background: linear-gradient(90deg, #3C4770 0%, #447294 100%); box-shadow: 0 2px 10px rgba(60, 71, 112, 0.3);">
+    <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+            <!-- Mobile sidebar toggle button -->
+            <button class="mobile-sidebar-toggle lg:hidden" onclick="toggleSidebar()" title="Toggle Menu">
+                <i class="fas fa-bars"></i>
+            </button>
+            
+            <!-- Left Section: Attendance System Branding -->
+            <div class="flex items-center">
+                <a href="{% url 'dashboard:teacher_dashboard' %}" class="topbar-brand text-xl sm:text-2xl font-bold text-white select-none flex items-center hover:opacity-90 transition duration-150 cursor-pointer space-x-3">
+                    <span class="inline-flex items-center justify-center h-11 w-11 sm:h-13 sm:w-13 rounded-full bg-white/10 border border-white/30 shadow-md overflow-hidden">
+                        <img src="{% static 'img/attendance-logo.png' %}" alt="Attendance System logo" class="h-10 w-10 sm:h-12 sm:w-12 object-contain">
+                    </span>
+                    <span class="topbar-brand-text">Attendance System</span>
+                </a>
+            </div>
+            
+            <!-- Center Section: School Name with Profile Picture on Left -->
+            {% if school_admin and school_admin.school_name %}
+            <div class="flex-1 flex justify-center items-center space-x-2">
+                {% if school_admin.profile_picture %}
+                <img id="topbar-center-profile-picture" src="{{ school_admin.profile_picture.url }}?v={{ school_admin.id }}" alt="Profile" class="h-6 w-6 rounded-full object-cover border-2 border-white flex-shrink-0">
+                {% else %}
+                <div id="topbar-center-profile-placeholder" class="h-6 w-6 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0" style="background: rgba(190, 129, 153, 0.3);">
+                    {{ school_admin.username|first|upper|default:"A" }}
+                </div>
+                {% endif %}
+                <span class="text-sm text-white font-medium truncate max-w-xs sm:max-w-md">
+                    {{ school_admin.school_name }}
+                </span>
+            </div>
+            {% elif user.school_name %}
+            <div class="flex-1 flex justify-center items-center space-x-2">
+                <span class="text-sm text-white font-medium truncate max-w-xs sm:max-w-md">
+                    {{ user.school_name }}
+                </span>
+            </div>
+            {% else %}
+            <div class="flex-1"></div>
+            {% endif %}
+
+            <!-- Right Section: Action Icons -->
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <!-- Notifications Button with Dropdown -->
+                <div class="relative">
+                    <button type="button" onclick="toggleNotificationsDropdown()" class="relative p-2 text-white hover:bg-white/20 transition duration-150 rounded-full cursor-pointer" title="Notifications">
+                        <i class="fas fa-bell w-5 h-5"></i>
+                        <!-- Notification badge - always present, shown/hidden by JavaScript -->
+                        <span class="notification-badge-dot absolute top-0 right-0 block h-2 w-2 rounded-full ring-2 ring-white bg-red-500" style="display: {% if unread_notifications|default:0 > 0 %}block{% else %}none{% endif %};"></span>
+                        <span class="notification-badge-count absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center" style="display: {% if unread_notifications|default:0 > 0 %}flex{% else %}none{% endif %};">
+                            {% if unread_notifications|default:0 > 9 %}9+{% else %}{{ unread_notifications|default:0 }}{% endif %}
+                        </span>
+                    </button>
+                    
+                    <!-- Notifications Dropdown (Cloud/Speech Bubble Style) -->
+                    <div id="notificationsDropdown" class="hidden absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-2xl border border-gray-200 z-50" style="max-height: 500px;">
+                        <!-- Arrow pointing up -->
+                        <div class="absolute -top-2 right-6 w-4 h-4 bg-white border-l border-t border-gray-200 transform rotate-45"></div>
+                        
+                        <!-- Header -->
+                        <div class="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-xl">
+                            <h3 class="text-lg font-bold text-gray-900 flex items-center">
+                                <i class="fas fa-bell w-5 h-5 mr-2" style="color: #3C4770;"></i> Notifications
+                            </h3>
+                            <button onclick="closeNotificationsDropdown()" class="text-gray-400 hover:text-gray-600 transition">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- Notifications Content -->
+                        <div id="notificationsContent" class="overflow-y-auto p-4 space-y-3" style="max-height: 400px;">
+                            <!-- Notifications will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Profile Avatar/Dropdown -->
+                <div class="relative">
+                    <button onclick="toggleProfileDropdown()" class="flex items-center justify-center space-x-2 p-1.5 bg-white/20 rounded-full transition duration-150 hover:bg-white/30 hover:shadow-md" title="User Profile">
+                        <span class="text-white text-sm font-medium">{{ user.full_name|default:user.username }}</span>
+                        {% if user.profile_picture %}
+                        <img id="topbar-profile-picture" src="{{ user.profile_picture.url }}?v={{ user.id }}" alt="Profile" class="h-8 w-8 rounded-full object-cover border-2 border-white flex-shrink-0">
+                        {% else %}
+                        <div id="topbar-profile-placeholder" class="h-8 w-8 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style="background: rgba(190, 129, 153, 0.3);">
+                            {{ user.full_name|first|upper|default:"T" }}
+                        </div>
+                        {% endif %}
+                        <i class="fas fa-chevron-down text-white text-xs flex-shrink-0"></i>
+                    </button>
+                    
+                    <!-- Dropdown Menu -->
+                    <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 z-50 border border-gray-200">
+                        <a href="#" id="profile-dropdown-link" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors">
+                            <i class="fas fa-user mr-2 w-4"></i> Profile
+                        </a>
+                        <a href="{% url 'logout' %}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors">
+                            <i class="fas fa-sign-out-alt mr-2 w-4"></i> Logout
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<script>
+function toggleProfileDropdown() {
+    const dropdown = document.getElementById('profile-dropdown');
+    if (dropdown) {
+        dropdown.classList.toggle('hidden');
+    }
+}
+
+// Handle profile link click - opens modal when clicking "Profile" in dropdown
+document.addEventListener('DOMContentLoaded', function() {
+    const profileLink = document.getElementById('profile-dropdown-link');
+    if (profileLink) {
+        profileLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Close dropdown
+            const dropdown = document.getElementById('profile-dropdown');
+            if (dropdown) {
+                dropdown.classList.add('hidden');
+            }
+            
+            // Open profile modal
+            setTimeout(function() {
+                if (typeof window.openProfileModal === 'function') {
+                    window.openProfileModal();
+                    return;
+                }
+                if (typeof openProfileModal === 'function') {
+                    openProfileModal();
+                    return;
+                }
+                const modal = document.getElementById('profile-modal');
+                if (modal) {
+                    modal.classList.remove('hidden');
+                    if (typeof window.cancelProfileEdit === 'function') {
+                        window.cancelProfileEdit();
+                    } else if (typeof cancelProfileEdit === 'function') {
+                        cancelProfileEdit();
+                    }
+                }
+            }, 100);
+        });
+    }
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    const dropdown = document.getElementById('profile-dropdown');
+    if (!dropdown) return;
+    
+    const button = event.target.closest('button[onclick="toggleProfileDropdown()"]');
+    const dropdownElement = event.target.closest('#profile-dropdown');
+    const profileLink = event.target.closest('#profile-dropdown-link');
+    
+    if (profileLink) {
+        return;
+    }
+    
+    if (button) {
+        return;
+    }
+    
+    if (!dropdownElement && !dropdown.classList.contains('hidden')) {
+        dropdown.classList.add('hidden');
+    }
+});
+
+// Toggle notifications dropdown
+// Close notifications dropdown
+function closeNotificationsDropdown() {
+    const dropdown = document.getElementById('notificationsDropdown');
+    if (dropdown) {
+        dropdown.classList.add('hidden');
+    }
+}
+
+// Load notifications via AJAX
+function loadNotifications() {
+    const content = document.getElementById('notificationsContent');
+    if (!content) return;
+    
+    content.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-3xl text-gray-400"></i><p class="mt-4 text-sm text-gray-600">Loading notifications...</p></div>';
+    
+    fetch('{% url "dashboard:instructor_notifications" %}')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.text();
+        })
+        .then(html => {
+            // Use simpler approach - create temporary container
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            
+            // Find the notifications container
+            let notificationsContainer = tempDiv.querySelector('.divide-y');
+            let deleteAllBtn = tempDiv.querySelector('button[onclick*="showDeleteAllModal"]');
+            let deleteModal = tempDiv.querySelector('#deleteAllModal');
+            
+            if (!notificationsContainer) {
+                // Try alternative selectors
+                notificationsContainer = tempDiv.querySelector('div > div.divide-y');
+            }
+            if (!notificationsContainer) {
+                notificationsContainer = tempDiv.querySelector('div.divide-y');
+            }
+            
+            if (notificationsContainer) {
+                // Build full content
+                let fullContent = '';
+                
+                // Add delete all button if exists
+                if (deleteAllBtn) {
+                    const deleteAllContainer = deleteAllBtn.closest('div.mb-2');
+                    if (deleteAllContainer) {
+                        fullContent += deleteAllContainer.outerHTML;
+                    }
+                }
+                
+                // Add notifications
+                fullContent += notificationsContainer.outerHTML;
+                
+                content.innerHTML = fullContent;
+                
+                // Add delete modal if it doesn't exist
+                if (deleteModal && !document.getElementById('deleteAllModal')) {
+                    document.body.appendChild(deleteModal.cloneNode(true));
+                }
+            } else {
+                // Check for "No notifications" message
+                const noNotifications = tempDiv.querySelector('.text-center');
+                if (noNotifications && noNotifications.textContent.includes('No notifications')) {
+                    content.innerHTML = noNotifications.outerHTML;
+                } else {
+                    // Fallback: use all content if substantial
+                    const allContent = tempDiv.innerHTML;
+                    if (allContent && allContent.trim().length > 50) {
+                        content.innerHTML = allContent;
+                    } else {
+                        content.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-bell-slash text-3xl mb-2"></i><p class="text-xs">No notifications</p></div>';
+                    }
+                }
+            }
+            
+            const dropdown = document.getElementById('notificationsDropdown');
+            if (dropdown) {
+                dropdown.dataset.loaded = 'true';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading notifications:', error);
+            // Try a simpler approach - just fetch and display the HTML directly
+            fetch('{% url "dashboard:instructor_notifications" %}')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.text();
+                })
+                .then(html => {
+                    // Create a temporary container to parse the HTML
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = html;
+                    
+                    // Try to find the notifications container
+                    let notificationsDiv = tempDiv.querySelector('.divide-y');
+                    if (!notificationsDiv) {
+                        notificationsDiv = tempDiv.querySelector('div');
+                    }
+                    
+                    if (notificationsDiv) {
+                        // Get the delete all button if it exists
+                        const deleteAllBtn = tempDiv.querySelector('button[onclick*="showDeleteAllModal"]');
+                        let fullContent = '';
+                        
+                        if (deleteAllBtn) {
+                            const deleteAllContainer = deleteAllBtn.closest('div.mb-2');
+                            if (deleteAllContainer) {
+                                fullContent += deleteAllContainer.outerHTML;
+                            }
+                        }
+                        
+                        fullContent += notificationsDiv.outerHTML;
+                        content.innerHTML = fullContent;
+                    } else {
+                        content.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-bell-slash text-3xl mb-2"></i><p class="text-xs">No notifications</p></div>';
+                    }
+                })
+                .catch(() => {
+                    content.innerHTML = '<div class="text-center py-8 text-red-500"><i class="fas fa-exclamation-circle text-3xl mb-2"></i><p class="text-xs">Error loading notifications</p><p class="text-[10px] text-gray-500 mt-2">Please refresh the page</p></div>';
+                });
+        });
+}
+
+// Mark notification as read
+function markAsRead(notificationId) {
+    fetch('{% url "dashboard:mark_notification_read" 0 %}'.replace('0', notificationId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken') || '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    }).then(() => {
+        // Store that notification was read in localStorage for cross-page persistence
+        localStorage.setItem('notification_read_' + notificationId, 'true');
+        
+        // Reload notifications
+        const dropdown = document.getElementById('notificationsDropdown');
+        if (dropdown) {
+            dropdown.dataset.loaded = 'false';
+        }
+        loadNotifications();
+        // Update badge without reload - this will persist across pages
+        updateNotificationBadge();
+    }).catch(error => {
+        console.error('Error marking notification as read:', error);
+    });
+}
+
+// Helper function to get CSRF token from cookies
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Update notification badge count - works across all pages
+function updateNotificationBadge() {
+    const dropdown = document.getElementById('notificationsDropdown');
+    // Don't update badge if dropdown is currently open (user is viewing notifications)
+    if (dropdown && !dropdown.classList.contains('hidden')) {
+        return;
+    }
+    
+    // Check if user has manually hidden the badge by clicking the bell (global state)
+    if (localStorage.getItem('notifications_badge_hidden') === 'true') {
+        // Hide badge on all pages if user clicked the bell
+        const badge = document.querySelector('.notification-badge-count');
+        const dot = document.querySelector('.notification-badge-dot');
+        if (badge && dot) {
+            badge.style.display = 'none';
+            dot.style.display = 'none';
+        }
+        return;
+    }
+    
+    fetch('{% url "dashboard:instructor_notifications" %}')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.text();
+        })
+        .then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Find all notification items
+            const notifications = doc.querySelectorAll('.notification-item');
+            let unreadCount = 0;
+            
+            notifications.forEach(n => {
+                // Check if notification is unread (doesn't have opacity-80 class which indicates read)
+                if (!n.classList.contains('opacity-80')) {
+                    unreadCount++;
+                }
+            });
+            
+            const badge = document.querySelector('.notification-badge-count');
+            const dot = document.querySelector('.notification-badge-dot');
+            
+            if (badge && dot) {
+                if (unreadCount > 0) {
+                    badge.textContent = unreadCount > 9 ? '9+' : unreadCount.toString();
+                    badge.style.display = 'flex';
+                    dot.style.display = 'block';
+                    // Store badge state globally
+                    localStorage.setItem('notification_badge_count', unreadCount.toString());
+                } else {
+                    badge.style.display = 'none';
+                    dot.style.display = 'none';
+                    localStorage.setItem('notification_badge_count', '0');
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error updating badge:', error);
+            // On error, restore from localStorage if available
+            const badge = document.querySelector('.notification-badge-count');
+            const dot = document.querySelector('.notification-badge-dot');
+            const storedCount = localStorage.getItem('notification_badge_count');
+            if (badge && dot && storedCount && storedCount !== '0' && localStorage.getItem('notifications_badge_hidden') !== 'true') {
+                badge.textContent = parseInt(storedCount) > 9 ? '9+' : storedCount;
+                badge.style.display = 'flex';
+                dot.style.display = 'block';
+            }
+        });
+}
+
+// Store notification state in localStorage for persistence
+function saveNotificationState() {
+    const badge = document.querySelector('.notification-badge-count');
+    const dot = document.querySelector('.notification-badge-dot');
+    if (badge && dot) {
+        const isVisible = badge.style.display !== 'none' && dot.style.display !== 'none';
+        localStorage.setItem('notification_badge_visible', isVisible ? 'true' : 'false');
+        localStorage.setItem('notification_badge_count', badge.textContent || '0');
+    }
+}
+
+// Restore notification state from localStorage (deprecated - we'll use updateNotificationBadge instead)
+function restoreNotificationState() {
+    // Don't restore from localStorage - always fetch fresh data
+    // This function is kept for compatibility but doesn't do anything
+}
+
+// Hide badge when dropdown is opened - GLOBAL STATE (affects all pages)
+function toggleNotificationsDropdown() {
+    const dropdown = document.getElementById('notificationsDropdown');
+    if (!dropdown) return;
+    
+    const isHidden = dropdown.classList.contains('hidden');
+    if (isHidden) {
+        // Add animation
+        dropdown.classList.add('animate-slide-down');
+        dropdown.classList.remove('hidden');
+        // Load notifications if not loaded
+        if (dropdown.dataset.loaded !== 'true') {
+            loadNotifications();
+        }
+        // Don't hide badge when opening - let it update based on actual unread count
+        // Badge will automatically hide when all notifications are read
+    } else {
+        dropdown.classList.remove('animate-slide-down');
+        dropdown.classList.add('hidden');
+        // When closing, check if there are still unread notifications
+        // If yes, show badge again; if no, keep it hidden
+        setTimeout(() => {
+            // Reset the hidden flag so badge can update naturally
+            localStorage.removeItem('notifications_badge_hidden');
+            updateNotificationBadge();
+        }, 100);
+    }
+}
+
+// Initialize on page load - check global badge state
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if badge was manually hidden by user (global state)
+    const badgeHidden = localStorage.getItem('notifications_badge_hidden') === 'true';
+    
+    if (badgeHidden) {
+        // Hide badge on all pages if user clicked the bell
+        const badge = document.querySelector('.notification-badge-count');
+        const dot = document.querySelector('.notification-badge-dot');
+        if (badge && dot) {
+            badge.style.display = 'none';
+            dot.style.display = 'none';
+        }
+    } else {
+        // Update badge immediately on page load
+        updateNotificationBadge();
+        // Update badge periodically (only if not manually hidden)
+        setInterval(() => {
+            if (localStorage.getItem('notifications_badge_hidden') !== 'true') {
+                updateNotificationBadge();
+            }
+        }, 30000); // Every 30 seconds
+    }
+    
+    // Listen for storage events to sync badge across tabs
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'notifications_badge_hidden') {
+            const badge = document.querySelector('.notification-badge-count');
+            const dot = document.querySelector('.notification-badge-dot');
+            if (badge && dot) {
+                if (e.newValue === 'true') {
+                    badge.style.display = 'none';
+                    dot.style.display = 'none';
+                } else {
+                    updateNotificationBadge();
+                }
+            }
+        }
+    });
+});
+
+// Add CSS for animations
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slide-down {
+        from {
+            transform: translateY(-10px) scale(0.95);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+    }
+    .animate-slide-down {
+        animation: slide-down 0.3s ease-out;
+    }
+`;
+document.head.appendChild(style);
+</script>
+
+

@@ -1,0 +1,291 @@
+<!-- templates/dashboard/admin/admin_topbar.html -->
+{% load static %}
+<style>
+    .topbar-brand { text-decoration: none; }
+    .topbar-brand:hover .topbar-brand-text { text-decoration: underline; }
+</style>
+<!-- Global Notification System -->
+{% include 'dashboard/shared/notification_system.html' %}
+
+<header id="admin-top-bar" class="fixed top-0 left-0 right-0 z-50 w-full shadow-md" style="background: linear-gradient(90deg, #3C4770 0%, #447294 100%); box-shadow: 0 2px 10px rgba(60, 71, 112, 0.3);">
+    <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+            <!-- Left Section: Attendance System Branding -->
+            <div class="flex items-center">
+                <a href="{% url 'dashboard:admin_dashboard' %}" class="topbar-brand text-xl sm:text-2xl font-bold text-white select-none flex items-center hover:opacity-90 transition duration-150 cursor-pointer space-x-3">
+                    <span class="inline-flex items-center justify-center h-11 w-11 sm:h-13 sm:w-13 rounded-full bg-white/10 border border-white/30 shadow-md overflow-hidden">
+                        <img src="{% static 'img/attendance-logo.png' %}" alt="Attendance System logo" class="h-10 w-10 sm:h-12 sm:w-12 object-contain">
+                    </span>
+                    <span class="topbar-brand-text">Attendance System</span>
+                </a>
+            </div>
+            
+            <!-- Center Section: School Name with Profile Picture on Left -->
+            {% if user.school_name %}
+            <div class="flex-1 flex justify-center items-center space-x-2">
+                {% if user.profile_picture %}
+                <img id="topbar-center-profile-picture" src="{{ user.profile_picture.url }}?v={{ user.id }}" alt="Profile" class="h-6 w-6 rounded-full object-cover border-2 border-white flex-shrink-0">
+                {% else %}
+                <div id="topbar-center-profile-placeholder" class="h-6 w-6 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0" style="background: rgba(190, 129, 153, 0.3);">
+                    {{ user.username|first|upper|default:"A" }}
+                </div>
+                {% endif %}
+                <span class="text-sm text-white font-medium truncate max-w-xs sm:max-w-md">
+                    {{ user.school_name }}
+                </span>
+            </div>
+            {% else %}
+            <div class="flex-1"></div>
+            {% endif %}
+
+            <!-- Right Section: Action Icons -->
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <!-- Notifications Button with Dropdown -->
+                <div class="relative">
+                    <button type="button" onclick="toggleNotificationsDropdown()" class="relative p-2 text-white hover:bg-white/20 transition duration-150 rounded-full" title="Notifications">
+                        <i class="fas fa-bell w-5 h-5"></i>
+                        {% if unread_notifications|default:0 > 0 %}
+                        <!-- Notification badge -->
+                        <span class="notification-badge-dot absolute top-0 right-0 block h-2 w-2 rounded-full ring-2 ring-white bg-red-500"></span>
+                        <span class="notification-badge-count absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center">
+                            {% if unread_notifications > 9 %}9+{% else %}{{ unread_notifications }}{% endif %}
+                        </span>
+                        {% endif %}
+                    </button>
+                    
+                    <!-- Notifications Dropdown (Cloud/Speech Bubble Style) -->
+                    <div id="notificationsDropdown" class="hidden absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-2xl border border-gray-200 z-50" style="max-height: 500px;">
+                        <!-- Arrow pointing up -->
+                        <div class="absolute -top-2 right-6 w-4 h-4 bg-white border-l border-t border-gray-200 transform rotate-45"></div>
+                        
+                        <!-- Header -->
+                        <div class="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-xl">
+                            <h3 class="text-lg font-bold text-gray-900 flex items-center">
+                                <i class="fas fa-bell w-5 h-5 mr-2" style="color: #3C4770;"></i> Notifications
+                            </h3>
+                            <button onclick="closeNotificationsDropdown()" class="text-gray-400 hover:text-gray-600 transition">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- Notifications Content -->
+                        <div id="notificationsContent" class="overflow-y-auto p-4 space-y-3" style="max-height: 400px;">
+                            <!-- Notifications will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Profile Avatar/Dropdown -->
+                <div class="relative">
+                    <button onclick="toggleProfileDropdown()" class="flex items-center justify-center space-x-2 p-1.5 bg-white/20 rounded-full transition duration-150 hover:bg-white/30 hover:shadow-md" title="User Profile">
+                        <span class="text-white text-sm font-medium">{{ user.username }}</span>
+                        {% if user.profile_picture %}
+                        <img id="topbar-profile-picture" src="{{ user.profile_picture.url }}?v={{ user.id }}" alt="Profile" class="h-8 w-8 rounded-full object-cover border-2 border-white flex-shrink-0">
+                        {% else %}
+                        <div id="topbar-profile-placeholder" class="h-8 w-8 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style="background: rgba(190, 129, 153, 0.3);">
+                            {{ user.username|first|upper|default:"A" }}
+                        </div>
+                        {% endif %}
+                        <i class="fas fa-chevron-down text-white text-xs flex-shrink-0"></i>
+                    </button>
+                    
+                    <!-- Dropdown Menu -->
+                    <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 z-50 border border-gray-200">
+                        <a href="#" id="profile-dropdown-link" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors">
+                            <i class="fas fa-user mr-2 w-4"></i> Profile
+                        </a>
+                        <a href="{% url 'admin_logout' %}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors">
+                            <i class="fas fa-sign-out-alt mr-2 w-4"></i> Logout
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<script>
+function toggleProfileDropdown() {
+    const dropdown = document.getElementById('profile-dropdown');
+    if (dropdown) {
+        dropdown.classList.toggle('hidden');
+    }
+}
+
+// Handle profile link click - opens modal when clicking "Profile" in dropdown
+document.addEventListener('DOMContentLoaded', function() {
+    const profileLink = document.getElementById('profile-dropdown-link');
+    if (profileLink) {
+        profileLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Close dropdown
+            const dropdown = document.getElementById('profile-dropdown');
+            if (dropdown) {
+                dropdown.classList.add('hidden');
+            }
+            
+            // Open profile modal
+            setTimeout(function() {
+                // Method 1: Check for global function
+                if (typeof window.openProfileModal === 'function') {
+                    window.openProfileModal();
+                    return;
+                }
+                
+                // Method 2: Check for local function
+                if (typeof openProfileModal === 'function') {
+                    openProfileModal();
+                    return;
+                }
+                
+                // Method 3: Direct modal access
+                const modal = document.getElementById('profile-modal');
+                if (modal) {
+                    modal.classList.remove('hidden');
+                    // Also try to reset to view mode
+                    if (typeof window.cancelProfileEdit === 'function') {
+                        window.cancelProfileEdit();
+                    } else if (typeof cancelProfileEdit === 'function') {
+                        cancelProfileEdit();
+                    }
+                } else {
+                    console.error('Profile modal not found!');
+                }
+            }, 100);
+        });
+    }
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    const dropdown = document.getElementById('profile-dropdown');
+    if (!dropdown) return;
+    
+    const button = event.target.closest('button[onclick="toggleProfileDropdown()"]');
+    const dropdownElement = event.target.closest('#profile-dropdown');
+    const profileLink = event.target.closest('#profile-dropdown-link');
+    
+    // If clicking on profile link, let the handler above manage it
+    if (profileLink) {
+        return;
+    }
+    
+    // If clicking the button, toggle dropdown (don't close)
+    if (button) {
+        return;
+    }
+    
+    // If clicking outside, close it
+    if (!dropdownElement && !dropdown.classList.contains('hidden')) {
+        dropdown.classList.add('hidden');
+    }
+});
+
+// Toggle notifications dropdown
+function toggleNotificationsDropdown() {
+    const dropdown = document.getElementById('notificationsDropdown');
+    if (dropdown) {
+        const isHidden = dropdown.classList.contains('hidden');
+        if (isHidden) {
+            dropdown.classList.remove('hidden');
+            // Load notifications if not already loaded
+            if (!dropdown.dataset.loaded) {
+                loadNotifications();
+            }
+        } else {
+            dropdown.classList.add('hidden');
+        }
+    }
+}
+
+// Close notifications dropdown
+function closeNotificationsDropdown() {
+    const dropdown = document.getElementById('notificationsDropdown');
+    if (dropdown) {
+        dropdown.classList.add('hidden');
+    }
+}
+
+// Load notifications via AJAX
+function loadNotifications() {
+    const content = document.getElementById('notificationsContent');
+    if (!content) return;
+    
+    content.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-3xl text-gray-400"></i><p class="mt-4 text-sm text-gray-600">Loading notifications...</p></div>';
+    
+    fetch('{% url "dashboard:admin_notifications" %}')
+        .then(response => response.text())
+        .then(html => {
+            // Extract the notifications list from the HTML
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            // Find the notifications container
+            const notificationsContainer = doc.querySelector('.bg-white.p-6.rounded-xl.shadow-lg');
+            if (notificationsContainer) {
+                // Extract individual notification items
+                const notifications = notificationsContainer.querySelectorAll('.flex.items-center.p-4');
+                if (notifications.length > 0) {
+                    let html = '';
+                    notifications.forEach(notification => {
+                        html += notification.outerHTML;
+                    });
+                    content.innerHTML = html;
+                } else {
+                    content.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-bell-slash text-3xl mb-2"></i><p class="text-sm">No notifications</p></div>';
+                }
+            } else {
+                content.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-bell-slash text-3xl mb-2"></i><p class="text-sm">No notifications</p></div>';
+            }
+            document.getElementById('notificationsDropdown').dataset.loaded = 'true';
+        })
+        .catch(error => {
+            console.error('Error loading notifications:', error);
+            content.innerHTML = '<div class="text-center py-8 text-red-500"><i class="fas fa-exclamation-circle text-3xl mb-2"></i><p class="text-sm">Error loading notifications</p></div>';
+        });
+}
+
+// Mark notification as read
+function markAsRead(notificationId) {
+    fetch(`/dashboard/admin-dashboard/notifications/${notificationId}/read/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    }).then(() => {
+        // Reload notifications
+        document.getElementById('notificationsDropdown').dataset.loaded = 'false';
+        loadNotifications();
+        // Reload page to update badge
+        setTimeout(() => location.reload(), 500);
+    });
+}
+</script>
+
+<!-- Close dropdown when clicking outside -->
+<script>
+document.addEventListener('click', function(event) {
+    const dropdown = document.getElementById('notificationsDropdown');
+    const button = event.target.closest('button[onclick="toggleNotificationsDropdown()"]');
+    const dropdownElement = event.target.closest('#notificationsDropdown');
+    
+    if (!dropdown) return;
+    
+    // If clicking the button, let the toggle function handle it
+    if (button) {
+        return;
+    }
+    
+    // If clicking inside dropdown, keep it open
+    if (dropdownElement) {
+        return;
+    }
+    
+    // If clicking outside, close it
+    if (!dropdown.classList.contains('hidden')) {
+        dropdown.classList.add('hidden');
+    }
+});
+</script>

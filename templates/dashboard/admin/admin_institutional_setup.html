@@ -1,0 +1,1531 @@
+<!-- templates/dashboard/admin_institutional_setup.html -->
+{% extends 'partials/base.html' %}
+{% load static %}
+{% block title %}Admin Dashboard - Academics{% endblock %}
+{% block navigation %}
+<!-- Override default navigation - no top bar for admin -->
+{% endblock %}
+{% block content %}
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<!-- Cropper.js for image cropping -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+<style>
+    body { 
+        font-family: 'Inter', sans-serif; 
+        background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);
+    }
+    
+    /* Ensure input fields show typed text even for long names */
+    input[type="text"] {
+        min-width: 0;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+    
+    input[type="text"]:focus {
+        overflow-x: auto;
+    }
+    
+    .cropper-container {
+        max-width: 100%;
+        max-height: 500px;
+        min-height: 300px;
+        position: relative;
+        background-color: transparent;
+    }
+    
+    /* Ensure crop box is visible - overlay only outside crop area */
+    .cropper-container .cropper-crop-box {
+        border: 2px solid #3b82f6 !important;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5) !important;
+        background-color: transparent !important;
+    }
+    
+    /* Make sure the image area doesn't have grey background */
+    .cropper-container .cropper-canvas {
+        background-color: transparent !important;
+    }
+    
+    .cropper-container .cropper-view-box {
+        outline: 1px solid rgba(59, 130, 246, 0.5) !important;
+        background-color: transparent !important;
+    }
+    
+    /* Background overlay for the entire cropper container (outside the image) */
+    .cropper-container::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #f3f4f6;
+        z-index: -1;
+    }
+    
+    /* Make all crop box handles more visible */
+    .cropper-container .cropper-crop-box .cropper-point {
+        width: 10px !important;
+        height: 10px !important;
+        background-color: #3b82f6 !important;
+        border: 2px solid #ffffff !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+    }
+    
+    .cropper-container .cropper-crop-box .cropper-point:hover {
+        background-color: #2563eb !important;
+        transform: scale(1.15);
+        transition: all 0.2s;
+    }
+</style>
+
+<!-- Admin Top Bar -->
+{% include 'dashboard/admin/admin_topbar.html' %}
+
+<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+    <!-- Sidebar -->
+    {% include 'dashboard/admin/admin_sidebar.html' %}
+
+    <main id="main-content" class="flex-grow p-2 lg:p-3 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+        <div class="p-2 md:p-3 bg-white lg:bg-gray-50 flex-grow rounded-lg shadow-inner min-h-full">
+            <div class="flex flex-col md:flex-row md:justify-between md:items-start gap-2 mb-3">
+                <div class="flex-1 min-w-0">
+                    <h1 class="text-lg font-bold text-gray-900 mb-1">Academics</h1>
+                    <p class="text-gray-600 break-words">Define and manage academic programs, departments, and courses for <strong class="break-words">{{ user.school_name|default:"All Schools" }}</strong>.</p>
+                </div>
+                <!-- Manage Courses button removed - moved to instructor dashboard -->
+            </div>
+            
+            {% if not user.education_level %}
+            <!-- Show tabs only if admin doesn't have a specific education level -->
+            <div class="flex space-x-4 mb-8 border-b pb-4">
+                <button id="college-tab" class="px-6 py-2 rounded-full font-semibold transition text-white shadow-md hover:shadow-lg hover:scale-105" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                    College / University
+                </button>
+                <button id="highschool-tab" class="px-6 py-2 rounded-full font-semibold transition bg-gray-200 hover:bg-gray-300 hover:shadow-md hover:scale-105" style="color: #1f2937;">
+                    High School / Senior High
+                </button>
+            </div>
+            {% endif %}
+
+            <!-- College Programs Section -->
+            <div id="college-section" {% if user.education_level == 'high_senior' %}class="hidden"{% endif %}>
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6 pt-4 border-t border-gray-100">
+                    <h3 class="text-xl font-bold text-gray-800 flex items-center">
+                        <i class="fas fa-graduation-cap w-6 h-6 mr-2" style="color: #3C4770;"></i> 
+                        {% if user.education_level == 'university_college' %}
+                        Departments & Programs
+                        {% else %}
+                        Programs
+                        {% endif %}
+                    </h3>
+                    <div class="flex gap-3">
+                        <button onclick="openDepartmentModal()" class="flex items-center space-x-2 px-4 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md text-sm whitespace-nowrap flex-shrink-0" style="background-color: #10b981;" onmouseover="this.style.backgroundColor='#059669';" onmouseout="this.style.backgroundColor='#10b981';">
+                            <i class="fas fa-building w-4 h-4"></i>
+                            <span>Add Department</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Departments as Folder Cards (Larger Size) -->
+                <div id="departments-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {% for dept_data in departments_with_programs %}
+                    {% with dept=dept_data.department %}
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 transition hover:shadow-xl department-card cursor-pointer" 
+                         data-code="{{ dept.code|lower }}" 
+                         data-name="{{ dept.name|lower }}"
+                         data-dept-id="{{ dept.id }}"
+                         onclick="window.location.href='{% url 'dashboard:admin_department_programs' dept.id %}'">
+                        <!-- Department Icon Section -->
+                        <div class="h-32 flex items-center justify-center" style="background: linear-gradient(135deg, #DFCFD5 0%, #ffffff 100%);">
+                            {% if dept.icon %}
+                            <img src="{{ dept.icon.url }}" alt="{{ dept.code }}" class="w-20 h-20 object-contain rounded">
+                            {% else %}
+                            <div class="w-20 h-20 rounded flex items-center justify-center" style="background-color: #3C4770; color: white;">
+                                <i class="fas fa-building text-4xl"></i>
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Department Info Section -->
+                        <div class="p-5">
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="flex-1 flex items-center gap-3">
+                                    {% if dept.icon %}
+                                    <img src="{{ dept.icon.url }}" alt="{{ dept.code }}" class="w-12 h-12 object-contain rounded flex-shrink-0">
+                                    {% else %}
+                                    <div class="w-12 h-12 rounded flex items-center justify-center flex-shrink-0" style="background-color: #3C4770; color: white;">
+                                        <i class="fas fa-building text-lg"></i>
+                                    </div>
+                                    {% endif %}
+                                    <div class="flex-1 min-w-0">
+                                        <h4 class="text-xl font-bold text-gray-800">{% if dept.code %}{{ dept.code }}{% else %}N/A{% endif %}</h4>
+                                        <p class="text-sm text-gray-600 mt-1">{{ dept.name }}</p>
+                                    </div>
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button onclick="event.stopPropagation(); editDepartment({{ dept.id }}, '{{ dept.name|escapejs }}', '{{ dept.code|escapejs }}', {% if dept.icon %}'{{ dept.icon.url|escapejs }}'{% else %}null{% endif %})" 
+                                            class="p-2 rounded-full transition" style="color: #3C4770;" onmouseover="this.style.color='#447294'; this.style.backgroundColor='#DFCFD5';" onmouseout="this.style.color='#3C4770'; this.style.backgroundColor='transparent';">
+                                        <i class="fas fa-edit w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="event.stopPropagation(); openDeleteDepartmentModal({{ dept.id }}, '{{ dept.code|escapejs }}', '{{ dept.name|escapejs }}')" 
+                                            class="p-2 rounded-full text-red-500 hover:bg-red-50 transition">
+                                        <i class="fas fa-trash w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-sm text-gray-500 mt-3">
+                                <i class="fas fa-graduation-cap mr-1"></i>
+                                {{ dept_data.program_count }} Program{{ dept_data.program_count|pluralize }}
+                            </p>
+                            <div class="mt-4 flex items-center text-sm text-gray-600">
+                                <i class="fas fa-arrow-right mr-2"></i>
+                                <span>Click to view programs</span>
+                            </div>
+                        </div>
+                    </div>
+                    {% endwith %}
+                    {% empty %}
+                    <div class="col-span-3 text-center p-8 bg-gray-50 rounded-xl">
+                        <i class="fas fa-building text-4xl text-gray-400 mb-4"></i>
+                        <p class="text-gray-600">No departments yet. Click "Add Department" to get started.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- High School Tracks Section -->
+            <div id="highschool-section" {% if user.education_level != 'high_senior' %}class="hidden"{% endif %}>
+                <div class="space-y-6">
+                    <h3 class="text-xl font-bold text-gray-800 flex items-center">
+                        <i class="fas fa-layer-group w-6 h-6 mr-2 text-teal-500"></i> High School Grade Levels & Tracks
+                    </h3>
+                    <p class="text-gray-600">This section allows you to define grade levels and academic tracks (e.g., Grade 11 STEM, Grade 12 ABM, Grade 7).</p>
+                    <div class="text-center p-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+                        <i class="fas fa-layer-group text-4xl text-gray-400 mb-4"></i>
+                        <p class="text-gray-600">High School tracks management coming soon.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Delete Department Modal -->
+<div id="delete-department-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-red-600">
+                <i class="fas fa-exclamation-triangle w-6 h-6 mr-2"></i> Delete Department
+            </h3>
+            <button onclick="closeDeleteDepartmentModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <div class="space-y-4">
+            <p class="text-gray-700">Are you sure you want to delete this department?</p>
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="font-semibold text-red-800" id="delete-department-name"></p>
+            </div>
+            <p class="text-sm text-gray-600">All programs in this department must be removed first. This action cannot be undone.</p>
+            
+            <input type="hidden" id="delete-department-id">
+            
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="closeDeleteDepartmentModal()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button onclick="deleteDepartment()" class="px-6 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md bg-red-600 hover:bg-red-700">
+                    <i class="fas fa-trash mr-2"></i> Delete Department
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Program Modal -->
+<div id="delete-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center text-red-600">
+                <i class="fas fa-exclamation-triangle w-6 h-6 mr-2"></i> Delete Program
+            </h3>
+            <button onclick="closeDeleteModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <div class="space-y-4">
+            <p class="text-gray-700">Are you sure you want to delete this program?</p>
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                <p class="font-semibold text-red-800" id="delete-program-name"></p>
+            </div>
+            <p class="text-sm text-gray-600">All linked courses and students must be removed first. This action cannot be undone.</p>
+            
+            <input type="hidden" id="delete-program-id">
+            
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button onclick="closeDeleteModal()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button onclick="deleteProgram()" class="px-6 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md bg-red-600 hover:bg-red-700">
+                    <i class="fas fa-trash mr-2"></i> Delete Program
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Image Cropper Modal -->
+<div id="image-cropper-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 p-6 md:p-8 border-2 border-gray-200">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center" style="color: #3C4770;">
+                <i class="fas fa-crop w-6 h-6 mr-2"></i> Crop Image
+            </h3>
+            <button onclick="closeCropperModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <!-- Crop Shape Selection - Removed, only square cropping available -->
+        
+        <div class="mb-4">
+            <div id="cropper-container-wrapper" class="cropper-container" style="max-height: 500px; min-height: 300px; position: relative;">
+                <img id="cropper-image" src="" alt="Crop" style="max-width: 100%; display: block;">
+            </div>
+            <!-- Cropped Preview -->
+            <div id="cropped-preview-container" class="mt-4 hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Cropped Preview:</label>
+                <div class="flex justify-center">
+                    <img id="cropped-preview-img" src="" alt="Cropped Preview" class="w-32 h-32 object-contain rounded-lg border-2 border-gray-300 shadow-md">
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200 bg-gray-50 -mx-6 md:-mx-8 -mb-6 md:-mb-8 px-6 md:px-8 pb-6 md:pb-8 rounded-b-2xl">
+            <button type="button" onclick="closeCropperModal()" class="px-5 py-2.5 text-gray-700 bg-white border-2 border-gray-300 font-semibold rounded-xl hover:bg-gray-50 hover:border-gray-400 transition duration-150 shadow-sm hover:shadow-md">
+                Done
+            </button>
+            <button type="button" id="continue-edit-btn" onclick="continueEditCrop()" class="px-6 py-2.5 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg hidden border-2 border-blue-600" style="background-color: #3b82f6;" onmouseover="this.style.backgroundColor='#2563eb'; this.style.borderColor='#1d4ed8';" onmouseout="this.style.backgroundColor='#3b82f6'; this.style.borderColor='#2563eb';">
+                <i class="fas fa-edit mr-2"></i> Continue Edit
+            </button>
+            <button type="button" id="apply-crop-btn" onclick="applyCrop()" class="px-6 py-2.5 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg border-2 border-green-600" style="background-color: #10b981;" onmouseover="this.style.backgroundColor='#059669'; this.style.borderColor='#047857';" onmouseout="this.style.backgroundColor='#10b981'; this.style.borderColor='#059669';">
+                <i class="fas fa-check mr-2"></i> Save Crop
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Department Modal -->
+<div id="department-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl my-8 p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 class="text-2xl font-bold flex items-center" style="color: #3C4770;">
+                <i class="fas fa-building w-6 h-6 mr-2"></i> Add New Department
+            </h3>
+            <button onclick="closeDepartmentModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <form id="department-form" class="space-y-4" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Department Code *</label>
+                    <input type="text" id="department-code" name="code" required 
+                           placeholder="e.g., COE"
+                           class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 uppercase font-mono">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Department/College Name *</label>
+                    <input type="text" id="department-name" name="name" required 
+                           placeholder="e.g., College of Engineering"
+                           class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500"
+                           style="min-width: 0; overflow-x: auto; text-overflow: ellipsis;">
+                </div>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Department Icon/Picture</label>
+                <input type="file" id="department-icon" name="icon" accept="image/*" 
+                       class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                <p class="text-xs text-gray-500 mt-1">Upload an icon or picture to display on the department folder</p>
+                <div id="department-icon-preview" class="mt-2 hidden">
+                    <img id="department-icon-preview-img" src="" alt="Preview" class="w-20 h-20 object-contain rounded-lg border border-gray-300">
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button type="button" onclick="closeDepartmentModal()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button type="submit" class="px-6 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md" style="background-color: #10b981;" onmouseover="this.style.backgroundColor='#059669';" onmouseout="this.style.backgroundColor='#10b981';">
+                    <i class="fas fa-building mr-2"></i> Create Department
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Program Modal -->
+<div id="program-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl my-8 p-6 md:p-8">
+        <div class="flex justify-between items-start mb-6">
+            <h3 id="modal-title" class="text-2xl font-bold flex items-center" style="color: #3C4770;">
+                <i class="fas fa-graduation-cap w-6 h-6 mr-2"></i> <span id="modal-title-text">Add New Academic Program</span>
+            </h3>
+            <button onclick="closeProgramModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+        
+        <form id="program-form" class="space-y-4" enctype="multipart/form-data">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Program Name (e.g., Bachelor of Science in IT)</label>
+                <input type="text" id="program-name" name="name" required 
+                       class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500"
+                       style="min-width: 0; overflow-x: auto; text-overflow: ellipsis;">
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Code (e.g., BSIT)</label>
+                    <input type="text" id="program-code" name="code" required 
+                           class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 uppercase font-mono">
+                </div>
+                <input type="hidden" id="program-department-id" name="department_id" value="">
+                <div id="program-department-display" class="bg-blue-50 p-3 rounded-lg">
+                    <p class="text-sm text-gray-700"><strong>Department:</strong> <span id="program-department-name-display">Not selected</span></p>
+                </div>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Program Icon/Picture</label>
+                <input type="file" id="program-icon" name="icon" accept="image/*" 
+                       class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500">
+                <p class="text-xs text-gray-500 mt-1">Upload an icon or picture to display on the program folder</p>
+                <div id="program-icon-preview" class="mt-2 hidden">
+                    <img id="program-icon-preview-img" src="" alt="Preview" class="w-20 h-20 object-contain rounded-lg border border-gray-300">
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
+                <button type="button" onclick="closeProgramModal()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button type="submit" class="px-6 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                    <span id="submit-text">Create Program</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    let editingProgramId = null;
+
+    // Tab switching with persistent active state (only if tabs are visible)
+    const collegeTab = document.getElementById('college-tab');
+    const highschoolTab = document.getElementById('highschool-tab');
+    
+    function switchEducationTab(activeTabId) {
+        // Hide all sections
+        document.getElementById('college-section').classList.add('hidden');
+        document.getElementById('highschool-section').classList.add('hidden');
+        
+        // Reset all tabs
+        [collegeTab, highschoolTab].forEach(tab => {
+            if (tab) {
+                tab.style.backgroundColor = '#e5e7eb';
+                tab.style.color = '#1f2937';
+                tab.classList.remove('shadow-md');
+                tab.classList.remove('bg-gray-200', 'text-gray-700');
+            }
+        });
+        
+        // Set active tab
+        const activeTab = document.getElementById(activeTabId);
+        activeTab.style.backgroundColor = '#3C4770';
+        activeTab.style.color = 'white';
+        activeTab.classList.add('shadow-md');
+        activeTab.classList.remove('bg-gray-200', 'text-gray-700');
+        
+        // Show active section
+        if (activeTabId === 'college-tab') {
+            document.getElementById('college-section').classList.remove('hidden');
+        } else {
+            document.getElementById('highschool-section').classList.remove('hidden');
+        }
+    }
+    
+    if (collegeTab && highschoolTab) {
+        collegeTab.addEventListener('click', () => switchEducationTab('college-tab'));
+        highschoolTab.addEventListener('click', () => switchEducationTab('highschool-tab'));
+    }
+
+    function openDepartmentModal() {
+        document.getElementById('department-modal').classList.remove('hidden');
+        document.getElementById('department-form').reset();
+    }
+
+    function closeDepartmentModal() {
+        document.getElementById('department-modal').classList.add('hidden');
+        // Don't reset the form if there's a cropped image - keep it for next time
+        // Only reset if no icon is selected
+        const iconInput = document.getElementById('department-icon');
+        if (!iconInput || !iconInput.files || iconInput.files.length === 0) {
+            document.getElementById('department-form').reset();
+            document.getElementById('department-icon-preview').classList.add('hidden');
+        }
+        editingDepartmentId = null;
+    }
+
+
+    function openProgramModal(departmentId = null, departmentName = '', departmentCode = '', programId = null, code = '', name = '', iconUrl = null) {
+        editingProgramId = programId;
+        document.getElementById('program-modal').classList.remove('hidden');
+        
+        // Reset icon previews
+        document.getElementById('department-icon-preview').classList.add('hidden');
+        
+        if (programId) {
+            // Editing existing program
+            document.getElementById('modal-title-text').textContent = 'Edit Program';
+            document.getElementById('submit-text').textContent = 'Update Program';
+            document.getElementById('program-code').value = code;
+            document.getElementById('program-name').value = name;
+            
+            // Display existing icon if available
+            if (iconUrl) {
+                const previewImg = document.getElementById('program-icon-preview-img');
+                const previewContainer = document.getElementById('program-icon-preview');
+                if (previewImg && previewContainer) {
+                    previewImg.src = iconUrl;
+                    previewImg.style.borderRadius = '';
+                    previewImg.style.objectFit = 'contain';
+                    previewContainer.classList.remove('hidden');
+                }
+            } else {
+                document.getElementById('program-icon-preview').classList.add('hidden');
+            }
+            
+            // Clear file input to allow selecting a new file
+            const iconInput = document.getElementById('program-icon');
+            if (iconInput) {
+                iconInput.value = '';
+            }
+            
+            // Keep existing department - would need to fetch it from server
+        } else {
+            // Adding new program - set department from parameter
+            document.getElementById('modal-title-text').textContent = 'Add New Academic Program';
+            document.getElementById('submit-text').textContent = 'Create Program';
+            document.getElementById('program-form').reset();
+            document.getElementById('program-icon-preview').classList.add('hidden');
+            if (departmentId) {
+                document.getElementById('program-department-id').value = departmentId;
+                document.getElementById('program-department-name-display').textContent = departmentName + ' (' + departmentCode + ')';
+            }
+        }
+    }
+
+    function closeProgramModal() {
+        document.getElementById('program-modal').classList.add('hidden');
+        // Don't reset the form if there's a cropped image - keep it for next time
+        // Only reset if no icon is selected
+        const iconInput = document.getElementById('program-icon');
+        if (!iconInput || !iconInput.files || iconInput.files.length === 0) {
+            document.getElementById('program-form').reset();
+            document.getElementById('program-icon-preview').classList.add('hidden');
+        }
+        document.getElementById('program-department-id').value = '';
+        document.getElementById('program-department-name-display').textContent = 'Not selected';
+        editingProgramId = null;
+    }
+
+    function editProgram(id, code, name, department, iconUrl) {
+        // For editing, we need to get the department info - for now just pass empty
+        openProgramModal(null, '', '', id, code, name, iconUrl);
+    }
+    
+    let editingDepartmentId = null;
+    
+    function editDepartment(id, name, code, iconUrl) {
+        editingDepartmentId = id;
+        document.getElementById('department-modal').classList.remove('hidden');
+        document.getElementById('department-code').value = code || '';
+        document.getElementById('department-name').value = name || '';
+        document.getElementById('department-modal').querySelector('h3').innerHTML = '<i class="fas fa-building w-6 h-6 mr-2"></i> Edit Department';
+        document.getElementById('department-form').querySelector('button[type="submit"]').innerHTML = '<i class="fas fa-building mr-2"></i> Update Department';
+        
+        // Display existing icon if available
+        if (iconUrl) {
+            const previewImg = document.getElementById('department-icon-preview-img');
+            const previewContainer = document.getElementById('department-icon-preview');
+            if (previewImg && previewContainer) {
+                previewImg.src = iconUrl;
+                previewImg.style.borderRadius = '';
+                previewImg.style.objectFit = 'contain';
+                previewContainer.classList.remove('hidden');
+            }
+        } else {
+            document.getElementById('department-icon-preview').classList.add('hidden');
+        }
+        
+        // Clear file input to allow selecting a new file
+        const iconInput = document.getElementById('department-icon');
+        if (iconInput) {
+            iconInput.value = '';
+        }
+    }
+    
+    function openDeleteDepartmentModal(id, code, name) {
+        document.getElementById('delete-department-modal').classList.remove('hidden');
+        document.getElementById('delete-department-id').value = id;
+        document.getElementById('delete-department-name').textContent = (code ? code + ' - ' : '') + name;
+    }
+    
+    function closeDeleteDepartmentModal() {
+        document.getElementById('delete-department-modal').classList.add('hidden');
+    }
+    
+    function deleteDepartment() {
+        const departmentId = document.getElementById('delete-department-id').value;
+        
+        fetch(`/dashboard/admin-dashboard/departments/${departmentId}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message || 'Department deleted successfully!', 'success');
+                } else {
+                    alert(data.message || 'Department deleted successfully!');
+                }
+                closeDeleteDepartmentModal();
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                if (typeof showNotification === 'function') {
+                    showNotification('Error: ' + data.message, 'error');
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }
+        })
+        .catch(error => {
+            if (typeof showNotification === 'function') {
+                showNotification('An error occurred while deleting the department.', 'error');
+            } else {
+                alert('An error occurred while deleting the department.');
+            }
+        });
+    }
+
+    function toggleDepartment(deptId) {
+        const deptDiv = document.getElementById(deptId);
+        if (!deptDiv) return;
+        
+        const counter = deptId.replace('dept-', '');
+        const icon = document.getElementById('dept-icon-' + counter);
+        const isOpen = deptDiv.style.display !== 'none' && deptDiv.style.display !== '';
+        
+        if (isOpen) {
+            // Close folder
+            deptDiv.style.display = 'none';
+            if (icon) {
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-right');
+            }
+            // Save state to sessionStorage
+            sessionStorage.setItem('dept_' + deptId, 'closed');
+        } else {
+            // Open folder
+            deptDiv.style.display = 'grid';
+            if (icon) {
+                icon.classList.remove('fa-chevron-right');
+                icon.classList.add('fa-chevron-down');
+            }
+            // Save state to sessionStorage
+            sessionStorage.setItem('dept_' + deptId, 'open');
+        }
+    }
+    
+    // Close delete department modal when clicking outside
+    document.getElementById('delete-department-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeDeleteDepartmentModal();
+        }
+    });
+    
+    // Close delete program modal when clicking outside
+    document.getElementById('delete-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeDeleteModal();
+        }
+    });
+    
+    // Initialize folder states on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Find all department folders
+        const deptFolders = document.querySelectorAll('[id^="dept-"]');
+        deptFolders.forEach(function(folder) {
+            const deptId = folder.id;
+            const savedState = sessionStorage.getItem('dept_' + deptId);
+            
+            if (savedState === 'open') {
+                // Restore open state
+                folder.style.display = 'grid';
+                const counter = deptId.replace('dept-', '');
+                const icon = document.getElementById('dept-icon-' + counter);
+                if (icon) {
+                    icon.classList.remove('fa-chevron-right');
+                    icon.classList.add('fa-chevron-down');
+                }
+            } else {
+                // Default to closed (first visit)
+                folder.style.display = 'none';
+                const counter = deptId.replace('dept-', '');
+                const icon = document.getElementById('dept-icon-' + counter);
+                if (icon) {
+                    icon.classList.remove('fa-chevron-down');
+                    icon.classList.add('fa-chevron-right');
+                }
+            }
+        });
+        
+        // Programs data for filter dropdown
+        const programsByDept = {
+            {% for dept, programs_list in all_programs_by_dept.items %}
+            "{{ dept }}": [
+                {% for program in programs_list %}
+                {id: {{ program.id }}, code: "{{ program.code|escapejs }}", name: "{{ program.name|escapejs }}"}{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ]{% if not forloop.last %},{% endif %}
+            {% endfor %}
+        };
+        
+        // Search functionality removed - users can scroll to find departments/programs
+    });
+    
+    // Search functionality removed - these functions are no longer needed
+    /*
+    function showSearchResultsModal(searchTerm, selectedDept, selectedProgramId) {
+        const modal = document.getElementById('search-results-modal');
+        const resultsContainer = document.getElementById('search-results-content');
+        if (!modal || !resultsContainer) return;
+        
+        const searchLower = searchTerm.toLowerCase();
+        const deptFilter = selectedDept.toLowerCase();
+        const programIdFilter = selectedProgramId ? parseInt(selectedProgramId) : null;
+        
+        const matchingDepartments = [];
+        const matchingPrograms = [];
+        
+        // Find matching departments
+        const departmentCards = document.querySelectorAll('.department-card');
+        departmentCards.forEach(function(card) {
+            const code = (card.getAttribute('data-code') || '').toLowerCase();
+            const name = (card.getAttribute('data-name') || '').toLowerCase();
+            const deptId = card.getAttribute('data-dept-id');
+            
+            const searchMatches = code.includes(searchLower) || name.includes(searchLower);
+            const deptMatches = deptFilter === '' || name.includes(deptFilter) || code.includes(deptFilter);
+            
+            if (searchMatches && deptMatches && card.style.display !== 'none') {
+                matchingDepartments.push({
+                    code: code.toUpperCase(),
+                    name: name,
+                    id: deptId
+                });
+            }
+        });
+        
+        // Find matching programs (if any exist in old structure)
+        const programCards = document.querySelectorAll('.program-card');
+        programCards.forEach(function(card) {
+            const code = (card.getAttribute('data-code') || '').toLowerCase();
+            const name = (card.getAttribute('data-name') || '').toLowerCase();
+            const dept = (card.getAttribute('data-dept') || '').toLowerCase();
+            const programId = card.getAttribute('data-program-id');
+            
+            const searchMatches = code.includes(searchLower) || name.includes(searchLower) || dept.includes(searchLower);
+            const deptMatches = deptFilter === '' || dept === deptFilter;
+            const programMatches = programIdFilter === null || (programId && parseInt(programId) === programIdFilter);
+            
+            if (searchMatches && deptMatches && programMatches && card.style.display !== 'none') {
+                matchingPrograms.push({
+                    code: code.toUpperCase(),
+                    name: name,
+                    id: programId
+                });
+            }
+        });
+        
+        // Update modal content
+        if (matchingDepartments.length > 0 || matchingPrograms.length > 0) {
+            let html = '<div class="space-y-3 max-h-96 overflow-y-auto">';
+            
+            if (matchingDepartments.length > 0) {
+                html += '<div><h4 class="font-semibold text-gray-700 mb-2 flex items-center"><i class="fas fa-building w-4 h-4 mr-2"></i>Departments</h4>';
+                matchingDepartments.slice(0, 5).forEach(function(dept) {
+                    html += `
+                        <div class="p-3 hover:bg-gray-50 rounded-lg cursor-pointer border border-gray-200 transition mb-2" 
+                             onclick="window.location.href='/dashboard/admin-dashboard/departments/${dept.id}/programs/'; closeSearchResultsModal();">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fas fa-building text-green-600"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="font-semibold text-gray-900 truncate">${dept.code} - ${dept.name}</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                if (matchingDepartments.length > 5) {
+                    html += `<p class="text-sm text-gray-500 text-center pt-1">And ${matchingDepartments.length - 5} more departments...</p>`;
+                }
+                html += '</div>';
+            }
+            
+            if (matchingPrograms.length > 0) {
+                html += '<div><h4 class="font-semibold text-gray-700 mb-2 flex items-center"><i class="fas fa-graduation-cap w-4 h-4 mr-2"></i>Programs</h4>';
+                matchingPrograms.slice(0, 5).forEach(function(prog) {
+                    html += `
+                        <div class="p-3 hover:bg-gray-50 rounded-lg cursor-pointer border border-gray-200 transition mb-2" 
+                             onclick="window.location.href='/dashboard/admin-dashboard/programs/${prog.id}/users/'; closeSearchResultsModal();">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fas fa-graduation-cap text-blue-600"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="font-semibold text-gray-900 truncate">${prog.code} - ${prog.name}</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                if (matchingPrograms.length > 5) {
+                    html += `<p class="text-sm text-gray-500 text-center pt-1">And ${matchingPrograms.length - 5} more programs...</p>`;
+                }
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            resultsContainer.innerHTML = html;
+            modal.classList.remove('hidden');
+        } else {
+            resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-search text-4xl mb-2"></i><p>No matching results found</p></div>';
+            modal.classList.remove('hidden');
+        }
+    }
+    
+    function closeSearchResultsModal() {
+        const modal = document.getElementById('search-results-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    }
+    */
+    
+    // Search functionality removed - filter function no longer needed
+    /*
+    function filterDepartmentsAndPrograms(searchTerm, selectedDept, selectedProgramId) {
+        const departmentCards = document.querySelectorAll('.department-card');
+        const programCards = document.querySelectorAll('.program-card');
+        const departmentFolders = document.querySelectorAll('[id^="dept-"]');
+        
+        // Convert search term to lowercase for case-insensitive search
+        const searchLower = searchTerm.toLowerCase();
+        const deptFilter = selectedDept.toLowerCase();
+        const programIdFilter = selectedProgramId ? parseInt(selectedProgramId) : null;
+        
+        // Track which folders have visible cards
+        const foldersWithMatches = new Set();
+        let hasVisibleDepartments = false;
+        
+        // Filter department cards
+        departmentCards.forEach(function(card) {
+            const code = (card.getAttribute('data-code') || '').toLowerCase();
+            const name = (card.getAttribute('data-name') || '').toLowerCase();
+            
+            // Check if search term matches (starts with or contains) - case-insensitive
+            const searchMatches = searchTerm === '' || 
+                                code.startsWith(searchLower) || 
+                                name.startsWith(searchLower) || 
+                                code.includes(searchLower) ||
+                                name.includes(searchLower);
+            
+            // Check if department filter matches (if a specific department is selected)
+            const deptMatches = deptFilter === '' || 
+                               name.includes(deptFilter) || 
+                               code.includes(deptFilter);
+            
+            // Show card only if all filters match
+            if (searchMatches && deptMatches) {
+                card.style.display = '';
+                hasVisibleDepartments = true;
+            } else {
+                card.style.display = 'none';
+            }
+        });
+        
+        // Filter program cards (if they exist in the old structure)
+        programCards.forEach(function(card) {
+            const code = (card.getAttribute('data-code') || '').toLowerCase();
+            const name = (card.getAttribute('data-name') || '').toLowerCase();
+            const dept = (card.getAttribute('data-dept') || '').toLowerCase();
+            const programId = card.getAttribute('data-program-id');
+            
+            // Check if search term matches (starts with or contains) - case-insensitive
+            const searchMatches = searchTerm === '' || 
+                                code.startsWith(searchLower) || 
+                                name.startsWith(searchLower) || 
+                                dept.startsWith(searchLower) ||
+                                code.includes(searchLower) ||
+                                name.includes(searchLower) ||
+                                dept.includes(searchLower);
+            
+            // Check if department filter matches
+            const deptMatches = deptFilter === '' || dept === deptFilter;
+            
+            // Check if program filter matches
+            const programMatches = programIdFilter === null || (programId && parseInt(programId) === programIdFilter);
+            
+            // Show card only if all filters match
+            if (searchMatches && deptMatches && programMatches) {
+                card.style.display = '';
+                // Find the parent department folder
+                const folder = card.closest('[id^="dept-"]');
+                if (folder) {
+                    foldersWithMatches.add(folder.id);
+                }
+            } else {
+                card.style.display = 'none';
+            }
+        });
+        
+        // Show/hide and expand/collapse folders based on visible programs
+        departmentFolders.forEach(function(folder) {
+            const folderCards = folder.querySelectorAll('.program-card');
+            const visibleCards = Array.from(folderCards).filter(card => card.style.display !== 'none');
+            const folderContainer = folder.closest('.mb-6');
+            
+            if (visibleCards.length > 0 || (searchTerm === '' && selectedDept === '')) {
+                // Show parent folder container if it has visible cards
+                if (folderContainer) {
+                    folderContainer.style.display = '';
+                }
+                
+                // If searching or filtering, automatically expand folders with matches
+                if ((searchTerm !== '' || selectedDept !== '' || selectedProgramId) && foldersWithMatches.has(folder.id)) {
+                    folder.style.display = 'grid';
+                    // Update icon to show expanded state
+                    const folderId = folder.id;
+                    const counter = folderId.replace('dept-', '');
+                    const icon = document.getElementById('dept-icon-' + counter);
+                    if (icon) {
+                        icon.classList.remove('fa-chevron-right');
+                        icon.classList.add('fa-chevron-down');
+                    }
+                } else if (searchTerm === '' && selectedDept === '' && !selectedProgramId) {
+                    // If no search or filter, restore folder state from sessionStorage
+                    const savedState = sessionStorage.getItem('dept_' + folder.id);
+                    if (savedState !== 'open') {
+                        folder.style.display = 'none';
+                        const folderId = folder.id;
+                        const counter = folderId.replace('dept-', '');
+                        const icon = document.getElementById('dept-icon-' + counter);
+                        if (icon) {
+                            icon.classList.remove('fa-chevron-down');
+                            icon.classList.add('fa-chevron-right');
+                        }
+                    }
+                }
+            } else {
+                // Hide parent folder if no visible cards
+                if (folderContainer) {
+                    folderContainer.style.display = 'none';
+                }
+            }
+        });
+    }
+    */
+    
+    function openDeleteModal(programId, programCode, programName) {
+        document.getElementById('delete-program-id').value = programId;
+        document.getElementById('delete-program-name').textContent = `${programCode} - ${programName}`;
+        document.getElementById('delete-modal').classList.remove('hidden');
+    }
+    
+    function closeDeleteModal() {
+        document.getElementById('delete-modal').classList.add('hidden');
+    }
+    
+    function deleteProgram() {
+        const programId = document.getElementById('delete-program-id').value;
+        
+        fetch(`/dashboard/admin-dashboard/programs/${programId}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message || 'Program deleted successfully!', 'success');
+                } else {
+                    alert(data.message || 'Program deleted successfully!');
+                }
+                closeDeleteModal();
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                if (typeof showNotification === 'function') {
+                    showNotification('Error: ' + data.message, 'error');
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }
+        })
+        .catch(error => {
+            if (typeof showNotification === 'function') {
+                showNotification('An error occurred while deleting the program.', 'error');
+            } else {
+                alert('An error occurred while deleting the program.');
+            }
+        });
+    }
+    
+    function viewProgramUsers(programId) {
+        window.location.href = `/dashboard/admin-dashboard/programs/${programId}/users/`;
+    }
+
+    // Image cropper instance
+    let departmentCropper = null;
+    let currentIconInput = null;
+    
+    // Function to handle icon file selection and open cropper
+    function handleIconFileSelect(file, inputId) {
+        if (!file) return;
+        
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            if (typeof showNotification === 'function') {
+                showNotification('Please select a valid image file.', 'error');
+            } else {
+                alert('Please select a valid image file.');
+            }
+            const input = document.getElementById(inputId);
+            if (input) input.value = '';
+            return;
+        }
+        
+        // Validate file size (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            if (typeof showNotification === 'function') {
+                showNotification('Image size must be less than 10MB.', 'error');
+            } else {
+                alert('Image size must be less than 10MB.');
+            }
+            const input = document.getElementById(inputId);
+            if (input) input.value = '';
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            // Open cropper modal
+            currentIconInput = inputId;
+            document.getElementById('cropper-image').src = e.target.result;
+            document.getElementById('image-cropper-modal').classList.remove('hidden');
+            
+            // Initialize cropper
+            setTimeout(() => {
+                const image = document.getElementById('cropper-image');
+                if (departmentCropper) {
+                    departmentCropper.destroy();
+                }
+                departmentCropper = new Cropper(image, {
+                    aspectRatio: 1, // Square crop
+                    viewMode: 1,
+                    dragMode: 'move',
+                    autoCropArea: 0.8,
+                    restore: false,
+                    guides: true,
+                    center: true,
+                    highlight: false,
+                    cropBoxMovable: true,
+                    cropBoxResizable: true,
+                    toggleDragModeOnDblclick: false,
+                });
+            }, 100);
+        };
+        reader.readAsDataURL(file);
+    }
+    
+    // Use event delegation for icon inputs (works even if modals are hidden)
+    document.addEventListener('change', function(e) {
+        if (e.target && e.target.id === 'department-icon') {
+            handleIconFileSelect(e.target.files[0], 'department-icon');
+        } else if (e.target && e.target.id === 'program-icon') {
+            handleIconFileSelect(e.target.files[0], 'program-icon');
+        }
+    });
+    
+    
+    function closeCropperModal() {
+        document.getElementById('image-cropper-modal').classList.add('hidden');
+        hideContinueEditOption();
+        
+        // Reset cropper display
+        const cropperWrapper = document.getElementById('cropper-container-wrapper');
+        const croppedContainer = document.getElementById('cropped-preview-container');
+        if (cropperWrapper) {
+            cropperWrapper.style.display = 'block';
+        }
+        if (croppedContainer) {
+            croppedContainer.classList.add('hidden');
+        }
+        
+        if (departmentCropper) {
+            departmentCropper.destroy();
+            departmentCropper = null;
+        }
+        // Don't reset file input - keep the cropped file for form submission
+        currentIconInput = null;
+    }
+    
+    function showContinueEditOption() {
+        const continueEditBtn = document.getElementById('continue-edit-btn');
+        const applyCropBtn = document.getElementById('apply-crop-btn');
+        if (continueEditBtn) {
+            continueEditBtn.classList.remove('hidden');
+        }
+        if (applyCropBtn) {
+            applyCropBtn.classList.add('hidden');
+        }
+    }
+    
+    function hideContinueEditOption() {
+        const continueEditBtn = document.getElementById('continue-edit-btn');
+        const applyCropBtn = document.getElementById('apply-crop-btn');
+        if (continueEditBtn) {
+            continueEditBtn.classList.add('hidden');
+        }
+        if (applyCropBtn) {
+            applyCropBtn.classList.remove('hidden');
+        }
+    }
+    
+    function continueEditCrop() {
+        // Reopen the cropper with the current image
+        const container = document.getElementById('cropper-container-wrapper');
+        if (!container) return;
+        
+        const img = document.getElementById('cropper-image');
+        if (!img || !img.src) return;
+        
+        // Hide cropped preview and show cropper again
+        const croppedContainer = document.getElementById('cropped-preview-container');
+        if (croppedContainer) {
+            croppedContainer.classList.add('hidden');
+        }
+        container.style.display = 'block';
+        
+        // Hide continue edit button
+        hideContinueEditOption();
+        
+        // Reinitialize cropper
+        setTimeout(() => {
+            if (departmentCropper) {
+                departmentCropper.destroy();
+            }
+            departmentCropper = new Cropper(img, {
+                aspectRatio: 1, // Square crop only
+                viewMode: 1,
+                dragMode: 'move',
+                autoCropArea: 0.8,
+                restore: false,
+                guides: true,
+                center: true,
+                highlight: false,
+                cropBoxMovable: true,
+                cropBoxResizable: true,
+                toggleDragModeOnDblclick: false,
+            });
+        }, 100);
+    }
+    
+    function applyCrop() {
+        if (!departmentCropper) {
+            closeCropperModal();
+            return;
+        }
+        
+        // Get cropped canvas - square crop only
+        const canvas = departmentCropper.getCroppedCanvas({
+            width: 400,
+            height: 400,
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: 'high',
+        });
+        
+        if (canvas) {
+            // Convert canvas to blob
+            canvas.toBlob(function(blob) {
+                if (blob) {
+                    // Create a new File from the blob
+                    const file = new File([blob], 'cropped-icon.png', { type: 'image/png' });
+                    
+                    // Create a new FileList-like object
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    
+                    // Update the file input
+                    const previewDataUrl = canvas.toDataURL('image/png');
+                    
+                    // Update file input with cropped image
+                    if (currentIconInput === 'department-icon') {
+                        const input = document.getElementById('department-icon');
+                        input.files = dataTransfer.files;
+                        
+                        // Update preview in modal
+                        const croppedPreview = document.getElementById('cropped-preview-img');
+                        const croppedContainer = document.getElementById('cropped-preview-container');
+                        if (croppedPreview && croppedContainer) {
+                            croppedPreview.src = previewDataUrl;
+                            croppedContainer.classList.remove('hidden');
+                        }
+                        
+                        // Update preview in form immediately (even if form modal is closed, it will show when opened)
+                        const previewImg = document.getElementById('department-icon-preview-img');
+                        const previewContainer = document.getElementById('department-icon-preview');
+                        if (previewImg && previewContainer) {
+                            previewImg.src = previewDataUrl;
+                            previewImg.style.borderRadius = '';
+                            previewImg.style.objectFit = 'contain';
+                            previewContainer.classList.remove('hidden');
+                            
+                            // Also update the preview in the department modal if it's open
+                            const departmentModal = document.getElementById('department-modal');
+                            if (departmentModal && !departmentModal.classList.contains('hidden')) {
+                                // Force a visual update
+                                previewImg.style.display = 'block';
+                            }
+                        }
+                    } else if (currentIconInput === 'program-icon') {
+                        const input = document.getElementById('program-icon');
+                        input.files = dataTransfer.files;
+                        
+                        // Update preview in modal
+                        const croppedPreview = document.getElementById('cropped-preview-img');
+                        const croppedContainer = document.getElementById('cropped-preview-container');
+                        if (croppedPreview && croppedContainer) {
+                            croppedPreview.src = previewDataUrl;
+                            croppedContainer.classList.remove('hidden');
+                        }
+                        
+                        // Update preview in form immediately (even if form modal is closed, it will show when opened)
+                        const previewImg = document.getElementById('program-icon-preview-img');
+                        const previewContainer = document.getElementById('program-icon-preview');
+                        if (previewImg && previewContainer) {
+                            previewImg.src = previewDataUrl;
+                            previewImg.style.borderRadius = '';
+                            previewImg.style.objectFit = 'contain';
+                            previewContainer.classList.remove('hidden');
+                            
+                            // Also update the preview in the program modal if it's open
+                            const programModal = document.getElementById('program-modal');
+                            if (programModal && !programModal.classList.contains('hidden')) {
+                                // Force a visual update
+                                previewImg.style.display = 'block';
+                            }
+                        }
+                    }
+                    
+                    // Hide cropper and show preview, show continue edit option
+                    const cropperWrapper = document.getElementById('cropper-container-wrapper');
+                    if (cropperWrapper) {
+                        cropperWrapper.style.display = 'none';
+                    }
+                    
+                    // Show continue edit option instead of closing immediately
+                    showContinueEditOption();
+                }
+            }, 'image/png', 0.9);
+        }
+    }
+    
+    // Close cropper modal when clicking outside
+    document.getElementById('image-cropper-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeCropperModal();
+        }
+    });
+
+    // Program icon handler is now handled by event delegation above
+    // No need for separate handler since we're using event delegation
+
+    // Department form submission - ensure form exists
+    function setupDepartmentForm() {
+        const departmentForm = document.getElementById('department-form');
+        if (!departmentForm) {
+            console.error('Department form not found!');
+            return;
+        }
+        
+        // Remove existing listener if any
+        const newForm = departmentForm.cloneNode(true);
+        departmentForm.parentNode.replaceChild(newForm, departmentForm);
+        
+        newForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('department-name').value.trim();
+            const code = document.getElementById('department-code').value.trim().toUpperCase();
+
+        if (!name || !code) {
+            if (typeof showNotification === 'function') {
+                showNotification('Department name and code are required.', 'error');
+            } else {
+                alert('Department name and code are required.');
+            }
+            return;
+        }
+
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        const isEditing = editingDepartmentId !== null;
+        submitBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> ${isEditing ? 'Updating...' : 'Creating...'}`;
+
+        try {
+            const formData = new FormData(e.target);
+            
+            // Ensure CSRF token is included in FormData (from {% csrf_token %} in form)
+            const csrfInput = e.target.querySelector('input[name="csrfmiddlewaretoken"]');
+            if (csrfInput) {
+                formData.append('csrfmiddlewaretoken', csrfInput.value);
+            }
+            
+            // Ensure icon file is included if selected (after cropping)
+            const iconInput = document.getElementById('department-icon');
+            if (iconInput && iconInput.files && iconInput.files.length > 0) {
+                // Remove old icon entry if exists
+                formData.delete('icon');
+                // Add the cropped file
+                formData.append('icon', iconInput.files[0]);
+            }
+            
+            // Get CSRF token from cookie or template for header (backup)
+            function getCookie(name) {
+                let cookieValue = null;
+                if (document.cookie && document.cookie !== '') {
+                    const cookies = document.cookie.split(';');
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i].trim();
+                        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                            break;
+                        }
+                    }
+                }
+                return cookieValue;
+            }
+            
+            const csrftoken = csrfInput ? csrfInput.value : (getCookie('csrftoken') || '{{ csrf_token }}');
+            
+            // Use appropriate URL based on add or edit
+            const url = isEditing 
+                ? `/dashboard/admin-dashboard/departments/${editingDepartmentId}/update/`
+                : '/dashboard/admin-dashboard/departments/add/';
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrftoken
+                    // Don't set Content-Type header - browser will set it automatically with boundary for FormData
+                },
+                body: formData,
+                credentials: 'same-origin'  // Include cookies for CSRF
+            });
+
+            console.log('Response status:', response.status);
+            console.log('Response headers:', response.headers);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Error response:', errorText);
+                throw new Error(`HTTP error! status: ${response.status} - ${errorText.substring(0, 200)}`);
+            }
+
+            let data;
+            try {
+                data = await response.json();
+            } catch (jsonError) {
+                console.error('JSON parse error:', jsonError);
+                const text = await response.text();
+                console.error('Response text:', text);
+                throw new Error('Invalid response from server: ' + text);
+            }
+
+            if (data.success) {
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message, 'success');
+                } else {
+                    alert(data.message);
+                }
+                closeDepartmentModal();
+                editingDepartmentId = null; // Reset editing state
+                
+                // Reload page after a short delay to show the new/updated department
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message || 'An error occurred.', 'error');
+                } else {
+                    alert(data.message || 'An error occurred.');
+                }
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            console.error('Error details:', error.message, error.stack);
+            let errorMessage = 'Network error. Please try again.';
+            if (error.message) {
+                errorMessage = error.message;
+            }
+            if (typeof showNotification === 'function') {
+                showNotification(errorMessage, 'error');
+            } else {
+                alert(errorMessage);
+            }
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
+    });
+
+    // Close department modal when clicking outside
+    document.getElementById('department-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeDepartmentModal();
+        }
+    });
+
+    document.getElementById('program-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const code = document.getElementById('program-code').value.trim().toUpperCase();
+        const name = document.getElementById('program-name').value.trim();
+        const departmentId = document.getElementById('program-department-id').value.trim();
+
+        if (!code || !name) {
+            if (typeof showNotification === 'function') {
+                showNotification('Program code and name are required.', 'error');
+            } else {
+                alert('Program code and name are required.');
+            }
+            return;
+        }
+
+        if (!editingProgramId && !departmentId) {
+            if (typeof showNotification === 'function') {
+                showNotification('Please select a department first.', 'error');
+            } else {
+                alert('Please select a department first.');
+            }
+            return;
+        }
+
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> ' + (editingProgramId ? 'Updating...' : 'Creating...');
+
+        try {
+            const formData = new FormData(e.target);
+            
+            // Ensure icon file is included if cropped
+            const iconInput = document.getElementById('program-icon');
+            if (iconInput && iconInput.files && iconInput.files.length > 0) {
+                // Remove old icon entry if exists
+                formData.delete('icon');
+                // Add the cropped file
+                formData.append('icon', iconInput.files[0]);
+            }
+            
+            const url = editingProgramId 
+                ? `/dashboard/admin-dashboard/programs/${editingProgramId}/update/`
+                : '/dashboard/admin-dashboard/programs/add/';
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: formData
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message, 'success');
+                } else {
+                    alert(data.message);
+                }
+                closeProgramModal();
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                if (typeof showNotification === 'function') {
+                    showNotification('Error: ' + data.message, 'error');
+                } else {
+                    alert('Error: ' + data.message);
+                }
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            if (typeof showNotification === 'function') {
+                showNotification('Network error. Please try again.', 'error');
+            } else {
+                alert('Network error. Please try again.');
+            }
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
+        });
+    }
+    
+    // Setup form when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupDepartmentForm);
+    } else {
+        setupDepartmentForm();
+    }
+    
+    // Independent scrolling: content scrolls when cursor is over it
+    const mainContent = document.getElementById('main-content');
+    if (mainContent) {
+        mainContent.addEventListener('wheel', function(e) {
+            // Only scroll if cursor is over main content
+            if (e.target.closest('#main-content')) {
+                e.stopPropagation();
+            }
+        });
+    }
+</script>
+{% endblock %}
+
