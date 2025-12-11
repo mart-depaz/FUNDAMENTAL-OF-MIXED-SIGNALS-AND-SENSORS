@@ -123,7 +123,11 @@
                 <!-- Attendance Control Dropdown -->
                 <div class="flex items-center gap-2 mb-2">
                     <label class="text-xs font-semibold text-gray-700">Attendance Control{% if focus_course_next_entry and focus_course_next_entry.day_label %}: {{ focus_course_next_entry.day_label }}{% endif %}:</label>
-                    <select id="attendance-control" class="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" onfocus="this.dataset.previousValue = this.value" onchange="handleAttendanceControlChange(event, {{ focus_course.id }}, this{% if focus_course_next_entry and focus_course_next_entry.schedule_id %}, '{{ focus_course_next_entry.schedule_id }}'{% endif %}{% if focus_course_next_entry and focus_course_next_entry.day_label %}, '{{ focus_course_next_entry.day_label }}'{% endif %})">
+                    <select id="attendance-control" 
+                            data-course-id="{{ focus_course.id }}"
+                            data-schedule-id="{% if focus_course_next_entry and focus_course_next_entry.schedule_id %}{{ focus_course_next_entry.schedule_id }}{% endif %}"
+                            data-day-label="{% if focus_course_next_entry and focus_course_next_entry.day_label %}{{ focus_course_next_entry.day_label }}{% endif %}"
+                            class="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
                         {% if focus_course_next_entry and focus_course_next_entry.day_schedule_status %}
                             <option value="closed" {% if focus_course_next_entry.day_schedule_status == 'closed' or not focus_course_next_entry.day_schedule_status %}selected{% endif %}>Closed Attendance</option>
                             <option value="open" {% if focus_course_next_entry.day_schedule_status == 'open' %}selected{% endif %}>Open Attendance</option>
@@ -134,9 +138,15 @@
                             <option value="postponed" {% if focus_course.attendance_status == 'postponed' %}selected{% endif %}>Postponed</option>
                         {% endif %}
                     </select>
-                    <div class="ml-2">
-                        <label class="text-xs text-gray-600 block">Present window (min)</label>
-                        <input id="sidebarPresentDuration" type="number" min="1" step="1" class="w-20 px-2 py-1 text-xs border border-gray-300 rounded-lg" placeholder="e.g. 20" value="{% if focus_course_next_entry and focus_course_next_entry.attendance_present_duration %}{{ focus_course_next_entry.attendance_present_duration }}{% elif focus_course.attendance_present_duration %}{{ focus_course.attendance_present_duration }}{% endif %}">
+                    <div class="ml-2 flex items-end gap-2">
+                        <div id="active-window-display" class="text-xs font-semibold text-indigo-600 min-w-12 text-center hidden">
+                            <div class="text-sm font-bold"><span id="window-time">—</span> mins</div>
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-600 block">Present window (min)</label>
+                            <input id="sidebarPresentDuration" type="number" min="1" step="1" class="w-16 px-2 py-1 text-xs border border-gray-300 rounded-lg" placeholder="e.g. 20" value="{% if focus_course_next_entry and focus_course_next_entry.attendance_present_duration %}{{ focus_course_next_entry.attendance_present_duration }}{% elif focus_course.attendance_present_duration %}{{ focus_course.attendance_present_duration }}{% endif %}">
+                        </div>
+                        <button id="confirm-present-duration" type="button" class="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition duration-150 shadow-sm">Confirm</button>
                     </div>
                 </div>
                 
@@ -155,10 +165,10 @@
                     </div>
                 </div>
                 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div class="p-4 rounded-xl border border-gray-200">
-                        <p class="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Attendance</p>
-                        <p class="text-2xl font-bold text-gray-900">{{ today_attendance_count|default:0 }}</p>
+                        <p class="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">STUDENT SCANNED</p>
+                        <p id="student-scanned-count" class="text-2xl font-bold text-gray-900">{{ today_attendance_count|default:0 }}</p>
                         <p class="text-xs text-gray-500 mt-1">Students attended today</p>
                     </div>
                     <div class="p-4 rounded-xl border border-gray-200">
@@ -166,17 +176,22 @@
                         <p class="text-2xl font-bold text-gray-900">{{ enrolled_students|length|default:0 }}</p>
                         <p class="text-xs text-gray-500 mt-1">Students enrolled</p>
                     </div>
-                </div>
-                
-                <div class="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                </div>                <div class="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    {% comment %} Determine effective attendance status: prefer schedule/day-specific status when available {% endcomment %}
+                    {% with current_attendance=focus_course_next_entry.day_schedule_status|default:focus_course.attendance_status %}
                     <div class="flex items-center justify-between mb-2">
                         <div class="flex items-center gap-2">
                             <i class="fas fa-camera text-blue-600"></i>
                             <span class="text-xs font-semibold text-gray-700">Scan Student ID</span>
                         </div>
-                        {% if focus_course_next_entry and focus_course_next_entry.day_schedule_status == 'open' or focus_course.attendance_status == 'open' %}
-                            <button onclick="openInstructorSchoolIDScanner({{ focus_course.id }}, '{{ focus_course.code|escapejs }}', '{{ focus_course.name|escapejs }}', '{{ focus_course.section }}', '{% if focus_course_next_entry and focus_course_next_entry.schedule_id %}{{ focus_course_next_entry.schedule_id }}{% endif %}')" 
-                                    class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition duration-150 shadow-sm flex items-center gap-1">
+                        {% if focus_course and current_attendance == 'open' %}
+                            <button 
+                                data-course-id="{{ focus_course.id }}" 
+                                data-course-code="{{ focus_course.code|escapejs }}" 
+                                data-course-name="{{ focus_course.name|escapejs }}" 
+                                data-section="{{ focus_course.section }}"
+                                data-schedule-id="{% if focus_course_next_entry and focus_course_next_entry.schedule_id %}{{ focus_course_next_entry.schedule_id }}{% endif %}"
+                                class="open-instructor-scanner px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition duration-150 shadow-sm flex items-center gap-1">
                                 <i class="fas fa-camera text-xs"></i> Scan
                             </button>
                         {% else %}
@@ -185,65 +200,15 @@
                             </button>
                         {% endif %}
                     </div>
-                    {% if focus_course_next_entry and focus_course_next_entry.day_schedule_status == 'open' or focus_course.attendance_status == 'open' %}
+                    {% if focus_course and current_attendance == 'open' %}
                         <p class="text-[10px] text-gray-600 text-center">Open camera to scan student school ID for attendance</p>
                     {% else %}
                         <p class="text-[10px] text-yellow-600 text-center font-semibold">⚠️ Attendance is currently CLOSED. Open it to enable scanning.</p>
                     {% endif %}
+                    {% endwith %}
                 </div>
                 
-                <!-- Students List -->
-                <div class="p-4 rounded-xl border border-gray-200">
-                    <div class="flex items-center justify-between mb-3">
-                        <p class="text-xs font-semibold text-gray-600 uppercase tracking-wider">Students</p>
-                        {% if attendance_records|length > 10 %}
-                        <button onclick="showStudentsListModal()" class="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition duration-150 shadow-sm flex items-center gap-1">
-                            <i class="fas fa-eye text-xs"></i> View
-                        </button>
-                        {% endif %}
-                    </div>
-                    <div class="space-y-2 {% if attendance_records|length > 10 %}max-h-64 overflow-y-auto{% endif %}">
-                        {% if course_finished %}
-                            <div class="text-center py-6 px-4 bg-blue-50 rounded-lg border border-blue-200">
-                                <i class="fas fa-info-circle text-blue-600 text-2xl mb-2"></i>
-                                <p class="text-xs font-semibold text-blue-800 mb-1">Class has ended for this schedule</p>
-                                <p class="text-[10px] text-blue-600 mb-2">A new QR code has been generated for the next occurrence.</p>
-                                <p class="text-[10px] text-blue-600 mb-3">View attendance records and reports in the Attendance Reports section.</p>
-                                <a href="{% url 'dashboard:instructor_attendance_reports' %}?course={{ focus_course.id }}" 
-                                   class="inline-block px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition duration-150">
-                                    <i class="fas fa-chart-pie mr-1"></i> View Attendance Reports
-                                </a>
-                            </div>
-                        {% elif attendance_records %}
-                            {% for record in attendance_records %}
-                            <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100 transition duration-150">
-                                <div class="flex items-center gap-3 min-w-0 flex-1">
-                                    <span class="text-xs font-bold text-gray-700 flex-shrink-0">{{ forloop.counter }}.</span>
-                                    {% if record.student.profile_picture %}
-                                    <img src="{{ record.student.profile_picture.url }}?v={{ record.student.id }}" 
-                                         alt="{{ record.student.full_name|default:record.student.username }}" 
-                                         class="w-8 h-8 rounded-full object-cover border-2 border-white flex-shrink-0 shadow-sm">
-                                    {% else %}
-                                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm" 
-                                         style="background: linear-gradient(135deg, #3C4770 0%, #447294 100%);">
-                                        {{ record.student.full_name|first|upper|default:record.student.username|first|upper }}
-                                    </div>
-                                    {% endif %}
-                                    <div class="min-w-0 flex-1">
-                                        <p class="text-xs font-semibold text-gray-900 truncate">{{ record.student.full_name|default:record.student.username }}</p>
-                                        <p class="text-[10px] text-gray-500">{{ record.attendance_time|time:"g:i A" }}</p>
-                                    </div>
-                                </div>
-                                <span class="ml-2 px-2 py-1 rounded-full text-[10px] font-semibold flex-shrink-0 {% if record.status == 'late' %}bg-yellow-100 text-yellow-700{% elif record.status == 'absent' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
-                                    {{ record.get_status_display }}
-                                </span>
-                            </div>
-                            {% endfor %}
-                        {% else %}
-                            <p class="text-xs text-gray-500 text-center py-4">No students have attended yet.</p>
-                        {% endif %}
-                    </div>
-                </div>
+                <!-- Students list removed per instructor request -->
                 {% else %}
                 <p class="text-xs text-gray-500">Select a course on the left to begin monitoring.</p>
                 {% endif %}
@@ -385,7 +350,7 @@
             <h3 id="attendance-modal-title-color" class="text-2xl font-bold flex items-center text-indigo-600">
                 <i class="fas fa-clock w-6 h-6 mr-2"></i> Change Attendance Status
             </h3>
-            <button onclick="closeAttendanceStatusModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
+            <button data-close-attendance-modal class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
                 <i class="fas fa-times w-6 h-6"></i>
             </button>
         </div>
@@ -399,10 +364,10 @@
             <input type="hidden" id="attendance-status-schedule-id">
             <input type="hidden" id="attendance-status-day">
             <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
-                <button onclick="closeAttendanceStatusModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
+                <button data-close-attendance-modal class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
                     Cancel
                 </button>
-                <button onclick="confirmAttendanceStatusChange()" class="px-4 py-2 text-white font-semibold rounded-lg transition duration-150 shadow-sm" id="attendance-confirm-btn">
+                <button id="attendance-confirm-btn" class="px-4 py-2 text-white font-semibold rounded-lg transition duration-150 shadow-sm" style="background-color: #4f46e5;">
                     <i class="fas fa-check mr-2"></i> Confirm
                 </button>
             </div>
@@ -410,6 +375,26 @@
     </div>
 </div>
 
+<script>
+// Fallback for Html5Qrcode library with retry
+(function loadHtml5Qrcode() {
+    if (typeof Html5Qrcode === 'undefined') {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js';
+        script.onerror = function() {
+            console.warn('Html5Qrcode CDN failed to load. Scanner functionality may be limited.');
+            // Try fallback CDN
+            const fallbackScript = document.createElement('script');
+            fallbackScript.src = 'https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js';
+            fallbackScript.onerror = function() {
+                console.error('Both Html5Qrcode CDN sources failed. Scanning will not work.');
+            };
+            document.head.appendChild(fallbackScript);
+        };
+        document.head.appendChild(script);
+    }
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <script>
 let previousAttendanceStatus = null;
@@ -697,7 +682,26 @@ function handleAttendanceControlChange(event, courseId, selectElement, scheduleI
     showAttendanceStatusModal(courseId, newValue, selectElement, previousIndex, scheduleId, dayLabel);
 }
 
+// Global helper to get CSRF token (uses existing getCookie if present, falls back to DOM)
+if (typeof window._getCSRF === 'undefined') {
+    window._getCSRF = function() {
+        try {
+            if (typeof getCookie === 'function') {
+                const c = getCookie('csrftoken');
+                if (c) return c;
+            }
+        } catch (e) {}
+        const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (csrfInput && csrfInput.value) return csrfInput.value;
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta && meta.content) return meta.content;
+        return '';
+    };
+}
+
 function showAttendanceStatusModal(courseId, status, selectElement, previousIndex, scheduleId, dayLabel) {
+    console.log('showAttendanceStatusModal called', { courseId, status, previousIndex, scheduleId, dayLabel });
+    
     if (!selectElement) {
         console.error('Select element not provided');
         return;
@@ -769,7 +773,9 @@ function showAttendanceStatusModal(courseId, status, selectElement, previousInde
     document.getElementById('attendance-status-message').className = `font-semibold ${colors.text}`;
     confirmBtn.className = `px-4 py-2 text-white font-semibold rounded-lg transition duration-150 shadow-sm ${colors.btn}`;
     
+    console.log('About to show modal - removing hidden class');
     modal.classList.remove('hidden');
+    console.log('Modal shown. Modal classes:', modal.className);
 }
 
 function closeAttendanceStatusModal() {
@@ -858,50 +864,138 @@ function confirmAttendanceStatusChange() {
         console.error('Error reading present duration input:', e);
     }
     
-    fetch('{% url "dashboard:instructor_update_attendance_status" 0 %}'.replace('0', courseId), {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': '{{ csrf_token }}',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            if (typeof showNotification === 'function') {
-                showNotification(data.message || 'Attendance status updated successfully!', 'success');
+    // Helper to get CSRF token from cookie or page (works even if template csrf token is not present)
+    function _getCSRF() {
+        try {
+            if (typeof getCookie === 'function') {
+                const c = getCookie('csrftoken');
+                if (c) return c;
             }
-            // Reload after a short delay to show updated status
-            setTimeout(() => location.reload(), 500);
-        } else {
-            if (typeof showNotification === 'function') {
-                showNotification(data.message || 'Error updating attendance status.', 'error');
+        } catch (e) {}
+        // Fallback to hidden input token or meta tag
+        const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (csrfInput && csrfInput.value) return csrfInput.value;
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta && meta.content) return meta.content;
+        return '{{ csrf_token }}';
+    }
+
+    // Load Html5Qrcode with fallback attempts (CDN -> unpkg -> local static)
+    function loadHtml5QrcodeWithFallback() {
+        return new Promise((resolve, reject) => {
+            if (window.Html5Qrcode) return resolve(window.Html5Qrcode);
+            const urls = [
+                'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js',
+                'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
+                '/static/js/html5-qrcode.min.js'
+            ];
+            let tried = 0;
+            function tryNext() {
+                if (tried >= urls.length) return reject(new Error('All loaders failed'));
+                const s = document.createElement('script');
+                s.src = urls[tried++];
+                s.async = true;
+                s.onload = () => {
+                    if (window.Html5Qrcode) return resolve(window.Html5Qrcode);
+                    // some bundles may attach differently; still resolve if present
+                    if (window.Html5Qrcode || window.Html5QrcodeScanType) return resolve(window.Html5Qrcode || window);
+                    // otherwise try next
+                    tryNext();
+                };
+                s.onerror = () => {
+                    // try next CDN/fallback
+                    tryNext();
+                };
+                document.head.appendChild(s);
             }
-            // Reset select on error
+            tryNext();
+        });
+    }
+
+    // Debug: log payload, CSRF token and request URL to help diagnose persistence issues
+    try {
+        const debugUrl = '{% url "dashboard:instructor_update_attendance_status" 0 %}'.replace('0', courseId);
+        console.log('Attendance status POST ->', debugUrl, requestBody, 'CSRF:', _getCSRF());
+
+        fetch(debugUrl, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': _getCSRF(),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        })
+        .then(response => {
+            // Log raw response status for debugging
+            console.log('Attendance status response status:', response.status, response.statusText);
+            return response.json();
+        })
+        .then(data => {
+            console.log('Attendance status response JSON:', data);
+            if (data.success) {
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message || 'Attendance status updated successfully!', 'success');
+                }
+                // Log server-confirmed status for debugging
+                if (data.updated_status) {
+                    console.log('Server confirmed new status:', data.updated_status);
+                }
+                // If server reports attendance opened, enable Scan button immediately (UX fallback)
+                try {
+                    if (data.updated_status === 'open') {
+                        // enable scan elements for this course/schedule before reload
+                        try { enableScanForCourse(courseId, requestBody.schedule_id || ''); } catch (e) { console.warn('enableScanForCourse failed', e); }
+
+                        // Update the small helper message in the Scan block so the UI reflects 'open' immediately
+                        try {
+                            const p3Blocks = Array.from(document.querySelectorAll('.p-3'));
+                            for (const b of p3Blocks) {
+                                if (b.textContent && b.textContent.includes('Scan Student ID')) {
+                                    // find the message paragraph (the small info/warning paragraph)
+                                    const msg = b.querySelector('p.text-[10px]');
+                                    if (msg) {
+                                        msg.textContent = 'Open camera to scan student school ID for attendance';
+                                        msg.className = 'text-[10px] text-gray-600 text-center';
+                                    }
+                                    break;
+                                }
+                            }
+                        } catch (e) { console.warn('Failed to update Scan block message', e); }
+                    }
+                } catch (e) { console.warn('Error while attempting to enable scan button', e); }
+                // Reload after a short delay to show updated status
+                setTimeout(() => location.reload(), 500);
+            } else {
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message || 'Error updating attendance status.', 'error');
+                }
+                // Reset select on error
+                if (attendanceStatusSelectElement && attendanceStatusSelectElement.dataset.previousIndex !== undefined) {
+                    const prevIndex = parseInt(attendanceStatusSelectElement.dataset.previousIndex);
+                    attendanceStatusSelectElement.selectedIndex = prevIndex;
+                }
+            }
+        })
+        .catch(err => {
+            console.error('Network error while updating attendance status:', err);
+            if (typeof showNotification === 'function') {
+                showNotification('Network error while updating attendance status', 'error');
+            }
             if (attendanceStatusSelectElement && attendanceStatusSelectElement.dataset.previousIndex !== undefined) {
                 const prevIndex = parseInt(attendanceStatusSelectElement.dataset.previousIndex);
                 attendanceStatusSelectElement.selectedIndex = prevIndex;
             }
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        if (typeof showNotification === 'function') {
-            showNotification('An error occurred. Please try again.', 'error');
-        }
-        // Reset select on error
-        if (attendanceStatusSelectElement && attendanceStatusSelectElement.dataset.previousIndex !== undefined) {
-            const prevIndex = parseInt(attendanceStatusSelectElement.dataset.previousIndex);
-            attendanceStatusSelectElement.selectedIndex = prevIndex;
-        }
-    });
+        });
+    } catch (dbgErr) {
+        console.error('Debug wrapper error:', dbgErr);
+    }
 }
 
 // Instructor School ID Scanner
 let instructorSchoolIDScanner = null;
 
 window.openInstructorSchoolIDScanner = function(courseId, courseCode, courseName, section, scheduleId) {
+    console.log('openInstructorSchoolIDScanner invoked', { courseId: courseId, courseCode: courseCode, courseName: courseName, section: section, scheduleId: scheduleId });
     const modal = document.getElementById('instructorSchoolIDScannerModal');
     if (!modal) {
         console.error('Instructor School ID Scanner modal not found');
@@ -909,18 +1003,30 @@ window.openInstructorSchoolIDScanner = function(courseId, courseCode, courseName
         return;
     }
     
+    // Normalize courseId: extract numeric part from composite keys like "73_F_20251212"
+    let normalizedCourseId = courseId;
+    if (courseId && typeof courseId === 'string' && courseId.includes('_')) {
+        normalizedCourseId = parseInt(courseId.split('_')[0]);
+    }
+    
+    // Normalize scheduleId: extract numeric part from composite keys like "73_F_20251212"
+    let normalizedScheduleId = scheduleId;
+    if (scheduleId && typeof scheduleId === 'string' && scheduleId.includes('_')) {
+        normalizedScheduleId = parseInt(scheduleId.split('_')[0]);
+    }
+    
     // Set modal title
     document.getElementById('scanner-course-title').textContent = `${courseCode} - ${courseName}`;
     document.getElementById('scanner-section-title').textContent = `Section: ${section || 'N/A'}`;
-    document.getElementById('scanner-course-id').value = courseId;
-    document.getElementById('scanner-schedule-id').value = scheduleId || '';
+    document.getElementById('scanner-course-id').value = normalizedCourseId;
+    document.getElementById('scanner-schedule-id').value = normalizedScheduleId || '';
     
     // Show modal
     modal.classList.remove('hidden');
     
     // Start scanner after modal is visible
     setTimeout(() => {
-        startInstructorSchoolIDScanner(courseId, section);
+        startInstructorSchoolIDScanner(normalizedCourseId, section);
     }, 100);
 };
 
@@ -938,9 +1044,15 @@ window.closeInstructorSchoolIDScanner = function() {
 };
 
 window.startInstructorSchoolIDScanner = function(courseId, section) {
-    // Ensure html5-qrcode is available
+    // Ensure html5-qrcode is available; attempt to load with fallback if missing
     if (typeof Html5Qrcode === 'undefined') {
-        alert('QR Code scanner library not available. Please refresh the page.');
+        loadHtml5QrcodeWithFallback().then(() => {
+            // retry starting after library loads
+            startInstructorSchoolIDScanner(courseId, section);
+        }).catch(err => {
+            console.error('Failed to load Html5Qrcode:', err);
+            alert('QR Code scanner library not available. Please refresh the page.');
+        });
         return;
     }
     
@@ -997,54 +1109,172 @@ window.onInstructorSchoolIDScanned = function(decodedText, decodedResult) {
         instructorSchoolIDScanner.stop().catch(err => console.log('Scanner stopped for processing'));
     }
     
-    // Send QR code to backend for lookup in QRCodeRegistration
-    fetch('{% url "dashboard:instructor_scan_student_qr_code" %}', {
+    // Send scanned school ID to backend to create/update attendance record
+    const scheduleIdVal = document.getElementById('scanner-schedule-id').value || null;
+    const courseIdVal = document.getElementById('scanner-course-id').value;
+    
+    fetch('{% url "dashboard:instructor_scan_student_school_id" %}', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
         },
         body: JSON.stringify({
-            qr_code: decodedText.trim(),
-            course_id: parseInt(courseId)
+            school_id: decodedText.trim(),
+            course_id: parseInt(courseIdVal),
+            schedule_id: scheduleIdVal || null
         })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Show success message
-            showScannerNotification(`✓ ${data.student_name} marked attendance`, 'success');
-            
-            // Update scanned students list
+            const scanned = data.scanned_value ? ` [${data.scanned_value}]` : '';
+            showScannerNotification(`✓ ${data.student_name} marked present${scanned}`, 'success');
+            // Play success sound
+            try { playScanSuccessSound(); } catch(e) { console.debug('audio fail', e); }
             updateScannedStudentsList();
-            
-            // Resume scanner after 1 second
+
+            // store last scanned student's DB id for quick Early/Late actions
+            if (data.student_pk) {
+                window.lastScannedStudentPk = data.student_pk;
+                console.log('Last scanned student pk set to', window.lastScannedStudentPk);
+            } else {
+                window.lastScannedStudentPk = null;
+            }
+
+            // Resume scanner shortly to allow next student
             setTimeout(() => {
                 startInstructorSchoolIDScanner(courseId, document.getElementById('scanner-section-title').textContent);
-            }, 1000);
+            }, 800);
         } else {
             showScannerNotification(`✗ ${data.message}`, 'error');
-            
-            // Resume scanner
+            // Play error sound
+            try { playScanErrorSound(); } catch(e) { console.debug('audio fail', e); }
+
+            // Resume scanner to allow retry
             setTimeout(() => {
                 startInstructorSchoolIDScanner(courseId, document.getElementById('scanner-section-title').textContent);
-            }, 2000);
+            }, 1400);
         }
     })
     .catch(err => {
         console.error('Error scanning QR code:', err);
         showScannerNotification('Error: Could not process scan', 'error');
-        
-        // Resume scanner
+
         setTimeout(() => {
             startInstructorSchoolIDScanner(courseId, document.getElementById('scanner-section-title').textContent);
-        }, 2000);
+        }, 1400);
     });
 };
 
 window.onInstructorScanError = function(error) {
     // Ignore QR code scanner errors (it logs them internally)
 };
+
+// Global storage for last scanned student info
+window.lastScannedStudentPk = null;
+window.lastScannedCourseId = null;
+window.lastScannedScheduleId = null;
+
+// Audio feedback using Web Audio API (no external files required)
+function playScanSuccessSound() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        // High-frequency beep: 1200 Hz for 200ms (toot sound)
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = 1200; // High pitch beep
+        o.connect(g);
+        g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.25, ctx.currentTime);
+        o.start(ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        o.stop(ctx.currentTime + 0.2);
+    } catch (e) { console.debug('Audio not supported', e); }
+}
+
+function playScanErrorSound() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        // Descending tone: from 600Hz down to 300Hz for error
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'square';
+        o.frequency.setValueAtTime(600, ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.3);
+        o.connect(g);
+        g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.2, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        o.start(ctx.currentTime);
+        o.stop(ctx.currentTime + 0.3);
+    } catch (e) { console.debug('Audio not supported', e); }
+}
+
+// UX helper: enable/insert a Scan button for a course/schedule (used immediately after opening attendance)
+function enableScanForCourse(courseId, scheduleId) {
+    try {
+        // Extract numeric course ID if it contains composite key like "73_F_20251212"
+        let numericCourseId = courseId;
+        if (courseId && courseId.includes('_')) {
+            numericCourseId = courseId.split('_')[0];
+        }
+        
+        // If an enabled scanner already exists for this course, nothing to do
+        const existing = document.querySelector(`.open-instructor-scanner[data-course-id="${courseId}"]`);
+        if (existing) return existing;
+
+        // Find a disabled 'Scan' button on the page (fallback: match disabled buttons containing 'Scan')
+        const disabledCandidates = Array.from(document.querySelectorAll('button[disabled]'))
+            .filter(b => b.textContent && b.textContent.trim().toLowerCase().includes('scan'));
+
+        let targetBtn = disabledCandidates.length ? disabledCandidates[0] : null;
+        if (!targetBtn) {
+            // Try to find any element that looks like the Scan area and insert near it
+            targetBtn = document.querySelector('.p-3.bg-blue-50') || document.querySelector('.p-3');
+            if (!targetBtn) return null;
+        } else {
+            targetBtn = targetBtn.parentElement || targetBtn;
+        }
+
+        // Create new Scan button
+        const newBtn = document.createElement('button');
+        newBtn.setAttribute('data-course-id', numericCourseId);
+        if (scheduleId) newBtn.setAttribute('data-schedule-id', scheduleId);
+        newBtn.className = 'open-instructor-scanner px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition duration-150 shadow-sm flex items-center gap-1';
+        newBtn.innerHTML = '<i class="fas fa-camera text-xs"></i> Scan';
+
+        // Attach click handler to open scanner (pass minimal info; openInstructorSchoolIDScanner tolerates missing names)
+        newBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            window.openInstructorSchoolIDScanner(numericCourseId, '', '', '', scheduleId);
+        });
+
+        // Replace disabled button node if we found a direct disabled button, otherwise append into the target container
+        const firstDisabled = document.querySelector('button[disabled]');
+        if (firstDisabled && firstDisabled.textContent && firstDisabled.textContent.trim().toLowerCase().includes('scan')) {
+            firstDisabled.parentElement.replaceChild(newBtn, firstDisabled);
+        } else if (targetBtn instanceof HTMLElement && targetBtn.classList && targetBtn.classList.contains('p-3')) {
+            // try to find the right place inside this block (the header flex)
+            const header = targetBtn.querySelector('.flex.items-center.justify-between');
+            if (header) {
+                // remove any existing disabled scan button inside header
+                const dis = header.querySelector('button[disabled]');
+                if (dis) header.replaceChild(newBtn, dis);
+                else header.appendChild(newBtn);
+            } else {
+                targetBtn.appendChild(newBtn);
+            }
+        } else if (targetBtn instanceof HTMLElement) {
+            targetBtn.appendChild(newBtn);
+        }
+        return newBtn;
+    } catch (e) {
+        console.error('enableScanForCourse error', e);
+        return null;
+    }
+}
 
 window.showScannerNotification = function(message, type) {
     const notification = document.createElement('div');
@@ -1079,6 +1309,11 @@ window.updateScannedStudentsList = function() {
                         <span class="text-xs text-gray-500">${student.time}</span>
                     </div>
                 `).join('');
+            }
+            // Update scanned count display if provided
+            if (typeof data.count !== 'undefined') {
+                const countEl = document.getElementById('student-scanned-count');
+                if (countEl) countEl.textContent = data.count;
             }
         })
         .catch(err => console.log('Could not update scanned students list'));
@@ -1236,6 +1471,210 @@ window.closeStudentsListModal = function() {
         });
     });
 })();
+
+// Attach event listeners to replace inline onclick/onchange handlers (ensures functions are available)
+document.addEventListener('DOMContentLoaded', function() {
+    try {
+        // Initialize active present window display if value exists
+        const inputVal = document.getElementById('sidebarPresentDuration')?.value;
+        if (inputVal && inputVal > 0) {
+            const activeDisplay = document.getElementById('active-window-display');
+            const windowTime = document.getElementById('window-time');
+            if (activeDisplay && windowTime) {
+                windowTime.textContent = inputVal;
+                activeDisplay.classList.remove('hidden');
+            }
+        }
+        
+        // Attach listener to attendance control select
+        const attendanceControl = document.getElementById('attendance-control');
+        if (attendanceControl) {
+            console.log('[ATTENDANCE] Found attendance control select');
+            
+            // Store previous value on focus
+            attendanceControl.addEventListener('focus', function() {
+                this.dataset.previousValue = this.value;
+                console.log('[ATTENDANCE] Focus - stored previous value:', this.value);
+            });
+            
+            // Handle change event with immediate modal show (bypass function call)
+            attendanceControl.addEventListener('change', function(event) {
+                console.log('[ATTENDANCE] Change event fired');
+                let courseId = this.getAttribute('data-course-id');
+                const scheduleId = this.getAttribute('data-schedule-id');
+                const dayLabel = this.getAttribute('data-day-label');
+                const newValue = this.value;
+                const previousValue = this.dataset.previousValue || '';
+                
+                // Extract numeric course ID if it contains composite key like "73_F_20251212"
+                if (courseId && courseId.includes('_')) {
+                    courseId = courseId.split('_')[0];
+                }
+                
+                console.log('[ATTENDANCE] Values:', { courseId, scheduleId, dayLabel, newValue, previousValue });
+                
+                // If value didn't actually change, do nothing
+                if (previousValue === newValue) {
+                    console.log('[ATTENDANCE] Value unchanged, skipping');
+                    return;
+                }
+                
+                // Get modal and show it directly
+                const modal = document.getElementById('attendanceStatusModal');
+                if (!modal) {
+                    console.error('[ATTENDANCE] Modal not found!');
+                    return;
+                }
+                
+                // Update modal content
+                document.getElementById('attendance-status-course-id').value = courseId;
+                document.getElementById('attendance-status-value').value = newValue;
+                document.getElementById('attendance-status-schedule-id').value = scheduleId || '';
+                document.getElementById('attendance-status-day').value = dayLabel || '';
+                
+                const statusLabels = {
+                    'open': 'Open Attendance',
+                    'closed': 'Closed Attendance',
+                    'postponed': 'Postponed'
+                };
+                
+                const dayText = dayLabel ? ` for ${dayLabel}` : '';
+                document.getElementById('attendance-status-message').textContent = `Change attendance status to "${statusLabels[newValue] || newValue}"${dayText}?`;
+                
+                // Show modal
+                console.log('[ATTENDANCE] Showing modal...');
+                modal.classList.remove('hidden');
+                console.log('[ATTENDANCE] Modal visible. Classes:', modal.className);
+            });
+        } else {
+            console.warn('[ATTENDANCE] attendance-control select not found');
+        }
+        
+        // Attach listener to close modal buttons
+        const closeModalButtons = document.querySelectorAll('[data-close-attendance-modal]');
+        closeModalButtons.forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                const modal = document.getElementById('attendanceStatusModal');
+                if (modal) {
+                    console.log('[ATTENDANCE] Closing modal');
+                    modal.classList.add('hidden');
+                }
+            });
+        });
+        
+        // Attach listener to confirm button
+        const confirmBtn = document.getElementById('attendance-confirm-btn');
+        if (confirmBtn) {
+            confirmBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('[ATTENDANCE] Confirm button clicked');
+                confirmAttendanceStatusChange();
+            });
+        }
+        
+        // Attach listener to scanner buttons
+        document.querySelectorAll('.open-instructor-scanner').forEach(function(btn) {
+            if (btn.dataset.listenerAttached === 'true') return;
+            btn.addEventListener('click', function(e) {
+                let courseId = btn.getAttribute('data-course-id');
+                const courseCode = btn.getAttribute('data-course-code');
+                const courseName = btn.getAttribute('data-course-name');
+                const section = btn.getAttribute('data-section');
+                const scannerScheduleId = btn.getAttribute('data-schedule-id');
+                
+                // Extract numeric course ID if it contains composite key like "73_F_20251212"
+                if (courseId && courseId.includes('_')) {
+                    courseId = courseId.split('_')[0];
+                }
+                
+                // Store course/schedule IDs globally for Early/Late buttons
+                window.lastScannedCourseId = courseId;
+                window.lastScannedScheduleId = scannerScheduleId;
+                
+                if (typeof window.openInstructorSchoolIDScanner === 'function') {
+                    window.openInstructorSchoolIDScanner(courseId, courseCode, courseName, section, scannerScheduleId);
+                } else {
+                    console.warn('openInstructorSchoolIDScanner not defined yet');
+                }
+            });
+            btn.dataset.listenerAttached = 'true';
+        });
+        
+        // Attach listener to Present Duration confirm button
+        const confirmPresentBtn = document.getElementById('confirm-present-duration');
+        if (confirmPresentBtn) {
+            confirmPresentBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                const inputVal = document.getElementById('sidebarPresentDuration')?.value;
+                if (!inputVal || inputVal < 1) {
+                    alert('Please enter a valid present window duration (minimum 1 minute)');
+                    return;
+                }
+                // Show confirmation and save to backend
+                if (confirm(`Set present window to ${inputVal} minutes?`)) {
+                    // Get course ID and schedule ID from attendance control
+                    const courseId = document.getElementById('attendance-control')?.getAttribute('data-course-id');
+                    const scheduleId = document.getElementById('attendance-control')?.getAttribute('data-schedule-id');
+                    
+                    if (!courseId) {
+                        alert('Course information not available.');
+                        return;
+                    }
+                    
+                    // POST to update attendance endpoint with present_duration
+                    fetch('{% url "dashboard:instructor_update_attendance_status" 0 %}'.replace('0', courseId), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+                        },
+                        body: JSON.stringify({
+                            status: 'open',  // Keep current status, just update duration
+                            present_duration: parseInt(inputVal),
+                            schedule_id: scheduleId || null
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Show the active window display
+                            const activeDisplay = document.getElementById('active-window-display');
+                            const windowTime = document.getElementById('window-time');
+                            if (activeDisplay && windowTime) {
+                                windowTime.textContent = inputVal;
+                                activeDisplay.classList.remove('hidden');
+                            }
+                            if (typeof showNotification === 'function') {
+                                showNotification('Present window updated to ' + inputVal + ' minutes', 'success');
+                            }
+                            // Reload the page to reflect changes
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 500);
+                        } else {
+                            if (typeof showNotification === 'function') {
+                                showNotification(data.message || 'Error updating present window', 'error');
+                            } else {
+                                alert(data.message || 'Error updating present window');
+                            }
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Error updating present window:', err);
+                        if (typeof showNotification === 'function') {
+                            showNotification('Error updating present window', 'error');
+                        } else {
+                            alert('Error updating present window');
+                        }
+                    });
+                }
+            });
+        }
+    } catch (err) {
+        console.error('[ATTENDANCE] Error in DOMContentLoaded:', err);
+    }
+});
 </script>
 {% endblock %}
 

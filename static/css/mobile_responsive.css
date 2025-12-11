@@ -1,0 +1,124 @@
+/* Mobile responsive tweaks (max-width rules only) - safe for desktop (no overrides without media query)
+   Purpose: improve stacking, make buttons/inputs full width, make modals & scanner elements responsive,
+   and provide small spacing/typography adjustments for small screens.
+*/
+
+@media (max-width: 768px) {
+  /* Layout stacking: make common two-column blocks stack vertically */
+  .grid.grid-cols-1.md\:grid-cols-2,
+  .grid.grid-cols-2.md\:grid-cols-4,
+  .grid[class*="grid-cols-"] {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 0.6rem !important;
+  }
+
+  /* Make header / flex-between blocks stack */
+  .flex.items-center.justify-between,
+  .flex.items-center.justify-between.gap-3,
+  .flex.items-center.justify-between.mb-2 {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.5rem !important;
+  }
+
+  /* Make commonly-used small action buttons full width for easier tapping */
+  .open-instructor-scanner,
+  button[disabled],
+  .p-3 button,
+  .px-3.py-1.5,
+  .px-4.py-2 {
+    width: 100% !important;
+    display: inline-flex !important;
+    justify-content: center !important;
+  }
+
+  /* Ensure scanner & video containers are full width and keep aspect ratio */
+  #instructor-scanner-container,
+  #qr-reg-scanner,
+  #qr-reg-scanner video,
+  video {
+    width: 100% !important;
+    height: auto !important;
+    max-height: 60vh !important;
+    object-fit: cover !important;
+  }
+
+  /* Make modals use almost full viewport on mobile */
+  .fixed.inset-0.flex.items-center.justify-center > div,
+  .fixed.inset-0.bg-gray-900.flex.items-center.justify-center > div,
+  .bg-white.rounded-2xl.shadow-2xl.w-full.max-w-2xl,
+  .bg-white.rounded-2xl.shadow-2xl.max-w-2xl {
+    max-width: 96vw !important;
+    margin: 0.5rem !important;
+    border-radius: 0.75rem !important;
+    padding: 0.75rem !important;
+  }
+
+  /* Make QR registration scanner container taller and scrollable if needed */
+  #qr-reg-scanner-container {
+    height: 52vh !important;
+    overflow: hidden !important;
+    background: #000 !important;
+  }
+
+  /* Smaller text sizes to improve fit */
+  .text-2xl { font-size: 1.25rem !important; }
+  .text-xs { font-size: 0.72rem !important; }
+  .text-sm { font-size: 0.85rem !important; }
+
+  /* Inputs and selects full width */
+  input[type="text"],
+  input[type="number"],
+  textarea,
+  select {
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Quick pick items and lists should be horizontally scrollable or full width */
+  .quick-pick-item {
+    display: block !important;
+    width: 100% !important;
+    margin-bottom: 0.4rem !important;
+  }
+
+  /* Make small notification and toasts fit mobile */
+  .fixed.top-4.right-4 {
+    left: 8px !important;
+    right: 8px !important;
+    top: 8px !important;
+    width: auto !important;
+    max-width: calc(100% - 16px) !important;
+  }
+
+  /* Ensure small inline icons and badges wrap nicely */
+  .flex.items-center.gap-2,
+  .flex.items-center.gap-3 {
+    gap: 0.4rem !important;
+    flex-wrap: wrap !important;
+  }
+
+  /* Reduce large margins for mobile to maximize visible content */
+  .mb-6 { margin-bottom: 1rem !important; }
+  .p-6 { padding: 0.75rem !important; }
+  .p-4 { padding: 0.6rem !important; }
+
+  /* Make table-like student lists scroll horizontally if needed */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Keep scanner modal buttons accessible and large enough for touch */
+  .qr-actions button, .modal-actions button {
+    min-height: 44px !important;
+    font-size: 0.95rem !important;
+  }
+}
+
+/* Very small screens tweaks */
+@media (max-width: 420px) {
+  .px-3.py-1.5 { padding: 0.5rem 0.6rem !important; }
+  .open-instructor-scanner { font-size: 0.86rem !important; }
+}

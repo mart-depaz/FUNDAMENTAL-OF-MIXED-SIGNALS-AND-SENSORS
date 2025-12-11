@@ -1089,7 +1089,9 @@ def instructor_my_classes_view(request):
     focus_course = None
     if focus_course_id:
         try:
-            focus_course = Course.objects.get(id=int(focus_course_id), instructor=user)
+            # Extract numeric ID from composite keys like "73_F_20251212"
+            numeric_id = focus_course_id.split('_')[0] if '_' in focus_course_id else focus_course_id
+            focus_course = Course.objects.get(id=int(numeric_id), instructor=user)
         except Exception:
             focus_course = None
     
@@ -1920,6 +1922,7 @@ def instructor_update_attendance_status_view(request, course_id):
     try:
         import json
         data = json.loads(request.body)
+        logger.info(f"[ATTENDANCE_UPDATE] user={user.id} course_id={course_id} request_body={data}")
         status = data.get('status')
         day = data.get('day')  # Optional: day of the week (e.g., 'Mon', 'Tue')
         schedule_id = data.get('schedule_id')  # Optional: specific schedule ID
@@ -1984,9 +1987,17 @@ def instructor_update_attendance_status_view(request, course_id):
                 # Save all modified fields
                 save_fields = ['attendance_status', 'attendance_present_duration', 'qr_code_opened_at', 'qr_code_date']
                 day_schedule.save(update_fields=[f for f in save_fields if hasattr(day_schedule, f)])
+                logger.info(f"[ATTENDANCE_UPDATE] day_schedule saved: id={day_schedule.id} status={day_schedule.attendance_status}")
                 
                 status_display = status.replace('_', ' ').title()
                 day_display = day_schedule.get_day_display()
+                
+                # If closing attendance, create absent records for students who didn't scan
+                if status == 'closed':
+                    try:
+                        finalize_attendance_records(course, day_schedule, user)
+                    except Exception as e:
+                        logger.error(f"Error finalizing attendance: {str(e)}")
                 
                 # Create notification for enrolled students
                 try:
@@ -2011,17 +2022,14 @@ def instructor_update_attendance_status_view(request, course_id):
                 except Exception as e:
                     logger.error(f"Error creating attendance control update notifications: {str(e)}")
                 
-                return JsonResponse({
+                # Return response with updated status for client verification
+                response_data = {
                     'success': True,
-                    'message': f'Attendance status updated to {status_display} for {day_display}'
-                })
-                
-                # If closing attendance, create absent records for students who didn't scan
-                if status == 'closed':
-                    try:
-                        finalize_attendance_records(course, day_schedule, user)
-                    except Exception as e:
-                        logger.error(f"Error finalizing attendance: {str(e)}")
+                    'message': f'Attendance status updated to {status_display} for {day_display}',
+                    'updated_status': day_schedule.attendance_status
+                }
+                logger.info(f"[ATTENDANCE_UPDATE] returning day_schedule response: {response_data}")
+                return JsonResponse(response_data)
             else:
                 # Day schedule not found, fall through to course-level update
                 pass
@@ -2051,6 +2059,7 @@ def instructor_update_attendance_status_view(request, course_id):
 
         # Save course with its updated fields
         course.save()
+        logger.info(f"[ATTENDANCE_UPDATE] course saved: id={course.id} status={course.attendance_status}")
         
         # If closing attendance at course-level, finalize for all schedules
         if status == 'closed':
@@ -2083,10 +2092,14 @@ def instructor_update_attendance_status_view(request, course_id):
         except Exception as e:
             logger.error(f"Error creating attendance control update notifications: {str(e)}")
         
-        return JsonResponse({
+        # Return response with updated status for client verification
+        response_data = {
             'success': True,
-            'message': f'Attendance status updated to {status.replace("_", " ").title()}'
-        })
+            'message': f'Attendance status updated to {status.replace("_", " ").title()}',
+            'updated_status': course.attendance_status
+        }
+        logger.info(f"[ATTENDANCE_UPDATE] returning course response: {response_data}")
+        return JsonResponse(response_data)
     except Course.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Course not found.'})
     except Exception as e:
@@ -2685,6 +2698,25 @@ def students_view(request):
             for enrollment in selected_course_enrollments
             if getattr(enrollment, 'section_display', '').strip()
         })
+
+    # Annotate whether each enrollment already has a registered QR for this course
+    try:
+        from dashboard.models import QRCodeRegistration
+        if selected_course is not None and selected_course_enrollments is not None:
+            for enrollment in selected_course_enrollments:
+                try:
+                    enrollment.has_qr = QRCodeRegistration.objects.filter(
+                        student=enrollment.student,
+                        course=selected_course,
+                        is_active=True
+                    ).exists()
+                except Exception:
+                    enrollment.has_qr = False
+    except Exception:
+        # If annotation fails for any reason, default to False
+        if selected_course_enrollments is not None:
+            for enrollment in selected_course_enrollments:
+                enrollment.has_qr = False
     
     context = {
         'user': user,
@@ -6203,10 +6235,11 @@ def student_scan_qr_attendance_view(request):
             # Student has already scanned - return specific message
             status_text = existing_record.status.capitalize() if existing_record.status else 'marked'
             return JsonResponse({
-                'success': False, 
+                'success': False,
                 'message': f'You have already marked your attendance for today. Status: {status_text}.',
                 'already_scanned': True,
-                'existing_status': existing_record.status
+                'existing_status': existing_record.status,
+                'existing_time': existing_record.attendance_time.strftime('%I:%M %p') if getattr(existing_record, 'attendance_time', None) else None,
             })
         
         # If attendance is not allowed, return error message with specific status
@@ -6348,7 +6381,11 @@ def student_scan_qr_attendance_view(request):
         
         return JsonResponse({
             'success': True,
-            'message': f'Attendance marked successfully! Status: {status.capitalize()}'
+            'message': f'Attendance marked successfully! Status: {status.capitalize()}',
+            'status': status,
+            'attendance_time': attendance_record.attendance_time.strftime('%I:%M %p') if getattr(attendance_record, 'attendance_time', None) else None,
+            'course_id': course.id,
+            'schedule_day': schedule_day,
         })
         
     except json.JSONDecodeError:
@@ -6498,8 +6535,10 @@ def instructor_course_detail_view(request, course_id):
                 })
         
         # Find sibling sections (same course identity across sections)
+        # Include sibling sections across all instructors so instructors can
+        # view and switch between sections of the same course code/name.
+        # Do not restrict to the current instructor here.
         siblings_qs = Course.objects.filter(
-            instructor=user,
             code=course.code,
             name=course.name,
             semester=course.semester,
@@ -7325,18 +7364,42 @@ def instructor_attendance_reports_view(request):
     # Only process data if course is selected
     if course_id:
         try:
-            # Get the representative course
-            selected_course = Course.objects.get(
-                id=course_id,
-                instructor=user,
-                is_active=True,
-                deleted_at__isnull=True,
-                is_archived=False
-            )
-            
+            # Get the representative course. If the course ID is not owned by the instructor
+            # (for example the section is taught by another instructor) allow loading it
+            # as long as it belongs to the same grouped course key (code/name/semester/school_year).
+            try:
+                selected_course = Course.objects.get(
+                    id=course_id,
+                    instructor=user,
+                    is_active=True,
+                    deleted_at__isnull=True,
+                    is_archived=False
+                )
+            except Course.DoesNotExist:
+                # Attempt to load the course without instructor restriction
+                fallback_course = Course.objects.filter(
+                    id=course_id,
+                    is_active=True,
+                    deleted_at__isnull=True,
+                    is_archived=False
+                ).first()
+                if fallback_course:
+                    key = (
+                        (fallback_course.code or '').strip().upper(),
+                        (fallback_course.name or '').strip().upper(),
+                        (fallback_course.semester or '').strip().lower(),
+                        (fallback_course.school_year or '').strip()
+                    )
+                    # Allow if this course matches one of the instructor's grouped courses
+                    if key in grouped_courses_map:
+                        selected_course = fallback_course
+                    else:
+                        raise
+
             # Get all sibling courses (same code, name, semester, school_year)
+            # Include sibling sections across instructors so instructors can view other sections of
+            # the same course (useful when students enrolled into other section should appear)
             sibling_courses = Course.objects.filter(
-                instructor=user,
                 code=selected_course.code,
                 name=selected_course.name,
                 semester=selected_course.semester,
@@ -7394,8 +7457,15 @@ def instructor_attendance_reports_view(request):
                 
                 # Filter attendance records to only include those from the filtered enrollments
                 # This ensures we only show records for students enrolled in the selected section's courses
+                # Include records where:
+                # 1. The enrollment is in the list of valid enrollments, OR
+                # 2. The student is in our list of valid students (for cases where enrollment is NULL due to unenrollment)
                 enrollment_ids = [e.id for e in all_enrollments]
-                attendance_query = attendance_query.filter(enrollment__id__in=enrollment_ids)
+                student_ids = list(unique_students.keys())
+                from django.db.models import Q
+                attendance_query = attendance_query.filter(
+                    Q(enrollment__id__in=enrollment_ids) | Q(student__id__in=student_ids)
+                )
                 
                 attendance_records = list(attendance_query)
                 
@@ -7670,6 +7740,45 @@ def instructor_attendance_reports_view(request):
                                     'record_exists': False,
                                 })
                             # For classes that haven't finished yet, don't add absent records
+                
+                # Deduplicate attendance data when viewing all sections
+                # If a student has multiple records on the same date (from different sections),
+                # keep the record with the best attendance status (present > late > absent).
+                # If statuses are equal, prefer the earliest attendance time (if available).
+                if section_filter and section_filter.lower() == 'all':
+                    def _status_priority(s):
+                        if s == 'present':
+                            return 3
+                        if s == 'late':
+                            return 2
+                        if s == 'absent':
+                            return 1
+                        return 0
+
+                    dedup_map = {}  # Key: (student_id, attendance_date), Value: record
+                    for record in attendance_data:
+                        key = (record['student_id'], record['attendance_date'])
+                        if key not in dedup_map:
+                            dedup_map[key] = record
+                        else:
+                            existing = dedup_map[key]
+                            pri_new = _status_priority(record.get('status'))
+                            pri_existing = _status_priority(existing.get('status'))
+                            if pri_new > pri_existing:
+                                logger.info(f"[DEDUP][Sidebar] key={key} kept_new_status={record.get('status')} over {existing.get('status')}")
+                                dedup_map[key] = record
+                            elif pri_new == pri_existing:
+                                # If equal priority, keep earliest attendance_time if available
+                                rt = record.get('attendance_time')
+                                et = existing.get('attendance_time')
+                                if rt and et:
+                                    if rt < et:
+                                        logger.info(f"[DEDUP][Sidebar] key={key} kept_new_time={rt} over {et}")
+                                        dedup_map[key] = record
+                                elif rt and not et:
+                                    logger.info(f"[DEDUP][Sidebar] key={key} kept_new_has_time")
+                                    dedup_map[key] = record
+                    attendance_data = list(dedup_map.values())
                 
                 # Sort attendance data by date (newest first), then by student name
                 attendance_data.sort(key=lambda x: (x['attendance_date'], x['student_name']), reverse=True)
@@ -7999,16 +8108,13 @@ def instructor_attendance_reports_download_view(request):
         is_archived=False
     )
     
-    if section_filter and section_filter.lower() == 'all':
-        # Include all sections
-        courses_to_include = list(sibling_courses)
-    elif section_filter:
-        # Filter by specific section
+    if section_filter and section_filter.lower() != 'all':
+        # Filter by specific section only
         courses_to_include = list(sibling_courses.filter(section__iexact=section_filter))
         if not courses_to_include:
             courses_to_include = [course]  # Fallback to selected course
     else:
-        # No section filter - include all sibling courses
+        # No section filter or "all" - include all sibling courses
         courses_to_include = list(sibling_courses)
     
     # Get attendance records
@@ -8126,6 +8232,44 @@ def instructor_attendance_reports_download_view(request):
     
     attendance_records = list(attendance_query)
     
+    # Deduplicate records when viewing all sections
+    # If a student has multiple records on the same date (from different sections),
+    # keep the record with the best attendance status (present > late > absent).
+    # If statuses are equal, prefer the earliest attendance time (if available).
+    if section_filter and section_filter.lower() == 'all':
+        def _status_priority(s):
+            if s == 'present':
+                return 3
+            if s == 'late':
+                return 2
+            if s == 'absent':
+                return 1
+            return 0
+
+        dedup_map = {}  # Key: (student_id, attendance_date), Value: record
+        for record in attendance_records:
+            key = (record.student.id, record.attendance_date)
+            if key not in dedup_map:
+                dedup_map[key] = record
+            else:
+                existing = dedup_map[key]
+                pri_new = _status_priority(record.status)
+                pri_existing = _status_priority(existing.status)
+                if pri_new > pri_existing:
+                    logger.info(f"[DEDUP][Excel] key={key} kept_new_status={record.status} over {existing.status}")
+                    dedup_map[key] = record
+                elif pri_new == pri_existing:
+                    # If equal priority, keep earliest attendance_time if available
+                    if record.attendance_time and existing.attendance_time:
+                        if record.attendance_time < existing.attendance_time:
+                            logger.info(f"[DEDUP][Excel] key={key} kept_new_time={record.attendance_time} over {existing.attendance_time}")
+                            dedup_map[key] = record
+                    elif record.attendance_time and not existing.attendance_time:
+                        logger.info(f"[DEDUP][Excel] key={key} kept_new_has_time")
+                        dedup_map[key] = record
+        attendance_records = list(dedup_map.values())
+        logger.info(f"[DEDUP][Excel] section_filter=all result: {len(attendance_records)} unique records after dedup")
+    
     # Create workbook
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -8149,39 +8293,21 @@ def instructor_attendance_reports_download_view(request):
     ws[f'A{row+1}'] = "Course Name:"
     ws[f'B{row+1}'] = course.name
     ws[f'A{row+2}'] = "Section:"
-    if section_filter and section_filter.lower() == 'all':
+    if section_filter and section_filter.lower() != 'all':
+        # Show the specific selected section
+        ws[f'B{row+2}'] = section_filter
+    else:
+        # Show all sections
         sections_list = [c.section for c in courses_to_include if c.section]
         ws[f'B{row+2}'] = ', '.join(sorted(set(sections_list))) if sections_list else 'All Sections'
-    else:
-        ws[f'B{row+2}'] = course.section or 'N/A'
     ws[f'A{row+3}'] = "Semester:"
     ws[f'B{row+3}'] = course.semester or 'N/A'
     ws[f'A{row+4}'] = "School Year:"
     ws[f'B{row+4}'] = course.school_year or 'N/A'
-    if day_filter:
-        ws[f'C{row+3}'] = "Day Filter:"
-        ws[f'D{row+3}'] = 'All Days' if day_filter.lower() == 'all' else day_filter
-    if week_filter:
-        ws[f'C{row+4}'] = "Week Filter:"
-        if week_filter.lower() == 'all':
-            ws[f'D{row+4}'] = f"All Weeks ({weeks} weeks)"
-        elif week_filter == '1':
-            ws[f'D{row+4}'] = "1st Week"
-        elif week_filter == '2':
-            ws[f'D{row+4}'] = "2nd Week"
-        elif week_filter == '3':
-            ws[f'D{row+4}'] = "3rd Week"
-        elif week_filter == 'last':
-            ws[f'D{row+4}'] = "Last Week"
-        else:
-            ws[f'D{row+4}'] = week_filter
-    elif weeks:
-        ws[f'C{row+4}'] = "Weeks:"
-        ws[f'D{row+4}'] = f"{weeks} weeks"
     row += 6
     
-    # Attendance Records Header - Fixed column order
-    headers = ['Day', 'Date', 'Time', 'Student ID', 'Student Name', 'Section', 'Status']
+    # Attendance Records Header - Updated column order: ID, Student, Section, Date, Day, Time, Status
+    headers = ['Student ID', 'Student Name', 'Section', 'Date', 'Day', 'Time', 'Status']
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=row, column=col, value=header)
         cell.fill = header_fill
@@ -8191,24 +8317,24 @@ def instructor_attendance_reports_download_view(request):
     
     # Attendance Records Data - Match header order exactly
     for record in attendance_records:
-        # Day name (Column 1)
+        # Student ID (Column 1)
+        ws.cell(row=row, column=1, value=record.student.school_id or 'N/A')
+        # Student Name (Column 2)
+        ws.cell(row=row, column=2, value=record.student.full_name or record.student.username)
+        # Section (Column 3)
+        ws.cell(row=row, column=3, value=record.course.section or 'N/A')
+        # Date (Column 4)
+        ws.cell(row=row, column=4, value=record.attendance_date.strftime('%Y-%m-%d'))
+        # Day name (Column 5)
         day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         day_name = day_names[record.attendance_date.weekday()]
-        ws.cell(row=row, column=1, value=day_name)
-        # Date (Column 2)
-        ws.cell(row=row, column=2, value=record.attendance_date.strftime('%Y-%m-%d'))
-        # Time in 12-hour format (Column 3)
+        ws.cell(row=row, column=5, value=day_name)
+        # Time in 12-hour format (Column 6)
         if record.attendance_time:
             time_12h = record.attendance_time.strftime('%I:%M %p')
-            ws.cell(row=row, column=3, value=time_12h)
+            ws.cell(row=row, column=6, value=time_12h)
         else:
-            ws.cell(row=row, column=3, value='N/A')
-        # Student ID (Column 4)
-        ws.cell(row=row, column=4, value=record.student.school_id or 'N/A')
-        # Student Name (Column 5)
-        ws.cell(row=row, column=5, value=record.student.full_name or record.student.username)
-        # Section (Column 6)
-        ws.cell(row=row, column=6, value=record.course.section or 'N/A')
+            ws.cell(row=row, column=6, value='N/A')
         # Status (Column 7)
         status_display = dict(AttendanceRecord.STATUS_CHOICES).get(record.status, record.status.title())
         ws.cell(row=row, column=7, value=status_display)
@@ -8307,7 +8433,11 @@ def instructor_attendance_reports_download_view(request):
             column_cells = [cell for cell in column if cell.value]
             if column_cells:
                 max_length = max(len(str(cell.value)) for cell in column_cells)
-                adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
+                # Adjust width with smaller cap for Student ID column
+                if column_letter == 'A' and sheet.title == "Attendance Report":
+                    adjusted_width = min(max_length + 1, 12)  # Smaller width for ID column
+                else:
+                    adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
                 sheet.column_dimensions[column_letter].width = adjusted_width
         
         # Apply borders and formatting to data rows
@@ -8401,8 +8531,10 @@ def instructor_update_attendance_record_status_view(request):
                     student=student,
                     attendance_date=date_obj
                 )
+                old_status = record.status
                 record.status = new_status
                 record.save()
+                logger.info(f"[ATTENDANCE_UPDATE] record_id={record_id} student={student.id} date={date_obj} status_change={old_status}->{new_status}")
                 return JsonResponse({'success': True, 'message': f'Attendance status updated to {new_status.title()}.'})
             except AttendanceRecord.DoesNotExist:
                 # Record not found by ID, try to find by course, student, and date
@@ -8414,8 +8546,10 @@ def instructor_update_attendance_record_status_view(request):
                 
                 if existing_record:
                     # Update the found record
+                    old_status = existing_record.status
                     existing_record.status = new_status
                     existing_record.save()
+                    logger.info(f"[ATTENDANCE_UPDATE] found_by_filter student={student.id} date={date_obj} status_change={old_status}->{new_status}")
                     return JsonResponse({'success': True, 'message': f'Attendance status updated to {new_status.title()}.'})
                 else:
                     # No record found, fall through to create new one (don't return error)
@@ -8432,8 +8566,10 @@ def instructor_update_attendance_record_status_view(request):
             
             if existing_record:
                 # Update the found record
+                old_status = existing_record.status
                 existing_record.status = new_status
                 existing_record.save()
+                logger.info(f"[ATTENDANCE_UPDATE] fallback_update student={student.id} date={date_obj} status_change={old_status}->{new_status}")
                 return JsonResponse({'success': True, 'message': f'Attendance status updated to {new_status.title()}.'})
         
         # Create new record or update existing
@@ -8494,7 +8630,7 @@ def instructor_update_attendance_record_status_view(request):
             from django.utils import timezone
             current_time = timezone.now().time()
             
-            AttendanceRecord.objects.create(
+            created_record = AttendanceRecord.objects.create(
                 course=record_course,
                 student=student,
                 enrollment=enrollment,
@@ -8502,6 +8638,7 @@ def instructor_update_attendance_record_status_view(request):
                 attendance_time=current_time,
                 status=new_status
             )
+            logger.info(f"[ATTENDANCE_UPDATE] created_new student={student.id} date={date_obj} status={new_status}")
             
             return JsonResponse({'success': True, 'message': f'Attendance record created with status {new_status.title()}.'})
     
@@ -8664,33 +8801,107 @@ def instructor_scan_student_school_id_view(request):
         course_id = data.get('course_id')
         schedule_id = data.get('schedule_id')
         
+        # DEBUG: Log raw request
+        logger.info(f"[SCAN] Raw request received - school_id='{school_id}', course_id={repr(course_id)} (type: {type(course_id).__name__}), schedule_id={repr(schedule_id)}")
+        
+        # Normalize course_id: extract numeric part from composite keys like "73_F_20251212"
+        if course_id:
+            try:
+                course_id_str = str(course_id)
+                if '_' in course_id_str:
+                    course_id = int(course_id_str.split('_')[0])
+                    logger.info(f"[SCAN] Extracted numeric course_id: {course_id}")
+                else:
+                    course_id = int(course_id_str)
+            except (ValueError, AttributeError) as e:
+                logger.error(f"[SCAN] Error normalizing course_id '{course_id}': {e}")
+                return JsonResponse({'success': False, 'message': f'Invalid course ID format: {course_id}'})
+        
+        # Normalize schedule_id: extract numeric part from composite keys like "73_F_20251212"
+        if schedule_id:
+            try:
+                schedule_id_str = str(schedule_id)
+                if '_' in schedule_id_str:
+                    schedule_id = int(schedule_id_str.split('_')[0])
+                    logger.info(f"[SCAN] Extracted numeric schedule_id: {schedule_id}")
+                else:
+                    schedule_id = int(schedule_id_str)
+            except (ValueError, AttributeError) as e:
+                logger.error(f"[SCAN] Error normalizing schedule_id '{schedule_id}': {e}")
+                schedule_id = None  # Set to None if invalid, will skip schedule validation
+        
+        logger.info(f"[SCAN] After normalization - course_id={course_id} (type: {type(course_id).__name__})")
+        
         if not school_id or not course_id:
             return JsonResponse({'success': False, 'message': 'Missing required fields.'})
         
         # Get the course
         course = get_object_or_404(Course, id=course_id, instructor=request.user)
         
-        # Find student by school ID (or ID number)
-        student = CustomUser.objects.filter(
-            Q(id_number=school_id) | Q(school_id=school_id),
-            is_student=True
-        ).first()
+        # Extract the numeric student ID from the scanned QR
+        # The QR might contain formatted info like "EPIS, CLIFFORD ALEGRIA 166701002@Alipao|4059216"
+        # Extract the numeric school ID (6+ digits)
+        extracted_school_id = None
+        digit_match = re.search(r'\b(\d{6,})\b', school_id)
+        if digit_match:
+            extracted_school_id = digit_match.group(1)
+            logger.debug(f"Extracted school ID '{extracted_school_id}' from scanned value: '{school_id}'")
+        
+        # First, try to find student by matching registered QRs containing the extracted school ID
+        # This handles QR codes that have slight variations in formatting but same student ID
+        student = None
+        from dashboard.models import QRCodeRegistration
+        
+        if extracted_school_id:
+            # Find all QR registrations that contain the student's school ID
+            all_active_qrs = QRCodeRegistration.objects.filter(is_active=True).select_related('student')
+            for qr_reg in all_active_qrs:
+                if extracted_school_id in qr_reg.qr_code:
+                    student = qr_reg.student
+                    logger.info(f"Found student by matching school ID in QR registration: {student.full_name} ({student.school_id}) - Stored QR: '{qr_reg.qr_code}'")
+                    break
+        
+        # If not found by QR content matching, try exact QR code match
+        if not student:
+            qr_reg = QRCodeRegistration.objects.filter(qr_code=school_id, is_active=True).select_related('student').first()
+            if qr_reg:
+                student = qr_reg.student
+                logger.info(f"Found student via exact QR code match: {student.full_name} ({student.school_id})")
+        
+        # If not found in QR registrations, try direct school_id match (for manual ID scans)
+        if not student:
+            student = CustomUser.objects.filter(
+                Q(school_id=school_id) | Q(username=school_id),
+                is_student=True
+            ).first()
+            if student:
+                logger.info(f"Found student by direct school_id match: {student.full_name} ({student.school_id})")
+        
+        # If not found, try the extracted school ID
+        if not student and extracted_school_id:
+            student = CustomUser.objects.filter(
+                Q(school_id=extracted_school_id) | Q(username=extracted_school_id),
+                is_student=True
+            ).first()
+            if student:
+                logger.info(f"Found student by extracted school ID: {student.full_name} ({student.school_id})")
         
         # If not found, try tolerant lookup by normalizing digits (handles dashes/spaces)
         if not student:
             try:
                 normalized_digits = re.sub(r"\D", "", school_id)
                 if normalized_digits:
-                    candidates = CustomUser.objects.filter(is_student=True).only('id', 'school_id', 'id_number', 'full_name')
+                    candidates = CustomUser.objects.filter(is_student=True).only('id', 'school_id', 'full_name')
                     for cand in candidates:
-                        if re.sub(r"\D", "", (cand.school_id or '')) == normalized_digits or re.sub(r"\D", "", (cand.id_number or '')) == normalized_digits:
+                        if re.sub(r"\D", "", (cand.school_id or '')) == normalized_digits:
                             student = cand
                             logger.info(f"Matched student by normalized digits during scan: input={school_id} -> matched={cand.full_name} ({cand.school_id})")
                             break
             except Exception as _e:
                 logger.debug(f"Normalization scan lookup failed: {_e}")
-
+        
         if not student:
+            logger.warning(f"No student found for scanned value: '{school_id}'")
             return JsonResponse({'success': False, 'message': f'Student with ID {school_id} not found.'})
         
         # Check if student is enrolled in this course
@@ -8703,15 +8914,48 @@ def instructor_scan_student_school_id_view(request):
         if not enrollment:
             return JsonResponse({'success': False, 'message': f'{student.full_name} is not enrolled in {course.code}.'})
         
-        # Verify this is the correct schedule/section
+        # Verify this is the correct schedule/section and map to the
+        # CourseSchedule short day code (e.g. 'Mon', 'Tue'). CourseSchedule
+        # stores the day in `day`, not `day_of_week`.
         schedule_day = None
         if schedule_id:
-            schedule = CourseSchedule.objects.filter(id=schedule_id, course=course).first()
-            if not schedule:
-                return JsonResponse({'success': False, 'message': 'Invalid schedule ID.'})
-            schedule_day = schedule.day_of_week
-        
-        # Get today's date
+            logger.info(f"[SCAN] Looking for schedule: id={schedule_id}, course={course.id}")
+            # Try direct numeric lookup first
+            schedule = None
+            try:
+                # If schedule_id is a number, try direct lookup
+                if isinstance(schedule_id, int) or (isinstance(schedule_id, str) and schedule_id.isdigit()):
+                    schedule = CourseSchedule.objects.filter(id=int(schedule_id), course=course).first()
+                    if schedule:
+                        logger.info(f"[SCAN] Found schedule by direct ID: {schedule.id}")
+            except (ValueError, TypeError):
+                pass
+            
+            # If not found and schedule_id is composite like "73_F_20251212", try to extract the day
+            if not schedule and isinstance(schedule_id, str) and '_' in schedule_id:
+                parts = schedule_id.split('_')
+                if len(parts) >= 2:
+                    day_code = parts[1]
+                    # Map single letter or two-letter day codes to CourseSchedule.day format (Mon, Tue, etc.)
+                    day_map_reverse = {
+                        'M': 'Mon', 'T': 'Tue', 'W': 'Wed', 'Th': 'Thu', 'F': 'Fri', 'S': 'Sat', 'Su': 'Sun',
+                        'Mon': 'Mon', 'Tue': 'Tue', 'Wed': 'Wed', 'Thu': 'Thu', 'Fri': 'Fri', 'Sat': 'Sat', 'Sun': 'Sun'
+                    }
+                    day_name = day_map_reverse.get(day_code)
+                    if day_name:
+                        schedule = CourseSchedule.objects.filter(course=course, day=day_name).first()
+                        if schedule:
+                            logger.info(f"[SCAN] Found schedule by day name '{day_name}': {schedule.id}")
+            
+            if schedule:
+                schedule_day = schedule.day
+                logger.info(f"[SCAN] Using schedule: {schedule.id}, day={schedule_day}")
+            else:
+                # Schedule not found, but don't fail - just continue without schedule validation
+                logger.warning(f"[SCAN] Schedule '{schedule_id}' not found for course {course.id}, continuing without schedule validation")
+                schedule_day = None
+
+        # Get today's date and map to short day code used by CourseSchedule.day
         from django.utils import timezone
         from zoneinfo import ZoneInfo
         try:
@@ -8719,15 +8963,24 @@ def instructor_scan_student_school_id_view(request):
         except:
             import pytz
             ph_tz = pytz.timezone('Asia/Manila')
-        
+
         now_ph = timezone.now().astimezone(ph_tz)
         today = now_ph.date()
-        
-        # Check if there's an active schedule for today with the correct day
+
+        day_map = {
+            'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 'Thursday': 'Thu',
+            'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'
+        }
+        today_short = day_map.get(now_ph.strftime('%A'), now_ph.strftime('%A')[:3])
+
+        # Use the provided schedule_day (if a specific schedule_id was passed),
+        # otherwise use today's short day code
+        lookup_day = schedule_day if schedule_day else today_short
+
+        # Find active schedule for this day (CourseSchedule has no `is_deleted` field)
         active_schedule = CourseSchedule.objects.filter(
             course=course,
-            day_of_week=today.strftime('%A') if not schedule_day else schedule_day,
-            is_deleted=False
+            day=lookup_day
         ).first()
         
         if not active_schedule:
@@ -8737,23 +8990,52 @@ def instructor_scan_student_school_id_view(request):
         if active_schedule.attendance_status != 'open':
             return JsonResponse({'success': False, 'message': 'Attendance is not open for this schedule.'})
         
-        # Create or update attendance record
+        # Determine attendance status: check if student scanned after present window duration
+        attendance_status = 'present'  # Default status
+        
+        # Get the schedule/course to check present window duration
+        present_duration_minutes = None
+        if active_schedule and active_schedule.attendance_present_duration:
+            present_duration_minutes = active_schedule.attendance_present_duration
+        elif course and course.attendance_present_duration:
+            present_duration_minutes = course.attendance_present_duration
+        
+        # If present window is configured and we have a start time, check if student is late
+        if present_duration_minutes and active_schedule and active_schedule.start_time:
+            try:
+                from datetime import timedelta
+                # Calculate the deadline: schedule start time + present window duration
+                schedule_start = active_schedule.start_time
+                deadline_time = (
+                    datetime.combine(today, schedule_start) + 
+                    timedelta(minutes=int(present_duration_minutes))
+                ).time()
+                
+                # Compare student's scan time with deadline
+                if now_ph.time() > deadline_time:
+                    attendance_status = 'late'
+                    logger.info(f"[SCAN] Student {student.full_name} scanned at {now_ph.time()} after deadline {deadline_time} - marked LATE")
+            except Exception as e:
+                logger.debug(f"[SCAN] Could not calculate late status: {e}")
+        
+        # Create or update attendance record. Store the schedule short-code
+        # (e.g. 'Mon') in AttendanceRecord.schedule_day (it's a CharField).
         attendance_record, created = AttendanceRecord.objects.get_or_create(
             course=course,
             student=student,
             enrollment=enrollment,
             attendance_date=today,
-            schedule_day=active_schedule,
+            schedule_day=active_schedule.day if active_schedule else lookup_day,
             defaults={
                 'attendance_time': now_ph.time(),
-                'status': 'present'
+                'status': attendance_status
             }
         )
         
         # If record already exists, just update the status to present (re-scan)
         if not created:
             attendance_record.attendance_time = now_ph.time()
-            attendance_record.status = 'present'
+            attendance_record.status = attendance_status
             attendance_record.save()
         
         # Create notification for instructor
@@ -8770,9 +9052,11 @@ def instructor_scan_student_school_id_view(request):
         return JsonResponse({
             'success': True,
             'message': 'Attendance recorded successfully',
-            'student_name': student.full_name,
-            'student_id': student.id_number,
-            'course_code': course.code
+                'student_name': student.full_name,
+                'student_id': student.school_id,
+                'student_pk': student.id,
+            'course_code': course.code,
+            'scanned_value': school_id
         })
     
     except json.JSONDecodeError:
@@ -8824,10 +9108,10 @@ def instructor_get_scanned_students_view(request):
             students_data.append({
                 'name': record.student.full_name,
                 'id': record.student.school_id or 'N/A',
-                'time': record.attendance_time.strftime('%g:%i %p') if record.attendance_time else 'N/A'
+                'time': record.attendance_time.strftime('%I:%M %p') if record.attendance_time else 'N/A'
             })
         
-        return JsonResponse({'students': students_data})
+        return JsonResponse({'students': students_data, 'count': records.count()})
     
     except Exception as e:
         logger.error(f"Error getting scanned students: {str(e)}")
@@ -8901,11 +9185,10 @@ def instructor_register_student_qr_code_view(request):
                 normalized_digits = re.sub(r"\D", "", student_id_number)
                 if normalized_digits:
                     # iterate student records (narrow to students) and try to match normalized digits
-                    candidates = CustomUser.objects.filter(is_student=True).only('id', 'school_id', 'id_number', 'full_name')
+                    candidates = CustomUser.objects.filter(is_student=True).only('id', 'school_id', 'full_name')
                     for cand in candidates:
                         cand_school = (cand.school_id or '')
-                        cand_idnum = (cand.id_number or '')
-                        if re.sub(r"\D", "", cand_school) == normalized_digits or re.sub(r"\D", "", cand_idnum) == normalized_digits:
+                        if re.sub(r"\D", "", cand_school) == normalized_digits:
                             student = cand
                             logger.info(f"Matched student by normalized digits: input={student_id_number} -> matched={cand.full_name} ({cand.school_id})")
                             break
@@ -8925,8 +9208,18 @@ def instructor_register_student_qr_code_view(request):
         if not enrollment:
             return JsonResponse({'success': False, 'message': f'{student.full_name} is not enrolled in {course.code}.'})
         
+        # Store the QR code as-is (exactly as scanned), but link it to the selected student
+        # The QR content doesn't matter - we use the selected student for identification
+        # This allows students to scan any QR, and we'll mark the registered student as present
+        logger.info(f"Registering QR code for student: {student.full_name} (school_id={student.school_id}). QR content: '{qr_code}'")
+        
         # Create or update QR code registration
         from dashboard.models import QRCodeRegistration
+        # Ensure the QR code value is unique across active registrations (one QR per student)
+        existing = QRCodeRegistration.objects.filter(qr_code=qr_code, is_active=True).exclude(student=student).first()
+        if existing:
+            return JsonResponse({'success': False, 'message': f'This QR code is already registered to {existing.student.full_name}. Each QR code can only be assigned to one student.'})
+
         qr_reg, created = QRCodeRegistration.objects.update_or_create(
             student=student,
             course=course,

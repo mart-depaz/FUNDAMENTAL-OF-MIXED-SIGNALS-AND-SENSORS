@@ -1,17 +1,67 @@
 from pathlib import Path
 import os
 
+try:
+    import dj_database_url
+except ImportError:
+    dj_database_url = None
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-x&rfo%c#sm@0leoa26c0gr_(5hd(gz26x$_v9d2m=i2*z2tb@c'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-x&rfo%c#sm@0leoa26c0gr_(5hd(gz26x$_v9d2m=i2*z2tb@c')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
+# Render deployment detection
+IS_RENDER = os.environ.get('RENDER') == 'true'
 
-ALLOWED_HOSTS = []  # Allow all hosts for development; restrict in production
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost",
+    "http://127.0.0.1",
+    "http://192.168.1.19",
+    "https://aulic-mimi-nondisingenuously.ngrok-free.dev",
+    "https://*.trycloudflare.com",  # Cloudflare Tunnel domains
+    "https://trycloudflare.com",    # Cloudflare base domain
+    "http://0.0.0.0:8000",          # All network interfaces
+]
+
+# Add Render domain to CSRF origins if deploying on Render
+if IS_RENDER:
+    # Will be added dynamically based on Render's assigned domain
+    CSRF_TRUSTED_ORIGINS.append("https://*.onrender.com")
+
+ALLOWED_HOSTS = ['*']  # Allow all hosts
+
+# Configuration based on environment
+if DEBUG:
+    ALLOWED_HOSTS = ['*']
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_HSTS_SECONDS = 0  # Disable HSTS warnings
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
+    # Trust X-Forwarded-For header from proxies
+    TRUSTED_PROXIES = ['*']
+    USE_X_FORWARDED_HOST = True
+    USE_X_FORWARDED_PORT = True
+    USE_X_FORWARDED_PROTO = True
+else:
+    # Production settings for Render
+    ALLOWED_HOSTS = ['.onrender.com', 'localhost', '127.0.0.1']
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    TRUSTED_PROXIES = ['*']
+    USE_X_FORWARDED_HOST = True
+    USE_X_FORWARDED_PORT = True
+    USE_X_FORWARDED_PROTO = True
 
 # Application definition
 INSTALLED_APPS = [
@@ -31,6 +81,7 @@ if DEBUG:
         'django.middleware.security.SecurityMiddleware',
         'django.contrib.sessions.middleware.SessionMiddleware',
         'library_root.middleware.NoCacheCommonMiddleware',  # Custom no-cache middleware
+        'library_root.middleware.CameraPermissionMiddleware',  # Enable camera/microphone access
         'django.middleware.csrf.CsrfViewMiddleware',
         'django.contrib.auth.middleware.AuthenticationMiddleware',
         'django.contrib.messages.middleware.MessageMiddleware',
@@ -78,15 +129,25 @@ TEMPLATES = [
 WSGI_APPLICATION = 'library_root.wsgi.application'
 
 # Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-        'OPTIONS': {
-            'timeout': 20,  # Increase timeout to prevent database locked errors
+if IS_RENDER:
+    # Use PostgreSQL on Render
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.environ.get('DATABASE_URL', ''),
+            conn_max_age=600
+        )
+    }
+else:
+    # Use SQLite locally
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+            'OPTIONS': {
+                'timeout': 20,  # Increase timeout to prevent database locked errors
+            }
         }
     }
-}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -112,9 +173,15 @@ USE_TZ = True
 
 # Static files
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles' if IS_RENDER else None
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
+
+# Whitenoise configuration for production
+if not DEBUG:
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files (for user uploads like profile pictures)
 MEDIA_URL = '/media/'

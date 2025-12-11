@@ -1,0 +1,292 @@
+<!-- Minimal QR Scanner Modal - Based on proven working code -->
+<div id="qrScannerModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] p-6 md:p-8 flex flex-col overflow-hidden">
+        <div class="flex justify-between items-start mb-4">
+            <h3 class="text-2xl font-bold text-green-600">
+                <i class="fas fa-qrcode mr-2"></i>QR Scanner
+            </h3>
+            <button onclick="closeQRScanner()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto space-y-4">
+            <!-- Video -->
+            <video id="scannerVideo" autoplay playsinline style="width: 100%; height: 400px; border: 2px solid #333; border-radius: 10px; background: #000; object-fit: cover;"></video>
+            
+            <!-- Output -->
+            <div id="scannerOutput" style="font-size: 18px; font-weight: bold; color: #10b981; text-align: center; padding: 15px; background: #f0fdf4; border-radius: 8px;">
+                Scanning... Hold QR code in front of the camera
+            </div>
+
+            <!-- Results -->
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm font-medium text-gray-700">Student ID:</label>
+                       <input id="studentIdInput" type="text" placeholder="Enter Student ID manually" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-top: 5px;">
+                </div>
+                <div>
+                       <label class="text-sm font-medium text-gray-700">Registration QR (Scan):</label>
+                    <input id="regQrInput" type="text" readonly style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-top: 5px; background: #f9fafb; overflow: hidden; text-overflow: ellipsis;">
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Buttons -->
+        <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
+            <button onclick="closeQRScanner()" style="padding: 10px 20px; background: #e5e7eb; color: #374151; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">
+                Cancel
+            </button>
+            <button id="registerBtn" onclick="submitQRData()" style="padding: 10px 20px; background: #10b981; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; opacity: 0.5;" disabled>
+                Register
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Success Popup -->
+<div id="successPopup" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 40px 60px; border-radius: 15px; font-size: 18px; font-weight: bold; z-index: 9999; box-shadow: 0 10px 40px rgba(0,0,0,0.3); text-align: center;">
+    <div style="font-size: 50px; margin-bottom: 10px;">✓</div>
+    <div id="popupText">QR Scanned Successfully</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script>
+// Lightweight, robust scanner script
+let scannerActive = false;
+let scannerStream = null;
+let animationId = null;
+
+function checkJsQRReady() {
+    if (typeof jsQR !== 'undefined') {
+        console.log('✓ jsQR library is available');
+        return true;
+    }
+    console.warn('jsQR not available yet');
+    return false;
+}
+
+function openQRScanner(courseId, studentIdPrefill, scheduleId) {
+    console.log('openQRScanner called:', { courseId, studentIdPrefill, scheduleId });
+    const modal = document.getElementById('qrScannerModal');
+    if (!modal) {
+        console.error('Modal #qrScannerModal not found!');
+        alert('Scanner modal not found. Please refresh the page.');
+        return;
+    }
+    modal.style.display = 'flex';
+    modal.dataset.courseId = courseId || '';
+    modal.dataset.scheduleId = scheduleId || '';
+    
+    document.getElementById('studentIdInput').value = studentIdPrefill || '';
+    document.getElementById('regQrInput').value = '';
+    document.getElementById('scannerOutput').textContent = 'Scanning... Hold QR code in front of the camera';
+    document.getElementById('scannerOutput').style.color = '#6b7280';
+    
+    updateRegisterButton();
+    
+    setTimeout(() => {
+        console.log('Starting scanner. jsQR available?', typeof jsQR !== 'undefined');
+        startScanner();
+    }, 100);
+}
+
+function startScanner() {
+    if (scannerActive) return;
+    const video = document.getElementById('scannerVideo');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Camera access is not supported in this browser.');
+        return;
+    }
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    .then(stream => {
+        scannerStream = stream;
+        video.srcObject = stream;
+        // play may reject on some browsers; ignore
+        video.play().catch(() => {});
+        scannerActive = true;
+        startScanLoop(video);
+    })
+    .catch(err => {
+        console.error('Camera error:', err);
+        alert('Unable to access camera: ' + err.message);
+    });
+}
+
+function startScanLoop(video) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    let frameCount = 0;
+    let jsQRCheckCount = 0;
+
+    function scan() {
+        if (!scannerActive) return;
+        frameCount++;
+
+        if (typeof jsQR === 'undefined') {
+            jsQRCheckCount++;
+            if (jsQRCheckCount === 1) console.warn('jsQR not yet available, waiting...');
+            if (jsQRCheckCount > 300) {
+                console.error('jsQR failed to load');
+                return;
+            }
+            animationId = requestAnimationFrame(scan);
+            return;
+        }
+
+        if (frameCount % 60 === 0) {
+            console.log('Scan frame', frameCount, 'video readyState:', video.readyState, 'size:', video.videoWidth, 'x', video.videoHeight);
+        }
+
+        if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth && video.videoHeight) {
+            try {
+                // Downscale to speed up getImageData and decoding
+                const maxDim = 640;
+                let vw = video.videoWidth;
+                let vh = video.videoHeight;
+                let scale = 1;
+                if (Math.max(vw, vh) > maxDim) scale = maxDim / Math.max(vw, vh);
+                const cw = Math.max(160, Math.round(vw * scale));
+                const ch = Math.max(120, Math.round(vh * scale));
+
+                if (canvas.width !== cw || canvas.height !== ch) {
+                    canvas.width = cw;
+                    canvas.height = ch;
+                }
+
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(video, 0, 0, cw, ch);
+                const imageData = ctx.getImageData(0, 0, cw, ch);
+                const qr = jsQR(imageData.data, imageData.width, imageData.height);
+                if (qr && qr.data) {
+                    // Temporarily pause scanning loop and handle QR
+                    if (animationId) cancelAnimationFrame(animationId);
+                    animationId = null;
+                    scannerActive = false;
+                    handleQRScanned(qr.data);
+                    return;
+                }
+            } catch (e) {
+                if (frameCount % 60 === 0) console.error('Scan error:', e);
+            }
+        }
+
+        animationId = requestAnimationFrame(scan);
+    }
+
+    animationId = requestAnimationFrame(scan);
+}
+
+function stopScanner() {
+    scannerActive = false;
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+    }
+    if (scannerStream) {
+        scannerStream.getTracks().forEach(t => t.stop());
+        scannerStream = null;
+    }
+    const video = document.getElementById('scannerVideo');
+    if (video) {
+        try { video.pause(); } catch(e) {}
+        try { video.srcObject = null; } catch(e) {}
+    }
+}
+
+function closeQRScanner() {
+    stopScanner();
+    const modal = document.getElementById('qrScannerModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function handleQRScanned(data) {
+    console.log('QR Scanned:', data);
+    const trimmed = (data || '').trim();
+    document.getElementById('regQrInput').value = trimmed.length > 50 ? trimmed.substring(0,50) + '...' : trimmed;
+    showPopup('Registration QR Scanned');
+    updateRegisterButton();
+
+    // Resume scanning after brief pause (keep camera open)
+    setTimeout(() => {
+        if (scannerStream) {
+            const video = document.getElementById('scannerVideo');
+            scannerActive = true;
+            startScanLoop(video);
+        }
+    }, 1400);
+}
+
+function showPopup(text) {
+    const popup = document.getElementById('successPopup');
+    if (!popup) return;
+    document.getElementById('popupText').textContent = text;
+    popup.style.display = 'block';
+    setTimeout(() => { popup.style.display = 'none'; }, 1800);
+}
+
+function updateRegisterButton() {
+    const btn = document.getElementById('registerBtn');
+    const studentId = document.getElementById('studentIdInput').value;
+    const regQr = document.getElementById('regQrInput').value;
+    if (btn) {
+        if (studentId && regQr) {
+            btn.disabled = false; btn.style.opacity = '1';
+        } else {
+            btn.disabled = true; btn.style.opacity = '0.5';
+        }
+    }
+}
+
+function submitQRData() {
+    const modal = document.getElementById('qrScannerModal');
+    const courseId = modal?.dataset?.courseId;
+    const scheduleId = modal?.dataset?.scheduleId;
+    const studentId = document.getElementById('studentIdInput').value;
+    const regQr = document.getElementById('regQrInput').value;
+
+    if (!courseId || !studentId || !regQr) {
+        alert('Please fill in all fields');
+        return;
+    }
+
+    const output = document.getElementById('scannerOutput');
+    if (output) { output.textContent = 'Registering...'; output.style.color = '#2563eb'; }
+
+    const csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+    fetch('{% url "dashboard:instructor_register_student_qr_code" %}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+        body: JSON.stringify({ course_id: parseInt(courseId), student_id_number: studentId, qr_code: regQr })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            if (output) { output.textContent = '✓ Registered for ' + (data.student_name || 'Student'); output.style.color = '#10b981'; }
+            setTimeout(() => { closeQRScanner(); location.reload(); }, 1200);
+        } else {
+            if (output) { output.textContent = '✗ ' + (data.message || 'Failed'); output.style.color = '#dc2626'; }
+        }
+    })
+    .catch(err => {
+        if (output) { output.textContent = '✗ Error: ' + (err?.message || err); output.style.color = '#dc2626'; }
+        console.error('Register error:', err);
+    });
+}
+
+document.addEventListener('input', function(e) {
+    if (e.target && e.target.id === 'studentIdInput') updateRegisterButton();
+});
+
+// Expose functions to window for cross-module access
+window.openQRScanner = openQRScanner;
+window.closeQRScanner = closeQRScanner;
+window.startScanner = startScanner;
+window.stopScanner = stopScanner;
+
+// Ensure we stop camera when leaving page
+window.addEventListener('beforeunload', stopScanner);
+</script>

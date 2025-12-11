@@ -4396,7 +4396,7 @@ function viewCourseDetails(courseId) {
                     ` : ''}
                     <div class="border-t pt-4">
                         <h4 class="font-semibold mb-2">Schedule</h4>
-                        ${course.has_day_schedules && course.day_schedules && course.day_schedules.length > 0 ? `
+                        ${course.has_day_schedules && course.day_schedules && course.day_schedules.length > 0 && course.is_per_day_schedule ? `
                         <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
                             <div class="px-4 py-2 border-b border-gray-200" style="background: linear-gradient(90deg, ${courseColor}15 0%, #FFFFFF 100%); border-left: 4px solid ${courseColor};">
                                 <h5 class="font-semibold text-gray-800 flex items-center">

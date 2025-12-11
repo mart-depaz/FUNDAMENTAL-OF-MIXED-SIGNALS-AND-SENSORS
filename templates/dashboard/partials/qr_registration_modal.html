@@ -109,9 +109,59 @@
     let customCanvas = null;
     let customCtx = null;
 
+    // Video helpers to avoid redundant play() calls and noisy warnings
+    function isVideoPlaying(v){
+        try{
+            return !!(v && v.currentTime > 0 && !v.paused && !v.ended && v.readyState > 2);
+        } catch(e){ return false; }
+    }
+
+    function tryPlayVideo(v){
+        return new Promise((resolve, reject) => {
+            if (!v) return reject(new Error('No video element'));
+            try{
+                // Debug info (kept as debug-level to avoid noisy console)
+                console.debug('tryPlayVideo state', { currentTime: v.currentTime, paused: v.paused, ended: v.ended, readyState: v.readyState });
+            } catch(e){}
+            if (isVideoPlaying(v)) return resolve();
+            const playPromise = v.play();
+            if (playPromise && typeof playPromise.then === 'function'){
+                playPromise.then(() => resolve()).catch(err => reject(err));
+            } else {
+                // older browsers may not return a promise
+                // wait for playing event or short timeout
+                const onPlaying = () => { cleanup(); resolve(); };
+                const onError = (e) => { cleanup(); reject(e || new Error('play failed')); };
+                const cleanup = () => { v.removeEventListener('playing', onPlaying); v.removeEventListener('error', onError); };
+                v.addEventListener('playing', onPlaying);
+                v.addEventListener('error', onError);
+                setTimeout(() => { try { cleanup(); resolve(); } catch(e){} }, 1500);
+            }
+        });
+    }
+
     function getCsrfToken(){
-        const el = document.querySelector('[name=csrfmiddlewaretoken]') || document.querySelector('meta[name="csrf-token"]');
-        return el ? (el.value || el.getAttribute('content') || '') : '';
+        // Try common places where CSRF token may be present:
+        // 1) A hidden input inserted by Django's csrf_token tag
+        // 2) A meta tag (some layouts include this)
+        // 3) A global `window.CSRF_TOKEN` set server-side
+        // 4) The `csrftoken` cookie (common Django setup)
+        try {
+            const inputEl = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (inputEl && (inputEl.value || inputEl.getAttribute('value'))) return inputEl.value || inputEl.getAttribute('value');
+
+            const metaEl = document.querySelector('meta[name="csrf-token"]') || document.querySelector('meta[name="csrfmiddlewaretoken"]');
+            if (metaEl && metaEl.getAttribute('content')) return metaEl.getAttribute('content');
+
+            if (window.CSRF_TOKEN) return window.CSRF_TOKEN;
+
+            // Fallback: read cookie named 'csrftoken'
+            const match = document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)');
+            if (match && match.length > 2) return decodeURIComponent(match[2]);
+        } catch (e) {
+            console.warn('getCsrfToken fallback failed', e);
+        }
+        return '';
     }
 
     window.openQRRegistrationModal = function(courseId, studentId, scheduleId){
@@ -251,31 +301,35 @@
 
         // Use optimized scan config (match working student scanner)
         const scanConfig = {
-            fps: 30,
+            // lower fps to allow more processing time per frame for heavy fallbacks
+            fps: 15,
             qrbox: function(viewfinderWidth, viewfinderHeight){
                 try{
                     const fullframeToggle = document.getElementById('qr-reg-fullframe-toggle');
                     const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
                     if (fullframeToggle && fullframeToggle.checked){
-                        // scan nearly whole frame when user requests fullframe
+                        // scan very large frame when user requests fullframe
                         const size = Math.floor(minEdge * 0.95);
-                        return { width: Math.max(200, Math.min(1200, size)), height: Math.max(200, Math.min(1200, size)) };
+                        return { width: Math.max(240, Math.min(1600, size)), height: Math.max(240, Math.min(1600, size)) };
                     }
-                    let qrboxSize = Math.floor(minEdge * 0.6);
-                    return { width: Math.max(200, Math.min(300, qrboxSize)), height: Math.max(200, Math.min(300, qrboxSize)) };
+                    // default: use a larger scan box (helps small QRs)
+                    let qrboxSize = Math.floor(minEdge * 0.85);
+                    return { width: Math.max(240, Math.min(1200, qrboxSize)), height: Math.max(240, Math.min(1200, qrboxSize)) };
                 } catch(e) {
                     const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                    let qrboxSize = Math.floor(minEdge * 0.6);
-                    return { width: Math.max(200, Math.min(300, qrboxSize)), height: Math.max(200, Math.min(300, qrboxSize)) };
+                    let qrboxSize = Math.floor(minEdge * 0.85);
+                    return { width: Math.max(240, Math.min(1200, qrboxSize)), height: Math.max(240, Math.min(1200, qrboxSize)) };
                 }
             },
-            aspectRatio: 1.0,
+            // allow camera aspect ratio to vary
+            aspectRatio: undefined,
             disableFlip: false,
             supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
             videoConstraints: {
                 facingMode: 'environment',
-                width: { ideal: 640, max: 1280 },
-                height: { ideal: 480, max: 720 }
+                // prefer higher resolution for better clarity when available
+                width: { ideal: 1280, max: 1920 },
+                height: { ideal: 720, max: 1080 }
             },
             rememberLastUsedCamera: true
         };
@@ -384,22 +438,28 @@
         const hasRegQR = !!window.qrRegScannedCode;
         
         // Determine what type of QR was scanned by pattern
-        const looksLikeStudentId = /^\d+$/.test(scannedData);
-        
-        console.log('Current state:', { hasRegQR, looksLikeStudentId, scannedData });
-        
-        if (looksLikeStudentId) {
-            // Student ID QR detected (numeric pattern)
+        // Primary detection: fully numeric IDs (e.g., '20230001')
+        // Secondary (tolerant) detection: IDs that include non-digit separators
+        // but contain a significant digit sequence (e.g., 'ID-2023-0001', '2023 0001')
+        const looksLikeStudentIdStrict = /^\d+$/.test(scannedData);
+        const normalizedDigits = (scannedData || '').replace(/\D/g, '');
+        const looksLikeStudentIdTolerant = (!looksLikeStudentIdStrict && normalizedDigits.length >= 4);
+
+        console.log('Current state:', { hasRegQR, looksLikeStudentIdStrict, looksLikeStudentIdTolerant, scannedData });
+
+        if (looksLikeStudentIdStrict || looksLikeStudentIdTolerant) {
+            // Treat as student ID. Preserve original scanned value but also log normalized digits.
             const studentIdInput = document.getElementById('qr-reg-student-id-input');
+            // Use original scanned string so any formatting is visible to the user
             studentIdInput.value = scannedData;
             const msg = document.getElementById('qr-reg-message'); 
             if (msg) { 
-                msg.textContent = '✓ Student ID: ' + scannedData + ' | ' + (hasRegQR ? 'Ready to register' : 'Now scan registration QR'); 
+                const extra = looksLikeStudentIdTolerant ? ' (normalized digits: ' + normalizedDigits + ')' : '';
+                msg.textContent = '✓ Student ID: ' + scannedData + extra + ' | ' + (hasRegQR ? 'Ready to register' : 'Now scan registration QR'); 
                 msg.className = 'text-xs text-green-600 text-center mt-2 font-semibold'; 
             }
-            // Show uniform success notification
             try{ if (window.showNotification) window.showNotification('Student ID scanned: ' + scannedData, 'success'); } catch(e){}
-            console.log('Student ID field filled:', scannedData);
+            console.log('Student ID field filled (tolerant):', scannedData, 'normalized ->', normalizedDigits);
         } else {
             // Registration QR detected (non-numeric)
             window.qrRegScannedCode = scannedData;
@@ -462,7 +522,23 @@
             if (!Reader) { console.warn('ZXing Reader not available'); return; }
             // stop Html5Qrcode scanner if running
             try { if (qrRegScanner) { qrRegScanner.stop().catch(()=>{}); } } catch(e){}
-            zxingReader = new Reader();
+            // Construct reader with hints if available to focus on QR codes and enable TRY_HARDER
+            try {
+                const lib = window.ZXing || window.ZXingBrowser || window;
+                let hints = undefined;
+                if (lib && lib.DecodeHintType && lib.BarcodeFormat) {
+                    try {
+                        hints = new Map();
+                        hints.set(lib.DecodeHintType.POSSIBLE_FORMATS, [lib.BarcodeFormat.QR_CODE]);
+                        hints.set(lib.DecodeHintType.TRY_HARDER, true);
+                    } catch(e) {
+                        hints = undefined;
+                    }
+                }
+                zxingReader = hints ? new Reader(hints) : new Reader();
+            } catch(e) {
+                zxingReader = new Reader();
+            }
             const videoElemId = 'qr-reg-zxing-video';
             let videoElem = document.getElementById(videoElemId);
             if (!videoElem){
@@ -483,13 +559,21 @@
             zxingReader.decodeFromVideoDevice(selected || null, videoElem, (result, err) => {
                 if (result && result.text){
                     console.log('ZXing continuous detected:', result.text);
-                    // stop reader and hand over
                     try { zxingReader.reset(); } catch(e){}
                     zxingActive = false;
                     onQRRegistrationScanned(result.text, result);
+                    return;
                 }
                 if (err){
-                    console.warn('ZXing continuous error', err);
+                    try{
+                        const msg = (err && err.message) ? err.message.toString() : String(err);
+                        if (/No MultiFormat Readers were able to detect the code/i.test(msg)){
+                            // Common frame-level miss — use debug level to avoid console spam
+                            console.debug('ZXing continuous: no detection in this frame');
+                        } else {
+                            console.warn('ZXing continuous error', err);
+                        }
+                    } catch(e){ console.warn('ZXing continuous error (unreadable):', err); }
                 }
             });
             document.getElementById('qr-reg-message').textContent = 'Alternate scanner active — point at QR code';
@@ -662,7 +746,7 @@
         try { customCtx = customCanvas.getContext('2d', { willReadFrequently: true }); } catch(e){ customCtx = customCanvas.getContext('2d'); }
 
         try{
-            await customVideo.play();
+            await tryPlayVideo(customVideo);
         } catch(e){ console.warn('customVideo play failed', e); }
 
         // Wait a moment for camera to stabilize
@@ -732,7 +816,8 @@
                                     const codeReader = new Reader();
                                     const binCanvas = document.createElement('canvas');
                                     binCanvas.width = procW; binCanvas.height = procH;
-                                    const binCtx = binCanvas.getContext('2d');
+                                    let binCtx;
+                                    try { binCtx = binCanvas.getContext('2d', { willReadFrequently: true }); } catch(e) { binCtx = binCanvas.getContext('2d'); }
                                     const imageData = binCtx.createImageData(procW, procH);
                                     imageData.data.set(data);
                                     binCtx.putImageData(imageData, 0, 0);
@@ -759,10 +844,13 @@
                         const upW = Math.min(2048, cropW * 2);
                         const upH = Math.min(2048, cropH * 2);
                         upCanvas.width = upW; upCanvas.height = upH;
-                        const upCtx = upCanvas.getContext('2d');
+                        let upCtx;
+                        try { upCtx = upCanvas.getContext('2d', { willReadFrequently: true }); } catch(e) { upCtx = upCanvas.getContext('2d'); }
                         // draw scaled crop
                         const tmp = document.createElement('canvas'); tmp.width = cropW; tmp.height = cropH;
-                        const tmpCtx = tmp.getContext('2d'); tmpCtx.putImageData(cropData, 0, 0);
+                        let tmpCtx;
+                        try { tmpCtx = tmp.getContext('2d', { willReadFrequently: true }); } catch(e) { tmpCtx = tmp.getContext('2d'); }
+                        tmpCtx.putImageData(cropData, 0, 0);
                         upCtx.drawImage(tmp, 0, 0, upW, upH);
                         const upImgData = upCtx.getImageData(0,0,upW,upH);
                         // try jsQR on upscale
@@ -802,7 +890,7 @@
             try {
                 qrRegFallbackCtx = qrRegFallbackCanvas.getContext('2d', { willReadFrequently: true });
             } catch(e) {
-                qrRegFallbackCtx = qrRegFallbackCanvas.getContext('2d');
+                try { qrRegFallbackCtx = qrRegFallbackCanvas.getContext('2d', { willReadFrequently: true }); } catch(e) { qrRegFallbackCtx = qrRegFallbackCanvas.getContext('2d'); }
             }
         }
 
@@ -821,6 +909,14 @@
                     // draw video frame
                     qrRegFallbackCtx.drawImage(video, 0, 0, w, h);
                     const imgData = qrRegFallbackCtx.getImageData(0, 0, w, h);
+                    // compute simple luminance metric to detect too-dark or too-bright frames
+                    try{
+                        let sum=0; const data = imgData.data; const len = data.length; let count=0;
+                        for (let i=0;i<len;i+=4){ sum += (0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2]); count++; }
+                        const avg = Math.round(sum / count);
+                        if (avg < 30) console.warn('Scanner frame very dark (avg luminance):', avg);
+                        else if (avg > 230) console.warn('Scanner frame very bright (avg luminance):', avg);
+                    }catch(e){}
                     // preprocess with contrast stretch
                     const preprocessed = preprocessImageForQR(imgData);
                     // attempt decode with jsQR
@@ -833,6 +929,15 @@
                         clearInterval(qrRegFallbackInterval);
                         qrRegFallbackInterval = null;
                         setTimeout(startFallbackDecoder, 1200);
+                    }
+                    else {
+                        // If many failures accumulate, capture a full-size frame for inspection
+                        qrRegScanErrorCount = (qrRegScanErrorCount || 0) + 1;
+                        if ((qrRegScanErrorCount || 0) >= 12){
+                            console.warn('Many fallback decode failures — capturing frame for inspection');
+                            try { captureAndDetectFrame(); } catch(e){}
+                            qrRegScanErrorCount = 0;
+                        }
                     }
                 } catch(e){ console.error('Fallback decode error', e); }
             }, 300);
@@ -888,7 +993,7 @@
             await new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => reject(new Error('Video play timeout')), 3000);
                 video.onplay = () => { clearTimeout(timeout); resolve(); };
-                video.play().catch(reject);
+                tryPlayVideo(video).catch(reject);
             });
         } catch(err){
             console.error('Video play/timeout:', err);
@@ -921,7 +1026,7 @@
         try{
             ctx = canvas.getContext('2d', { willReadFrequently: true });
         } catch(e){
-            ctx = canvas.getContext('2d');
+            try { ctx = canvas.getContext('2d', { willReadFrequently: true }); } catch(e) { ctx = canvas.getContext('2d'); }
         }
         
         try{
@@ -1043,7 +1148,6 @@
                                                 rotCtx.restore();
                                                 // copy rotated content into tmp sized canvas (fit)
                                                 tmp.width = rotCanvas.width; tmp.height = rotCanvas.height;
-                                                tmpCtx = tmp.getContext('2d');
                                                 try { tmpCtx = tmp.getContext('2d', { willReadFrequently: true }); } catch(e) { tmpCtx = tmp.getContext('2d'); }
                                                 tmpCtx.drawImage(rotCanvas, 0, 0, tmp.width, tmp.height);
                                             }
@@ -1054,7 +1158,8 @@
                                                 const pre = preprocessImageForQR(imgData);
                                                 const binCanvas = document.createElement('canvas');
                                                 binCanvas.width = tmp.width; binCanvas.height = tmp.height;
-                                                const binCtx = binCanvas.getContext('2d');
+                                                let binCtx2;
+                                                try { binCtx2 = binCanvas.getContext('2d', { willReadFrequently: true }); } catch(e) { binCtx2 = binCanvas.getContext('2d'); }
                                                 const imageData = binCtx.createImageData(tmp.width, tmp.height);
                                                 // pre.data contains grayscale bytes in RGBA slots; assign
                                                 for (let i=0;i<pre.data.length;i++){ imageData.data[i] = pre.data[i]; }

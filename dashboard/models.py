@@ -1,5 +1,6 @@
 # dashboard/models.py
 from django.db import models
+from django.db.models import Q
 from accounts.models import CustomUser
 
 class Department(models.Model):
@@ -368,6 +369,11 @@ class CourseEnrollment(models.Model):
     email = models.EmailField(help_text="Student's school email")
     student_id_number = models.CharField(max_length=50, help_text="Student's ID number")
     
+    # Course information at time of enrollment
+    course_code = models.CharField(max_length=50, blank=True, help_text="Course code (e.g., CpE - 123)")
+    course_name = models.CharField(max_length=200, blank=True, help_text="Course name/subject (e.g., Fundamental of Mixed Signals and Sensors)")
+    course_section = models.CharField(max_length=50, blank=True, help_text="Course section (e.g., A, B, 1, 2 - which section of the course the student is in)")
+    
     # Enrollment metadata
     enrolled_at = models.DateTimeField(auto_now_add=True, help_text="When the student enrolled")
     is_active = models.BooleanField(default=True, help_text="Whether the enrollment is active")
@@ -434,6 +440,10 @@ class QRCodeRegistration(models.Model):
         verbose_name = 'QR Code Registration'
         verbose_name_plural = 'QR Code Registrations'
         unique_together = [['student', 'course']]  # One QR code per student per course
+        constraints = [
+            # Ensure no two active registrations share the same qr_code
+            models.UniqueConstraint(fields=['qr_code'], name='uq_active_qr_code', condition=Q(is_active=True))
+        ]
         indexes = [
             models.Index(fields=['qr_code']),
             models.Index(fields=['course', 'is_active']),

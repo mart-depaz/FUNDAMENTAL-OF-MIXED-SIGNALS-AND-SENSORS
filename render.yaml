@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: attendance-system
+    env: python
+    plan: free
+    buildCommand: bash build.sh
+    startCommand: gunicorn library_root.wsgi:application
+    envVars:
+      - key: DATABASE_URL
+        scope: build
+      - key: SECRET_KEY
+        scope: build
+        value: django-insecure-x&rfo%c#sm@0leoa26c0gr_(5hd(gz26x$_v9d2m=i2*z2tb@c
+      - key: DEBUG
+        value: "False"
+      - key: PYTHON_VERSION
+        value: "3.13.1"

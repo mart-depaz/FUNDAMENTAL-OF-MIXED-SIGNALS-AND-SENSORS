@@ -1,0 +1,432 @@
+<!-- Simple QR Scanner Modal (proven jsQR approach) -->
+<div id="qrScannerModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] p-6 md:p-8 flex flex-col overflow-hidden">
+        <div class="flex justify-between items-start mb-4 flex-shrink-0">
+            <h3 class="text-2xl font-bold flex items-center text-green-600">
+                <i class="fas fa-qrcode w-6 h-6 mr-2"></i> QR Scanner
+            </h3>
+            <button onclick="closeQRScanner()" class="text-gray-400 hover:text-gray-600 transition">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+
+        <div class="space-y-3 flex-1 overflow-y-auto">
+            <!-- Video and Result Display -->
+            <video id="qr-scanner-video" autoplay playsinline class="w-full rounded-lg border-2 border-gray-300 bg-black" style="height: 500px; object-fit: cover;"></video>
+            
+            <!-- Output Box -->
+            <div id="qr-scanner-output" class="p-4 bg-gray-50 rounded-lg text-center text-lg font-semibold text-gray-700">
+                Scanning... hold QR code in front of camera
+            </div>
+
+            <!-- Scanned Values Display -->
+            <div class="space-y-2">
+                <div>
+                    <label class="text-sm font-medium text-gray-700">Student ID:</label>
+                    <input id="qr-scanner-student-id" type="text" readonly class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 font-semibold">
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-gray-700">Registration QR:</label>
+                    <input id="qr-scanner-reg-qr" type="text" readonly class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 font-semibold truncate">
+                </div>
+            </div>
+
+            <!-- Manual Entry Fallback -->
+            <details class="bg-gray-50 rounded-lg p-3 text-sm">
+                <summary class="cursor-pointer font-semibold text-gray-700">Manual Entry (if scan fails)</summary>
+                <div class="mt-3 space-y-2">
+                    <div>
+                        <label class="text-xs font-medium text-gray-600">Paste Student ID:</label>
+                        <input id="qr-scanner-manual-student-id" type="text" placeholder="e.g., 20230001" class="w-full mt-1 px-2 py-1 border border-gray-300 rounded text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-gray-600">Paste Registration QR:</label>
+                        <input id="qr-scanner-manual-reg-qr" type="text" placeholder="registration QR code" class="w-full mt-1 px-2 py-1 border border-gray-300 rounded text-sm">
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex justify-end space-x-3 pt-4 border-t border-gray-100 flex-shrink-0 mt-4">
+            <button onclick="closeQRScanner()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition">
+                Cancel
+            </button>
+            <button id="qr-scanner-register-btn" onclick="submitQRScan()" class="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition" disabled>
+                <i class="fas fa-check mr-2"></i> Register
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script>
+(function(){
+    if (window.__qrScannerSimpleLoaded) return;
+    window.__qrScannerSimpleLoaded = true;
+
+    let scannerStream = null;
+    let scannerVideo = null;
+    let scannedStudentId = null;
+    let scannedRegQR = null;
+    let scannerAnimationId = null;
+
+    // Ensure jsQR is loaded
+    function waitForJsQR(callback, attempts = 0) {
+        if (typeof jsQR !== 'undefined') {
+            console.log('✓ jsQR library loaded');
+            callback();
+        } else if (attempts < 20) {
+            console.log('Waiting for jsQR... attempt', attempts + 1);
+            setTimeout(() => waitForJsQR(callback, attempts + 1), 100);
+        } else {
+            console.error('✗ jsQR failed to load after 20 attempts');
+            callback();
+        }
+    }
+
+    // Success popup function
+    function showSuccessPopup(type, message) {
+        const popup = document.createElement('div');
+        popup.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 30px 50px;
+            border-radius: 15px;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 9999;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            animation: popupSlideIn 0.4s ease-out;
+        `;
+        popup.innerHTML = `
+            <div style="font-size: 40px; margin-bottom: 10px;">✓</div>
+            <div>${type} Successfully Scanned</div>
+            <div style="font-size: 14px; margin-top: 8px; opacity: 0.9;">${message}</div>
+        `;
+        
+        document.body.appendChild(popup);
+        
+        // Add animation style
+        if (!document.querySelector('style[data-popup-animation]')) {
+            const style = document.createElement('style');
+            style.setAttribute('data-popup-animation', 'true');
+            style.textContent = `
+                @keyframes popupSlideIn {
+                    from {
+                        opacity: 0;
+                        transform: translate(-50%, -60%);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translate(-50%, -50%);
+                    }
+                }
+                @keyframes popupSlideOut {
+                    from {
+                        opacity: 1;
+                        transform: translate(-50%, -50%);
+                    }
+                    to {
+                        opacity: 0;
+                        transform: translate(-50%, -40%);
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        // Remove after 2 seconds with fade out
+        setTimeout(() => {
+            popup.style.animation = 'popupSlideOut 0.4s ease-out';
+            setTimeout(() => {
+                try { document.body.removeChild(popup); } catch(e) {}
+            }, 400);
+        }, 2000);
+    }
+
+
+    window.openQRScanner = function(courseId, studentIdPrefill, scheduleId) {
+        const modal = document.getElementById('qrScannerModal');
+        if (!modal) return alert('Scanner modal not found');
+
+        scannedStudentId = null;
+        scannedRegQR = null;
+        
+        // Store course context
+        modal.dataset.courseId = courseId || '';
+        modal.dataset.scheduleId = scheduleId || '';
+        
+        if (studentIdPrefill) {
+            document.getElementById('qr-scanner-student-id').value = studentIdPrefill;
+            scannedStudentId = studentIdPrefill;
+        } else {
+            document.getElementById('qr-scanner-student-id').value = '';
+        }
+        
+        document.getElementById('qr-scanner-reg-qr').value = '';
+        document.getElementById('qr-scanner-output').textContent = 'Scanning... hold QR code in front of camera';
+        document.getElementById('qr-scanner-output').className = 'p-4 bg-gray-50 rounded-lg text-center text-lg font-semibold text-gray-700';
+        
+        modal.classList.remove('hidden');
+        
+        setTimeout(() => startQRScanner(), 100);
+    };
+
+    window.closeQRScanner = function() {
+        const modal = document.getElementById('qrScannerModal');
+        if (modal) modal.classList.add('hidden');
+        stopQRScanner();
+    };
+
+    async function startQRScanner() {
+        const video = document.getElementById('qr-scanner-video');
+        const output = document.getElementById('qr-scanner-output');
+        
+        if (!video) return;
+
+        // Wait for jsQR to be available
+        await new Promise(resolve => waitForJsQR(resolve));
+
+        try {
+            // Stop existing stream
+            stopQRScanner();
+
+            // Request camera
+            scannerStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+            });
+
+            video.srcObject = scannerStream;
+            video.setAttribute('playsinline', 'true');
+            
+            // Wait for video to be ready
+            await new Promise((resolve) => {
+                video.onloadedmetadata = resolve;
+                video.play();
+            });
+
+            output.textContent = '✓ Camera active - scanning...';
+            output.className = 'p-4 bg-green-50 rounded-lg text-center text-lg font-semibold text-green-700';
+
+            // Start scanning loop
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+            let frameCount = 0;
+            const scanFrame = () => {
+                if (!scannerStream) return;
+
+                frameCount++;
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+                    // Debug every 30 frames
+                    if (frameCount % 30 === 0) {
+                        console.log('Scanning frame', frameCount, 'video size:', canvas.width, 'x', canvas.height);
+                    }
+
+                    if (typeof jsQR === 'undefined') {
+                        console.error('jsQR is not available during scan');
+                        return;
+                    }
+
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+                    if (code && code.data) {
+                        console.log('✓✓✓ QR CODE DETECTED:', code.data);
+                        handleQRCode(code.data);
+                        return; // stop on success
+                    }
+                } else {
+                    if (frameCount % 60 === 0) {
+                        console.warn('Video not ready. readyState:', video.readyState);
+                    }
+                }
+
+                scannerAnimationId = requestAnimationFrame(scanFrame);
+            };
+
+            console.log('Starting QR scan loop. jsQR available?', typeof jsQR !== 'undefined');
+            scannerAnimationId = requestAnimationFrame(scanFrame);
+
+        } catch (err) {
+            output.textContent = '❌ Camera error: ' + (err.message || err.toString());
+            output.className = 'p-4 bg-red-50 rounded-lg text-center text-lg font-semibold text-red-700';
+            console.error('Scanner error:', err);
+        }
+    }
+
+    function stopQRScanner() {
+        if (scannerAnimationId) {
+            cancelAnimationFrame(scannerAnimationId);
+            scannerAnimationId = null;
+        }
+        if (scannerStream) {
+            scannerStream.getTracks().forEach(track => track.stop());
+            scannerStream = null;
+        }
+    }
+
+    function handleQRCode(data) {
+        console.log('QR scanned:', data);
+        
+        // Determine type: numeric = student ID, otherwise = registration QR
+        const isNumeric = /^\d+$/.test(data.trim());
+        
+        if (isNumeric && data.trim().length >= 6) {
+            // Student ID
+            scannedStudentId = data.trim();
+            document.getElementById('qr-scanner-student-id').value = scannedStudentId;
+            const output = document.getElementById('qr-scanner-output');
+            output.textContent = '✓ Student ID scanned: ' + scannedStudentId;
+            output.className = 'p-4 bg-blue-50 rounded-lg text-center text-lg font-semibold text-blue-700';
+            if (typeof showNotification === 'function') showNotification('Student ID scanned', 'success');
+            showSuccessPopup('Student ID', '✓ ' + scannedStudentId);
+        } else {
+            // Registration QR
+            scannedRegQR = data;
+            document.getElementById('qr-scanner-reg-qr').value = scannedRegQR.length > 40 ? scannedRegQR.substring(0, 40) + '...' : scannedRegQR;
+            const output = document.getElementById('qr-scanner-output');
+            output.textContent = '✓ Registration QR scanned';
+            output.className = 'p-4 bg-purple-50 rounded-lg text-center text-lg font-semibold text-purple-700';
+            if (typeof showNotification === 'function') showNotification('Registration QR scanned', 'success');
+            showSuccessPopup('Registration QR', '✓ Scanned');
+        }
+
+        // Restart scanning for the next code
+        const video = document.getElementById('qr-scanner-video');
+        if (video && scannerStream) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            
+            const resumeScan = () => {
+                if (!scannerStream) return;
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+                    if (code && code.data) {
+                        handleQRCode(code.data);
+                        return;
+                    }
+                }
+                scannerAnimationId = requestAnimationFrame(resumeScan);
+            };
+
+            scannerAnimationId = requestAnimationFrame(resumeScan);
+        }
+
+        updateRegisterButton();
+    }
+
+    function updateRegisterButton() {
+        const btn = document.getElementById('qr-scanner-register-btn');
+        const studentId = document.getElementById('qr-scanner-student-id').value || scannedStudentId;
+        const regQR = document.getElementById('qr-scanner-reg-qr').value || scannedRegQR;
+        
+        // Also check manual entries
+        const manualStudentId = document.getElementById('qr-scanner-manual-student-id').value;
+        const manualRegQR = document.getElementById('qr-scanner-manual-reg-qr').value;
+        
+        const hasStudentId = studentId || manualStudentId;
+        const hasRegQR = regQR || manualRegQR;
+        
+        if (hasStudentId && hasRegQR) {
+            btn.disabled = false;
+            btn.className = 'px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition';
+        } else {
+            btn.disabled = true;
+            btn.className = 'px-4 py-2 bg-gray-400 text-white font-semibold rounded-lg cursor-not-allowed';
+        }
+    }
+
+    window.submitQRScan = function() {
+        const modal = document.getElementById('qrScannerModal');
+        const courseId = modal.dataset.courseId;
+        const scheduleId = modal.dataset.scheduleId;
+        
+        const studentId = document.getElementById('qr-scanner-student-id').value || 
+                         document.getElementById('qr-scanner-manual-student-id').value;
+        const regQR = document.getElementById('qr-scanner-reg-qr').value || 
+                     document.getElementById('qr-scanner-manual-reg-qr').value;
+
+        if (!courseId || !studentId || !regQR) {
+            alert('Please fill in all fields or scan both QR codes');
+            return;
+        }
+
+        const output = document.getElementById('qr-scanner-output');
+        output.textContent = 'Registering...';
+        output.className = 'p-4 bg-blue-50 rounded-lg text-center text-lg font-semibold text-blue-700';
+
+        // Disable button during submission
+        const btn = document.getElementById('qr-scanner-register-btn');
+        btn.disabled = true;
+
+        // Get CSRF token
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+                         document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ||
+                         getCookie('csrftoken') || '';
+
+        fetch('{% url "dashboard:instructor_register_student_qr_code" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({
+                course_id: parseInt(courseId),
+                student_id_number: studentId,
+                qr_code: regQR
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                output.textContent = '✓ Registered for ' + (data.student_name || 'student');
+                output.className = 'p-4 bg-green-50 rounded-lg text-center text-lg font-semibold text-green-700';
+                if (typeof showNotification === 'function') showNotification('QR registered successfully', 'success');
+                
+                setTimeout(() => {
+                    closeQRScanner();
+                    window.location.reload();
+                }, 1500);
+            } else {
+                output.textContent = '✗ ' + (data.message || 'Registration failed');
+                output.className = 'p-4 bg-red-50 rounded-lg text-center text-lg font-semibold text-red-700';
+                btn.disabled = false;
+            }
+        })
+        .catch(err => {
+            console.error('Registration error:', err);
+            output.textContent = '✗ Error: ' + err.message;
+            output.className = 'p-4 bg-red-50 rounded-lg text-center text-lg font-semibold text-red-700';
+            btn.disabled = false;
+        });
+    };
+
+    // Update button when manual fields change
+    document.addEventListener('input', function(e) {
+        if (e.target.id === 'qr-scanner-manual-student-id' || e.target.id === 'qr-scanner-manual-reg-qr') {
+            updateRegisterButton();
+        }
+    });
+
+    function getCookie(name) {
+        const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+        return match ? decodeURIComponent(match[2]) : '';
+    }
+
+})();
+</script>

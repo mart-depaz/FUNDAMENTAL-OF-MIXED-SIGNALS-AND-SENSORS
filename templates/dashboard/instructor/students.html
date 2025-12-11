@@ -177,7 +177,7 @@
                     <i class="fas fa-cog mr-2"></i>Manage Courses
                 </a>
                 {% if selected_course.instructor == user %}
-                <button onclick="openQRRegistrationModal({{ selected_course.id }})" class="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 transition shadow-md">
+                <button onclick="openQRScanner({{ selected_course.id }})" class="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 transition shadow-md">
                     <i class="fas fa-qrcode mr-2"></i>Register QR Code
                 </button>
                 {% endif %}
@@ -238,10 +238,17 @@
                         </div>
                         <div class="flex items-center gap-2">
                             {% if selected_course.instructor == user %}
-                            <button onclick="event.stopPropagation(); openQRRegistrationModal({{ selected_course.id }}, '{{ enrollment.student_id_number }}')" class="px-3 py-1.5 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition flex items-center gap-2" title="Register QR for this student">
-                                <i class="fas fa-qrcode text-xs"></i>
-                                <span>Register</span>
-                            </button>
+                                {% if enrollment.has_qr %}
+                                <button disabled class="px-3 py-1.5 bg-gray-300 text-gray-700 text-xs font-semibold rounded-lg cursor-not-allowed transition flex items-center gap-2" title="QR already registered">
+                                    <i class="fas fa-lock text-xs"></i>
+                                    <span>Closed</span>
+                                </button>
+                                {% else %}
+                                <button onclick="event.stopPropagation(); openQRScanner({{ selected_course.id }}, '{{ enrollment.student_id_number }}')" class="px-3 py-1.5 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition flex items-center gap-2" title="Register QR for this student">
+                                    <i class="fas fa-qrcode text-xs"></i>
+                                    <span>Register</span>
+                                </button>
+                                {% endif %}
                             {% endif %}
                             <button onclick="event.stopPropagation(); window.showDropStudentModal({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" 
                                     class="px-3 py-1.5 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 transition flex items-center gap-2" 
@@ -334,7 +341,7 @@
     {% endif %}
     {% endif %}
 </div>
-{% include 'dashboard/partials/qr_registration_modal.html' %}
+
 
 <!-- Student Details Modal -->
 <div id="studentDetailModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[100] flex items-center justify-center p-4">
@@ -1134,7 +1141,7 @@ if (sectionFilterControl) {
             // Navigate to the selected section's course id
             const params = new URLSearchParams(window.location.search);
             params.set('selected_course', value);
-            window.location.search = params.toString();
+            window.location.href = window.location.pathname + '?' + params.toString();
             return;
         }
         // Fallback to in-list filtering (when not in overview switch mode)
@@ -1160,25 +1167,26 @@ if (sectionFilterControl) {
         sectionFilterControl.dispatchEvent(new Event('change'));
     }
 }
+
+// Defer QR Scanner function binding until partial is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof window.openQRScanner === 'undefined') {
+        // If not exposed from partial, create a proxy that waits for it
+        window.openQRScanner = function(courseId, studentId) {
+            setTimeout(function() {
+                if (typeof window.openQRScanner === 'function') {
+                    window.openQRScanner(courseId, studentId);
+                } else {
+                    alert('QR Scanner not ready. Please try again.');
+                }
+            }, 100);
+        };
+    }
+});
 </script>
 
-<!-- Load html5-qrcode library BEFORE modal script -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
-
-<!-- QR Registration Modal -->
-{% include 'dashboard/partials/qr_registration_modal.html' %}
-
-<!-- Diagnostic: Check if html5-qrcode loaded -->
-<script>
-    setTimeout(() => {
-        console.log('Checking if html5-qrcode library loaded...');
-        if (typeof Html5Qrcode !== 'undefined') {
-            console.log('✓ Html5Qrcode library loaded successfully');
-        } else {
-            console.error('✗ Html5Qrcode library NOT loaded');
-        }
-    }, 500);
-</script>
+<!-- Minimal QR Scanner (proven working code) -->
+{% include 'dashboard/partials/qr_scanner_basic.html' %}
 
 {% endblock %}
 
