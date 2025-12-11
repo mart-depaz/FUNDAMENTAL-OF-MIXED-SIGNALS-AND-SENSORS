@@ -1,4 +1,5 @@
 <!-- Minimal QR Scanner Modal - Based on proven working code -->
+{% include 'dashboard/shared/notification_system.html' %}
 <div id="qrScannerModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] p-6 md:p-8 flex flex-col overflow-hidden">
         <div class="flex justify-between items-start mb-4">
@@ -206,7 +207,12 @@ function handleQRScanned(data) {
     console.log('QR Scanned:', data);
     const trimmed = (data || '').trim();
     document.getElementById('regQrInput').value = trimmed.length > 50 ? trimmed.substring(0,50) + '...' : trimmed;
-    showPopup('Registration QR Scanned');
+    // Use the global notification system if available for a consistent UX
+    if (typeof showNotification === 'function') {
+        showNotification('Registration QR Scanned', 'success');
+    } else {
+        showPopup('Registration QR Scanned');
+    }
     updateRegisterButton();
 
     // Resume scanning after brief pause (keep camera open)
@@ -220,6 +226,7 @@ function handleQRScanned(data) {
 }
 
 function showPopup(text) {
+    // Legacy fallback popup (used only if notification system isn't loaded)
     const popup = document.getElementById('successPopup');
     if (!popup) return;
     document.getElementById('popupText').textContent = text;

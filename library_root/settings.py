@@ -15,47 +15,57 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-x&rfo%c#sm@0leoa26c0g
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-# Render deployment detection
+# Deployment detection
 IS_RENDER = os.environ.get('RENDER') == 'true'
+IS_ORACLE = os.environ.get('ORACLE') == 'true'
+IS_PRODUCTION = os.environ.get('PRODUCTION', 'false').lower() == 'true' or IS_RENDER or IS_ORACLE
 
+# ALLOWED_HOSTS: default to '*' in development; in production set via env var
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',') if os.environ.get('ALLOWED_HOSTS') else ['*']
+
+# CSRF trusted origins - include common local dev hosts plus any explicit origins
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost",
     "http://127.0.0.1",
-    "http://192.168.1.19",
-    "https://aulic-mimi-nondisingenuously.ngrok-free.dev",
-    "https://*.trycloudflare.com",  # Cloudflare Tunnel domains
-    "https://trycloudflare.com",    # Cloudflare base domain
-    "http://0.0.0.0:8000",          # All network interfaces
+    "http://0.0.0.0:8000",
 ]
 
-# Add Render domain to CSRF origins if deploying on Render
-if IS_RENDER:
-    # Will be added dynamically based on Render's assigned domain
-    CSRF_TRUSTED_ORIGINS.append("https://*.onrender.com")
+# Add any environment-provided trusted origins (comma-separated)
+if os.environ.get('CSRF_TRUSTED_ORIGINS'):
+    for origin in os.environ.get('CSRF_TRUSTED_ORIGINS').split(','):
+        CSRF_TRUSTED_ORIGINS.append(origin.strip())
 
-ALLOWED_HOSTS = ['*']  # Allow all hosts
+# Add Render and Cloudflare patterns if present
+CSRF_TRUSTED_ORIGINS.extend([
+    "https://*.onrender.com",
+    "https://*.trycloudflare.com",
+])
 
-# Configuration based on environment
-if DEBUG:
-    ALLOWED_HOSTS = ['*']
+# Production / development configuration
+if not IS_PRODUCTION:
+    # Development defaults
+    DEBUG = True if os.environ.get('DEBUG', 'True') == 'True' else False
     SECURE_SSL_REDIRECT = False
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
-    SECURE_HSTS_SECONDS = 0  # Disable HSTS warnings
+    SECURE_HSTS_SECONDS = 0
     SECURE_HSTS_INCLUDE_SUBDOMAINS = False
     SECURE_HSTS_PRELOAD = False
-    # Trust X-Forwarded-For header from proxies
     TRUSTED_PROXIES = ['*']
     USE_X_FORWARDED_HOST = True
     USE_X_FORWARDED_PORT = True
     USE_X_FORWARDED_PROTO = True
 else:
-    # Production settings for Render
-    ALLOWED_HOSTS = ['.onrender.com', 'localhost', '127.0.0.1']
+    # Production settings (Oracle/Renders etc.)
+    DEBUG = False
+    # If ALLOWED_HOSTS provided via env, use that; otherwise require configuration
+    if ALLOWED_HOSTS == ['*']:
+        # fallback to localhost and loopback to avoid accidental open host
+        ALLOWED_HOSTS = ['localhost', '127.0.0.1']
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '31536000'))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     TRUSTED_PROXIES = ['*']

@@ -595,35 +595,42 @@ function updateStudentStatus(status, attendanceTime) {
 function playScanSuccessSound() {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        // High-frequency beep: 1200 Hz for 200ms (toot sound)
+        // Classic barcode beep: two quick 1200 Hz beeps (40ms each, 60ms gap)
         const o = ctx.createOscillator();
         const g = ctx.createGain();
         o.type = 'sine';
-        o.frequency.value = 1200; // High pitch beep
+        o.frequency.value = 1200; // Barcode scanner pitch
         o.connect(g);
         g.connect(ctx.destination);
-        g.gain.setValueAtTime(0.25, ctx.currentTime);
+        
+        // First beep
+        g.gain.setValueAtTime(0.3, ctx.currentTime);
         o.start(ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
-        o.stop(ctx.currentTime + 0.2);
+        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04);
+        o.stop(ctx.currentTime + 0.04);
+        
+        // Second beep (after 100ms total from start)
+        g.gain.setValueAtTime(0.3, ctx.currentTime + 0.1);
+        o.start(ctx.currentTime + 0.1);
+        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.14);
+        o.stop(ctx.currentTime + 0.14);
     } catch (e) { console.debug('Audio not supported', e); }
 }
 
 function playScanErrorSound() {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        // Descending tone: from 600Hz down to 300Hz for error
+        // Error buzzer: low pitch (500Hz) longer tone with quick fade
         const o = ctx.createOscillator();
         const g = ctx.createGain();
-        o.type = 'square';
-        o.frequency.setValueAtTime(600, ctx.currentTime);
-        o.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.3);
+        o.type = 'sawtooth';
+        o.frequency.value = 500; // Lower barcode-like tone for error
         o.connect(g);
         g.connect(ctx.destination);
-        g.gain.setValueAtTime(0.2, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        g.gain.setValueAtTime(0.25, ctx.currentTime);
         o.start(ctx.currentTime);
-        o.stop(ctx.currentTime + 0.3);
+        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        o.stop(ctx.currentTime + 0.2);
     } catch (e) { console.debug('Audio not supported', e); }
 }
 
