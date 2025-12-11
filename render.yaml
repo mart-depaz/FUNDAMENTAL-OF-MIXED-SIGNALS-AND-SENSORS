@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: bash build.sh
-    startCommand: gunicorn library_root.wsgi:application
+    startCommand: gunicorn library_root.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DATABASE_URL
         scope: build
