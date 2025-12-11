@@ -71,11 +71,11 @@ templates folder: library_system/templates/dashboard/teacher.html
 {% include 'dashboard/shared/notification_system.html' %}
 
 <!-- Teacher Top Bar -->
-{% include 'dashboard/instructor/teacher_topbar.html' %}
+{% include 'dashboard/instructor/teacher_topbar_mobile.html' %}
 
 <div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
     <!-- Sidebar -->
-    {% include 'dashboard/instructor/teacher_sidebar.html' %}
+    {% include 'dashboard/instructor/teacher_sidebar_mobile.html' %}
 
     <!-- Main Content -->
     <main id="main-content" class="flex-grow p-4 lg:p-6 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
@@ -332,3 +332,5 @@ templates folder: library_system/templates/dashboard/teacher.html
     </main>
 </div>
 {% endblock %}
+
+

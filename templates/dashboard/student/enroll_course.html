@@ -166,7 +166,8 @@
                             </p>
                         </div>
                     </div>
-                    
+                
+            `;
                     <!-- Unenroll Button -->
                     <div class="pt-3 mt-3 border-t border-gray-200 flex-shrink-0">
                         <button onclick="event.stopPropagation(); showUnenrollModal({{ enrollment.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}')" 
@@ -625,6 +626,14 @@ function showEnrolledCourseDetails(courseId, code, name, programCode, programNam
                 <div><strong>Enrolled on:</strong> ${enrolledAt}</div>
             </div>
         </div>
+        <div class="mt-4 flex items-center gap-3">
+            <button id="studentRegisterBtn" onclick="(function(){ window.isStudentRegisterMode = true; window.studentRegisterCourseId = ${courseId}; openQRScanner(${courseId}, '{{ user.school_id|default:''|escapejs }}'); })()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition">
+                <i class="fas fa-qrcode mr-2"></i> Register QR for this Course
+            </button>
+            <button onclick="closeEnrolledCourseDetails()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition">
+                Close
+            </button>
+        </div>
     `;
     modal.classList.remove('hidden');
 }
@@ -666,5 +675,7 @@ function closeEnrolledCourseDetails() {
         </div>
     </div>
 </div>
+{% include 'dashboard/partials/qr_scanner_basic.html' %}
+
 {% endblock %}
 

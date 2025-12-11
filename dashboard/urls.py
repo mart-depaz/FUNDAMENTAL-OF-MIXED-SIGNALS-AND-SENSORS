@@ -57,6 +57,8 @@ urlpatterns = [
     path('instructor/decode-image/', views.instructor_decode_image_view, name='instructor_decode_image'),
     path('instructor/course-enrollments/<int:course_id>/', views.instructor_course_enrollments_view, name='instructor_course_enrollments'),
     path('instructor/register-student-qr-code/', views.instructor_register_student_qr_code_view, name='instructor_register_student_qr_code'),
+    # Student self-register QR (students can register their own QR codes to their enrolled course)
+    path('student/register-qr-code/', views.student_register_qr_code_view, name='student_register_qr_code'),
     # Instructor trash management
     path('instructor/trash/', views.instructor_trash_view, name='instructor_trash'),
     path('instructor/courses/<int:course_id>/restore/', views.instructor_restore_course_view, name='instructor_restore_course'),

@@ -254,7 +254,7 @@ function submitQRData() {
     const studentId = document.getElementById('studentIdInput').value;
     const regQr = document.getElementById('regQrInput').value;
 
-    if (!courseId || !studentId || !regQr) {
+    if (!courseId || !regQr) {
         alert('Please fill in all fields');
         return;
     }
@@ -264,24 +264,52 @@ function submitQRData() {
 
     const csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || document.querySelector('meta[name="csrf-token"]')?.content || '';
 
-    fetch('{% url "dashboard:instructor_register_student_qr_code" %}', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-        body: JSON.stringify({ course_id: parseInt(courseId), student_id_number: studentId, qr_code: regQr })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            if (output) { output.textContent = '✓ Registered for ' + (data.student_name || 'Student'); output.style.color = '#10b981'; }
-            setTimeout(() => { closeQRScanner(); location.reload(); }, 1200);
-        } else {
-            if (output) { output.textContent = '✗ ' + (data.message || 'Failed'); output.style.color = '#dc2626'; }
-        }
-    })
-    .catch(err => {
-        if (output) { output.textContent = '✗ Error: ' + (err?.message || err); output.style.color = '#dc2626'; }
-        console.error('Register error:', err);
-    });
+    // Support both instructor registration (manual student id) and student self-registration mode
+    if (window.isStudentRegisterMode) {
+        // Student registers their own QR for the current course
+        fetch('{% url "dashboard:student_register_qr_code" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify({ course_id: parseInt(courseId), qr_code: regQr })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                if (output) { output.textContent = '✓ QR Registered'; output.style.color = '#10b981'; }
+                try { if (typeof showNotification === 'function') showNotification(data.message || 'QR registered successfully', 'success'); }
+                catch(e){}
+                setTimeout(() => { closeQRScanner(); window.isStudentRegisterMode = false; location.reload(); }, 1200);
+            } else {
+                if (output) { output.textContent = '✗ ' + (data.message || 'Failed'); output.style.color = '#dc2626'; }
+                try { if (typeof showNotification === 'function') showNotification(data.message || 'Failed to register QR', 'error'); }
+                catch(e){}
+            }
+        })
+        .catch(err => {
+            if (output) { output.textContent = '✗ Error: ' + (err?.message || err); output.style.color = '#dc2626'; }
+            console.error('Student register error:', err);
+        });
+    } else {
+        // Instructor mode (existing)
+        fetch('{% url "dashboard:instructor_register_student_qr_code" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify({ course_id: parseInt(courseId), student_id_number: studentId, qr_code: regQr })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                if (output) { output.textContent = '✓ Registered for ' + (data.student_name || 'Student'); output.style.color = '#10b981'; }
+                setTimeout(() => { closeQRScanner(); location.reload(); }, 1200);
+            } else {
+                if (output) { output.textContent = '✗ ' + (data.message || 'Failed'); output.style.color = '#dc2626'; }
+            }
+        })
+        .catch(err => {
+            if (output) { output.textContent = '✗ Error: ' + (err?.message || err); output.style.color = '#dc2626'; }
+            console.error('Register error:', err);
+        });
+    }
 }
 
 document.addEventListener('input', function(e) {

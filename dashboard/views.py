@@ -9256,6 +9256,70 @@ def instructor_register_student_qr_code_view(request):
 
 
 @login_required
+def student_register_qr_code_view(request):
+    """
+    Allow a student to register their own QR code for a specific course they're enrolled in.
+    Expects JSON with `course_id` and `qr_code`.
+    """
+    try:
+        if not getattr(request.user, 'is_student', False):
+            return JsonResponse({'success': False, 'message': 'Only students may register their QR code here.'})
+
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        qr_code = (data.get('qr_code') or '').strip()
+
+        if not course_id or not qr_code:
+            return JsonResponse({'success': False, 'message': 'Missing required fields.'})
+
+        # Ensure the student is enrolled in the course
+        from .models import Course, CourseEnrollment, QRCodeRegistration
+        course = get_object_or_404(Course, id=course_id)
+
+        enrollment = CourseEnrollment.objects.filter(student=request.user, course=course, is_active=True).first()
+        if not enrollment:
+            return JsonResponse({'success': False, 'message': 'You are not enrolled in this course.'})
+
+        # Prevent assigning a QR that is already linked to another student
+        existing = QRCodeRegistration.objects.filter(qr_code=qr_code, is_active=True).exclude(student=request.user).first()
+        if existing:
+            return JsonResponse({'success': False, 'message': f'This QR code is already registered to {existing.student.full_name}.'})
+
+        # Create or update the QR registration for this student and course
+        qr_reg, created = QRCodeRegistration.objects.update_or_create(
+            student=request.user,
+            course=course,
+            defaults={
+                'qr_code': qr_code,
+                'registered_by': request.user,
+                'is_active': True
+            }
+        )
+
+        # Create a notification for the student (and optionally the instructor)
+        try:
+            create_notification(
+                request.user,
+                'qr_registered',
+                'QR Code Registered',
+                f'You have registered a QR code for {course.code}',
+                category='course_management',
+                related_course=course,
+                related_user=request.user
+            )
+        except Exception:
+            logger.debug('Failed to create QR registration notification')
+
+        return JsonResponse({'success': True, 'message': 'QR code registered successfully', 'created': bool(created)})
+
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data.'})
+    except Exception as e:
+        logger.error(f"Error in student_register_qr_code_view: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
+
+@login_required
 @require_http_methods(["POST"])
 def instructor_decode_image_view(request):
     """
