@@ -1,0 +1,13 @@
+[Unit]
+Description=gunicorn daemon for attendance system
+After=network.target
+
+[Service]
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/attendance
+Environment="PATH=/home/ubuntu/attendance/.venv/bin"
+ExecStart=/home/ubuntu/attendance/.venv/bin/gunicorn --workers 3 --bind unix:/run/gunicorn.sock library_root.wsgi:application
+
+[Install]
+WantedBy=multi-user.target
