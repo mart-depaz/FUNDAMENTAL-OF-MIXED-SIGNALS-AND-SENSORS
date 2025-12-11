@@ -6,11 +6,16 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.urls import re_path
+from library_root import status_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('accounts.urls')),  # For login/signup
     path('dashboard/', include('dashboard.urls')),  # Include dashboard URLs with namespace
+    # Health and live checks
+    path('health/', status_views.health_view, name='health'),
+    path('live/', status_views.live_view, name='live'),
 ]
 
 # Serve media files during development with no-cache headers
@@ -29,3 +34,8 @@ if settings.DEBUG:
     urlpatterns += [
         re_path(r'^%s(?P<path>.*)$' % settings.MEDIA_URL.lstrip('/'), serve_media_no_cache, {'document_root': settings.MEDIA_ROOT}),
     ]
+
+# Also allow direct health path for environments where include ordering matters
+urlpatterns += [
+    re_path(r'^health/?$', status_views.health_view),
+]
