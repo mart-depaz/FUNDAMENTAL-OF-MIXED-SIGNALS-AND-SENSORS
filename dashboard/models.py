@@ -441,8 +441,8 @@ class QRCodeRegistration(models.Model):
         verbose_name_plural = 'QR Code Registrations'
         unique_together = [['student', 'course']]  # One QR code per student per course
         constraints = [
-            # Ensure no two active registrations share the same qr_code
-            models.UniqueConstraint(fields=['qr_code'], name='uq_active_qr_code', condition=Q(is_active=True))
+            # Ensure no two active registrations share the same qr_code within a course
+            models.UniqueConstraint(fields=['qr_code','course'], name='uq_active_qr_code_per_course', condition=Q(is_active=True))
         ]
         indexes = [
             models.Index(fields=['qr_code']),

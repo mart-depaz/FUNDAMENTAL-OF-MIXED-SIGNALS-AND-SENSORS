@@ -152,6 +152,12 @@ function loadNotifications() {
             } else {
                 content.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-bell-slash text-3xl mb-2"></i><p class="text-sm">No notifications</p></div>';
             }
+            
+            // Re-attach event listeners for dynamically loaded content
+            if (typeof attachNotificationListeners === 'function') {
+                attachNotificationListeners();
+            }
+            
             document.getElementById('notificationsDropdown').dataset.loaded = 'true';
         })
         .catch(error => {

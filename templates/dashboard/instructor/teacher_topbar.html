@@ -263,6 +263,11 @@ function loadNotifications() {
                 
                 content.innerHTML = fullContent;
                 
+                // Re-attach event listeners for dynamically loaded content
+                if (typeof attachNotificationListeners === 'function') {
+                    attachNotificationListeners();
+                }
+                
                 // Add delete modal if it doesn't exist
                 if (deleteModal && !document.getElementById('deleteAllModal')) {
                     document.body.appendChild(deleteModal.cloneNode(true));
@@ -280,6 +285,10 @@ function loadNotifications() {
                     } else {
                         content.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-bell-slash text-3xl mb-2"></i><p class="text-xs">No notifications</p></div>';
                     }
+                }
+                // Re-attach event listeners for dynamically loaded content
+                if (typeof attachNotificationListeners === 'function') {
+                    attachNotificationListeners();
                 }
             }
             
@@ -323,6 +332,11 @@ function loadNotifications() {
                         
                         fullContent += notificationsDiv.outerHTML;
                         content.innerHTML = fullContent;
+                        
+                        // Re-attach event listeners for dynamically loaded content
+                        if (typeof attachNotificationListeners === 'function') {
+                            attachNotificationListeners();
+                        }
                     } else {
                         content.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-bell-slash text-3xl mb-2"></i><p class="text-xs">No notifications</p></div>';
                     }

@@ -7348,6 +7348,7 @@ def instructor_attendance_reports_view(request):
     # Get filter parameters
     course_id = request.GET.get('course', '').strip()
     section_filter = request.GET.get('section', '').strip()
+    date_filter = request.GET.get('date', '').strip()  # Specific date filter (YYYY-MM-DD)
     day_filter = request.GET.get('day_filter', '').strip()  # Day of week filter (Monday, Tuesday, etc.)
     month_filter = request.GET.get('month_filter', '').strip()  # Month filter (1-12)
     week_filter = request.GET.get('week_filter', '').strip()  # Week filter (1, 2, 3, last, or empty for all)
@@ -7412,10 +7413,11 @@ def instructor_attendance_reports_view(request):
             selected_sections = sorted([(c.section or '').upper() for c in sibling_courses if c.section])
             
             # Validate section filter - if multiple sections exist, section must be selected
+            # If no section filter is provided and multiple sections exist, include all sections
             if len(selected_sections) > 1 and not section_filter:
-                # Multiple sections but no section selected - don't process data
-                selected_course = None
-                courses_to_process = None
+                # Multiple sections but no section selected - automatically include all sections
+                section_filter = 'all'
+                courses_to_process = sibling_courses
             else:
                 # Filter courses by section if specified
                 if section_filter and section_filter.lower() == 'all':
@@ -7469,6 +7471,15 @@ def instructor_attendance_reports_view(request):
                 
                 attendance_records = list(attendance_query)
                 
+                # Filter by specific date if provided
+                if date_filter:
+                    try:
+                        from datetime import datetime
+                        filter_date = datetime.strptime(date_filter, '%Y-%m-%d').date()
+                        attendance_records = [r for r in attendance_records if r.attendance_date == filter_date]
+                    except (ValueError, AttributeError):
+                        pass  # Invalid date format, show all records
+                
                 # Generate dates based on course schedule and day filter
                 from datetime import datetime, timedelta
                 from django.utils import timezone
@@ -7510,7 +7521,9 @@ def instructor_attendance_reports_view(request):
                     'Sunday': 6, 'Sun': 6, 'Su': 6
                 }
                 
-                # Generate dates for the next N weeks based on scheduled days
+                # Generate dates based on:
+                # 1. All historical attendance records (past dates)
+                # 2. Scheduled dates for the future (next N weeks)
                 dates_to_check = []
                 
                 # Convert month_filter to int if provided (do this BEFORE using it)
@@ -7521,6 +7534,12 @@ def instructor_attendance_reports_view(request):
                     except (ValueError, TypeError):
                         month_filter_int = None
                 
+                # FIRST: Add all dates from existing attendance records (ensures historical records show)
+                all_record_dates = set()
+                for record in attendance_records:
+                    all_record_dates.add(record.attendance_date)
+                
+                # SECOND: Generate future dates based on week_filter
                 # Initialize start_date and end_date with default values
                 start_date = today
                 end_date = today + timedelta(weeks=weeks)
@@ -7562,7 +7581,9 @@ def instructor_attendance_reports_view(request):
                     start_date = today
                     end_date = today + timedelta(weeks=weeks)
                 
+                # Generate future dates
                 current = start_date
+                future_dates_set = set()
                 
                 while current <= end_date and current >= start_date:
                     # Apply month filter if specified
@@ -7578,13 +7599,16 @@ def instructor_attendance_reports_view(request):
                         # Filter by specific day
                         if day_name == day_filter or day_to_weekday.get(day_filter, -1) == weekday:
                             if any(day_name in str(sd) or day_to_weekday.get(str(sd), -1) == weekday for sd in scheduled_days):
-                                dates_to_check.append(current)
+                                future_dates_set.add(current)
                     else:
                         # No day filter or "all" - include all scheduled days
                         if any(day_name in str(sd) or day_to_weekday.get(str(sd), -1) == weekday for sd in scheduled_days):
-                            dates_to_check.append(current)
+                            future_dates_set.add(current)
                     
                     current += timedelta(days=1)
+                
+                # Combine all record dates + future dates
+                dates_to_check = sorted(list(all_record_dates.union(future_dates_set)))
                 
                 # Build attendance data - include all enrolled students, mark absent if no record
                 # Create a map of attendance records by (student_id, date)
@@ -7780,15 +7804,40 @@ def instructor_attendance_reports_view(request):
                                     dedup_map[key] = record
                     attendance_data = list(dedup_map.values())
                 
-                # Sort attendance data by date (newest first), then by student name
-                attendance_data.sort(key=lambda x: (x['attendance_date'], x['student_name']), reverse=True)
+                # Sort attendance data by date (newest first).
+                # When viewing a specific date, we'll display students sorted by surname A->Z.
+                # For general grouping, we will sort students within each date group by surname.
+                def _surname_key(record):
+                    name = (record.get('student_name') or '').strip()
+                    if not name:
+                        return ''
+                    parts = name.split()
+                    return parts[-1].lower()
+
+                # If a specific date filter is active, sort attendance_data by surname ascending
+                if date_filter:
+                    attendance_data.sort(key=_surname_key)
+                else:
+                    # Keep overall order by date descending; stable sort will preserve insertion order within same date
+                    attendance_data.sort(key=lambda x: x['attendance_date'], reverse=True)
                 
                 # Group attendance data by date for folder-style display
                 from collections import defaultdict
                 attendance_by_date = defaultdict(list)
                 for record in attendance_data:
                     attendance_by_date[record['attendance_date']].append(record)
-                
+
+                # Sort students alphabetically within each date, then convert to list of tuples
+                for dt, recs in attendance_by_date.items():
+                    # Sort records within the date by student surname (A->Z)
+                    def _rec_surname_key(r):
+                        name = (r.get('student_name') or '').strip()
+                        if not name:
+                            return ''
+                        parts = name.split()
+                        return parts[-1].lower()
+                    recs.sort(key=_rec_surname_key)
+
                 # Convert to list of tuples (date, records) sorted by date (newest first)
                 attendance_data_grouped = sorted(attendance_by_date.items(), key=lambda x: x[0], reverse=True)
                 
@@ -8121,6 +8170,17 @@ def instructor_attendance_reports_download_view(request):
     attendance_query = AttendanceRecord.objects.filter(
         course__in=courses_to_include
     ).select_related('student', 'course', 'enrollment').order_by('-attendance_date', '-attendance_time')
+
+    # Optional: filter by exact date (YYYY-MM-DD) when provided (used for per-date exports)
+    date_param = request.GET.get('date', None)
+    if date_param:
+        try:
+            from datetime import datetime
+            date_obj = datetime.strptime(date_param, '%Y-%m-%d').date()
+            attendance_query = attendance_query.filter(attendance_date=date_obj)
+        except Exception:
+            # ignore invalid date formats and continue without date filter
+            pass
     
     # Apply day-based filtering if specified
     if day_filter or week_filter or month_filter or weeks:
@@ -8231,6 +8291,153 @@ def instructor_attendance_reports_download_view(request):
             attendance_query = attendance_query.filter(attendance_date__in=valid_dates)
     
     attendance_records = list(attendance_query)
+
+    # Sort attendance_records by student's surname (A->Z) for export clarity
+    def _record_surname_key(rec):
+        try:
+            name = (rec.student.full_name or rec.student.username or '').strip()
+        except Exception:
+            name = ''
+        if not name:
+            return ''
+        parts = name.split()
+        return parts[-1].lower()
+
+    try:
+        attendance_records.sort(key=_record_surname_key)
+    except Exception:
+        # If sorting fails for any reason, continue without raising
+        pass
+
+    # If a specific date is requested, ensure exported file includes ALL enrolled students
+    # for that date (mark absent if no record) and recalculate statuses for accuracy.
+    date_param = request.GET.get('date', None)
+    if date_param:
+        try:
+            from datetime import datetime, timedelta
+            from django.utils import timezone
+            try:
+                from zoneinfo import ZoneInfo
+                PH_TZ = ZoneInfo('Asia/Manila')
+            except Exception:
+                try:
+                    import pytz
+                    PH_TZ = pytz.timezone('Asia/Manila')
+                except Exception:
+                    PH_TZ = None
+
+            now_ph = timezone.now().astimezone(PH_TZ) if PH_TZ else timezone.now()
+            today = now_ph.date()
+
+            date_obj = datetime.strptime(date_param, '%Y-%m-%d').date()
+
+            # Helper: get course schedule times for this date
+            def get_course_schedule_times(course, date_obj):
+                weekday_map = {0: 'Mon', 1: 'Tue', 2: 'Wed', 3: 'Thu', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
+                weekday = date_obj.weekday()
+                day_name = weekday_map.get(weekday, '')
+                # Day-specific schedules
+                day_schedules = course.course_schedules.filter(day__iexact=day_name)
+                if day_schedules.exists():
+                    s = day_schedules.first()
+                    return (s.start_time or course.start_time, s.end_time or course.end_time)
+                # Default course days
+                if course.days and day_name in [d.strip() for d in course.days.split(',') if d.strip()]:
+                    return (course.start_time, course.end_time)
+                return (None, None)
+
+            # Build lookup of existing attendance records by student id
+            attendance_map = {}
+            for rec in attendance_records:
+                if rec.student:
+                    attendance_map[rec.student.id] = rec
+
+            # Get all enrollments for the courses to include
+            all_enrollments = CourseEnrollment.objects.filter(
+                course__in=courses_to_include,
+                is_active=True,
+                deleted_at__isnull=True
+            ).select_related('student', 'course')
+
+            # Unique students map
+            unique_students = {}
+            for enr in all_enrollments:
+                if enr.student and enr.student.id not in unique_students:
+                    unique_students[enr.student.id] = enr
+
+            # Rebuild attendance_records to include absent students
+            from types import SimpleNamespace
+            rebuilt_records = []
+            for student_id, enrollment in unique_students.items():
+                student = enrollment.student
+                # If attendance exists for this student on date, use it but recalc status
+                if student_id in attendance_map:
+                    rec = attendance_map[student_id]
+                    # Re-evaluate status based on schedule times
+                    start_t, end_t = get_course_schedule_times(rec.course, date_obj)
+                    final_status = rec.status
+                    if rec.attendance_time and start_t and end_t:
+                        try:
+                            from datetime import datetime as _dt, time as _time
+                            scan_time = rec.attendance_time
+                            scan_dt = _dt.combine(date_obj, scan_time)
+                            start_dt = _dt.combine(date_obj, start_t)
+                            end_dt = _dt.combine(date_obj, end_t)
+                            if start_dt <= scan_dt <= end_dt:
+                                final_status = 'present'
+                            elif scan_dt > end_dt:
+                                final_status = 'late'
+                        except Exception:
+                            pass
+                    # Build a simple record-like object
+                    built = SimpleNamespace(
+                        student=SimpleNamespace(id=student.id, school_id=getattr(student, 'school_id', 'N/A'), full_name=getattr(student, 'full_name', getattr(student, 'username', ''))),
+                        course=SimpleNamespace(section=getattr(rec.course, 'section', 'N/A')),
+                        attendance_date=date_obj,
+                        attendance_time=getattr(rec, 'attendance_time', None),
+                        status=final_status
+                    )
+                    rebuilt_records.append(built)
+                else:
+                    # No attendance record - determine if class has finished; if so mark absent
+                    # Determine schedule times using any one of the courses_to_include (prefer enrollment.course)
+                    course_for_check = enrollment.course
+                    start_t, end_t = get_course_schedule_times(course_for_check, date_obj)
+                    class_has_finished = False
+                    if end_t:
+                        from datetime import datetime as _dt
+                        class_end_dt = _dt.combine(date_obj, end_t)
+                        if PH_TZ:
+                            try:
+                                if hasattr(PH_TZ, 'localize'):
+                                    # pytz
+                                    import pytz as _pytz
+                                    class_end_dt = _pytz.timezone('Asia/Manila').localize(class_end_dt)
+                                else:
+                                    class_end_dt = class_end_dt.replace(tzinfo=PH_TZ)
+                            except Exception:
+                                pass
+                        if class_end_dt <= now_ph:
+                            class_has_finished = True
+                    elif date_obj < today:
+                        class_has_finished = True
+
+                    if class_has_finished:
+                        # Create absent record
+                        built = SimpleNamespace(
+                            student=SimpleNamespace(id=student.id, school_id=getattr(student, 'school_id', 'N/A'), full_name=getattr(student, 'full_name', getattr(student, 'username', ''))),
+                            course=SimpleNamespace(section=getattr(enrollment.course, 'section', 'N/A')),
+                            attendance_date=date_obj,
+                            attendance_time=None,
+                            status='absent'
+                        )
+                        rebuilt_records.append(built)
+
+            # Replace attendance_records with rebuilt list for downstream export
+            attendance_records = rebuilt_records
+        except Exception as e:
+            # On error, fall back to existing attendance_records (only those with records)
+            logger.exception('Error building full attendance export for date: %s', e)
     
     # Deduplicate records when viewing all sections
     # If a student has multiple records on the same date (from different sections),
@@ -9256,70 +9463,6 @@ def instructor_register_student_qr_code_view(request):
 
 
 @login_required
-def student_register_qr_code_view(request):
-    """
-    Allow a student to register their own QR code for a specific course they're enrolled in.
-    Expects JSON with `course_id` and `qr_code`.
-    """
-    try:
-        if not getattr(request.user, 'is_student', False):
-            return JsonResponse({'success': False, 'message': 'Only students may register their QR code here.'})
-
-        data = json.loads(request.body)
-        course_id = data.get('course_id')
-        qr_code = (data.get('qr_code') or '').strip()
-
-        if not course_id or not qr_code:
-            return JsonResponse({'success': False, 'message': 'Missing required fields.'})
-
-        # Ensure the student is enrolled in the course
-        from .models import Course, CourseEnrollment, QRCodeRegistration
-        course = get_object_or_404(Course, id=course_id)
-
-        enrollment = CourseEnrollment.objects.filter(student=request.user, course=course, is_active=True).first()
-        if not enrollment:
-            return JsonResponse({'success': False, 'message': 'You are not enrolled in this course.'})
-
-        # Prevent assigning a QR that is already linked to another student
-        existing = QRCodeRegistration.objects.filter(qr_code=qr_code, is_active=True).exclude(student=request.user).first()
-        if existing:
-            return JsonResponse({'success': False, 'message': f'This QR code is already registered to {existing.student.full_name}.'})
-
-        # Create or update the QR registration for this student and course
-        qr_reg, created = QRCodeRegistration.objects.update_or_create(
-            student=request.user,
-            course=course,
-            defaults={
-                'qr_code': qr_code,
-                'registered_by': request.user,
-                'is_active': True
-            }
-        )
-
-        # Create a notification for the student (and optionally the instructor)
-        try:
-            create_notification(
-                request.user,
-                'qr_registered',
-                'QR Code Registered',
-                f'You have registered a QR code for {course.code}',
-                category='course_management',
-                related_course=course,
-                related_user=request.user
-            )
-        except Exception:
-            logger.debug('Failed to create QR registration notification')
-
-        return JsonResponse({'success': True, 'message': 'QR code registered successfully', 'created': bool(created)})
-
-    except json.JSONDecodeError:
-        return JsonResponse({'success': False, 'message': 'Invalid JSON data.'})
-    except Exception as e:
-        logger.error(f"Error in student_register_qr_code_view: {str(e)}")
-        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
-
-
-@login_required
 @require_http_methods(["POST"])
 def instructor_decode_image_view(request):
     """
@@ -9367,3 +9510,76 @@ def instructor_decode_image_view(request):
         logger.error('Server decode error: ' + str(e))
         return JsonResponse({'success': False, 'message': 'Server decode error: ' + str(e)})
 
+
+@login_required
+@require_http_methods(["POST"])
+def student_register_qr_code_view(request):
+    """
+    Student self-registration endpoint for registering their QR code for a specific course.
+    Allows students to register their school ID as a QR code for a course they are enrolled in.
+    """
+    try:
+        if not request.user.is_student:
+            return JsonResponse({'success': False, 'message': 'Only students can register QR codes.'})
+        
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        qr_code = data.get('qr_code', '').strip()
+        
+        if not course_id or not qr_code:
+            return JsonResponse({'success': False, 'message': 'Missing required fields.'})
+        
+        # Get the course
+        course = get_object_or_404(Course, id=course_id, is_active=True, deleted_at__isnull=True)
+        
+        # Check if student is enrolled in this course
+        enrollment = CourseEnrollment.objects.filter(
+            student=request.user,
+            course=course,
+            is_active=True
+        ).first()
+        
+        if not enrollment:
+            return JsonResponse({'success': False, 'message': 'You are not enrolled in this course.'})
+        
+        # Store the QR code registration (one per student per course)
+        from .models import QRCodeRegistration
+        
+        # Check for duplicate QR in this course (other students)
+        existing = QRCodeRegistration.objects.filter(qr_code=qr_code, is_active=True, course=course).exclude(student=request.user).first()
+        if existing:
+            return JsonResponse({'success': False, 'message': f'This QR code is already registered to another student for this course.'})
+        
+        qr_reg, created = QRCodeRegistration.objects.update_or_create(
+            student=request.user,
+            course=course,
+            defaults={
+                'qr_code': qr_code,
+                'registered_by': request.user,
+                'is_active': True
+            }
+        )
+        
+        # Create notification for student
+        create_notification(
+            request.user,
+            'qr_registered',
+            'QR Code Registered',
+            f'Your QR code has been registered for {course.code} - {course.name}',
+            category='course_management',
+            related_course=course,
+            related_user=request.user
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'QR code registered successfully for this course!',
+            'course_name': course.name,
+            'course_code': course.code
+        })
+    
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data.'})
+    except Exception as e:
+        logger.error(f"Error registering QR code: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})

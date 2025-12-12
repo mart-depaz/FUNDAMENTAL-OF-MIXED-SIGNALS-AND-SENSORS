@@ -1,181 +1,8 @@
-<!-- templates/dashboard/user_notifications.html -->
-<!-- This template is used for both instructor and student notifications -->
+<!-- Notification System - Complete Rebuild -->
 {% load tz %}
 {% timezone "Asia/Manila" %}
-{% if notifications %}
-<div class="mb-2 flex justify-between items-center px-3 py-2 border-b border-gray-200 bg-gray-50">
-    <span class="text-[10px] font-semibold text-gray-600">Categories: 
-        <button onclick="filterNotificationsByCategory('all')" class="px-1.5 py-0.5 rounded text-[10px] hover:opacity-80 transition" style="background-color: #DFCFD5; color: #3C4770;">All</button>
-    </span>
-    <div class="flex items-center gap-2">
-        <button onclick="markAllAsRead()" class="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold px-2 py-1 rounded hover:bg-indigo-50 transition">
-            <i class="fas fa-check-double text-[10px] mr-1"></i> Mark All as Read
-        </button>
-        <button onclick="showDeleteAllModal()" class="text-[10px] text-red-600 hover:text-red-800 font-semibold px-2 py-1 rounded hover:bg-red-50 transition">
-            <i class="fas fa-trash-alt text-[10px] mr-1"></i> Delete All
-        </button>
-    </div>
-</div>
-{% endif %}
-<div class="divide-y divide-gray-200">
-    {% for notification in notifications %}
-        <div class="notification-item flex items-start p-2.5 hover:bg-gray-50 transition duration-150 relative group {% if notification.is_read %}opacity-80{% endif %}" 
-             {% if notification.notification_type == 'student_enrolled' and notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:students' %}?course={{ notification.related_course.id }}');"{% elif notification.notification_type == 'upcoming_class' and notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:weekly_timetable' %}');"{% elif notification.notification_type == 'attendance_marked' and notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:instructor_my_classes' %}?course={{ notification.related_course.id }}');"{% elif notification.notification_type == 'attendance_control_updated' and notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:instructor_my_classes' %}?course={{ notification.related_course.id }}');"{% elif notification.notification_type == 'student_dropped' and notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:students' %}?course={{ notification.related_course.id }}');"{% elif notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:weekly_timetable' %}');"{% else %}onclick="handleNotificationClick({{ notification.id }}, null);"{% endif %}>
-            
-            <!-- Unread Indicator (left border) -->
-            {% if not notification.is_read %}
-            <div class="absolute top-2.5 left-0 w-0.5 h-full bg-indigo-600 rounded-r"></div>
-            {% endif %}
-            
-            <!-- Profile Picture / Avatar -->
-            <div class="flex-shrink-0 mr-2.5">
-                {% if notification.notification_type == 'student_enrolled' and notification.related_user %}
-                    {% if notification.related_user.profile_picture %}
-                    <img src="{{ notification.related_user.profile_picture.url }}?v={{ notification.related_user.id }}" 
-                         alt="{{ notification.related_user.full_name|default:notification.related_user.username }}" 
-                         class="w-8 h-8 rounded-full object-cover ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}"
-                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                    <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[10px] text-white ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}" style="background-color: #10b981; display: none;">
-                        {{ notification.related_user.full_name|first|upper|default:notification.related_user.username|first|upper }}
-                    </div>
-                    {% else %}
-                    <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[10px] text-white ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}" style="background-color: #10b981;">
-                        {{ notification.related_user.full_name|first|upper|default:notification.related_user.username|first|upper }}
-                    </div>
-                    {% endif %}
-                {% else %}
-                    <!-- System/Icon Avatar -->
-                    <div class="w-8 h-8 rounded-full flex items-center justify-center ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}" 
-                         style="background-color: {% if notification.notification_type == 'account_approved' or notification.notification_type == 'course_assigned' or notification.notification_type == 'student_enrolled' or notification.notification_type == 'attendance_marked' %}#10b981{% elif notification.notification_type == 'account_rejected' or notification.notification_type == 'system_alert' %}#ef4444{% elif notification.notification_type == 'attendance_control_updated' or notification.notification_type == 'upcoming_class' %}#f59e0b{% elif notification.notification_type == 'student_dropped' %}#ef4444{% elif notification.notification_type == 'course_added' %}#3b82f6{% else %}#3b82f6{% endif %};">
-                        <i class="fas {% if notification.notification_type == 'account_approved' or notification.notification_type == 'course_assigned' or notification.notification_type == 'student_enrolled' or notification.notification_type == 'attendance_marked' %}fa-check-circle{% elif notification.notification_type == 'account_rejected' or notification.notification_type == 'system_alert' or notification.notification_type == 'student_dropped' %}fa-exclamation-triangle{% elif notification.notification_type == 'attendance_reminder' or notification.notification_type == 'upcoming_class' %}fa-clock{% elif notification.notification_type == 'attendance_control_updated' %}fa-toggle-on{% elif notification.notification_type == 'course_added' %}fa-book{% else %}fa-info-circle{% endif %} text-white text-xs"></i>
-                    </div>
-                {% endif %}
-            </div>
-            
-            <!-- Message and Name Container -->
-            <div class="flex-1 min-w-0 pr-16">
-                <div class="flex items-center justify-between mb-0.5">
-                    <div class="text-xs font-semibold {% if notification.is_read %}text-gray-400{% else %}text-gray-900{% endif %} truncate">
-                        {% if notification.notification_type == 'student_enrolled' and notification.related_user %}
-                            {{ notification.related_user.full_name|default:notification.related_user.username }}
-                        {% elif notification.notification_type == 'system_alert' %}
-                            System Alert
-                        {% else %}
-                            {{ notification.title|default:"Notification" }}
-                        {% endif %}
-                    </div>
-                </div>
-                <p class="text-[11px] {% if notification.is_read %}text-gray-500{% else %}text-gray-700{% endif %} mt-0.5 line-clamp-2 leading-tight">
-                    {% if notification.notification_type == 'student_enrolled' %}
-                        {% if notification.related_user %}{{ notification.related_user.full_name|default:notification.related_user.username }}{% else %}A student{% endif %} enrolled in {% if notification.related_course %}{{ notification.related_course.code|default:'' }} - {{ notification.related_course.name|default:'' }}{% else %}a course{% endif %}
-                    {% elif notification.notification_type == 'attendance_marked' %}
-                        {{ notification.message|default:notification.title }}
-                    {% elif notification.notification_type == 'attendance_control_updated' %}
-                        {{ notification.message|default:notification.title }}
-                    {% elif notification.notification_type == 'student_dropped' %}
-                        {{ notification.message|default:notification.title }}
-                    {% elif notification.notification_type == 'upcoming_class' %}
-                        {{ notification.message|default:notification.title }}
-                    {% else %}
-                        {{ notification.message|default:notification.title }}
-                    {% endif %}
-                </p>
-                <!-- Date and Time (Always visible, below message) -->
-                <div class="flex items-center gap-1.5 mt-1 text-[9px] {% if notification.is_read %}text-gray-400{% else %}text-gray-500{% endif %}">
-                    <span>{{ notification.created_at|date:"M d, Y" }}</span>
-                    <span>•</span>
-                    <span>{{ notification.created_at|date:"g:i A" }}</span>
-                </div>
-            </div>
-            
-            <!-- Delete button (Small, top right) -->
-            <div class="absolute right-1 top-2 flex-shrink-0 z-10">
-                <button onclick="event.stopPropagation(); event.preventDefault(); deleteNotification({{ notification.id }}, event); return false;" 
-                        class="text-gray-300 hover:text-red-600 transition p-0.5 rounded hover:bg-red-50" 
-                        title="Delete notification">
-                    <i class="fas fa-times text-[10px]"></i>
-                </button>
-            </div>
-        </div>
-    {% empty %}
-    <div class="text-center py-8 text-gray-500">
-        <i class="fas fa-bell-slash text-3xl mb-2"></i>
-        <p class="text-xs">No notifications</p>
-    </div>
-    {% endfor %}
-</div>
-
-<!-- Delete All Confirmation Modal -->
-<div id="deleteAllModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-scale-in">
-        <div class="flex justify-between items-start mb-4">
-            <h3 class="text-lg font-bold text-red-600 flex items-center">
-                <i class="fas fa-exclamation-triangle w-5 h-5 mr-2"></i> Delete All Notifications
-            </h3>
-            <button onclick="closeDeleteAllModal()" class="text-gray-400 hover:text-gray-600 transition">
-                <i class="fas fa-times w-5 h-5"></i>
-            </button>
-        </div>
-        <div class="space-y-4">
-            <p class="text-gray-700">Are you sure you want to delete all notifications? This action cannot be undone.</p>
-            <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-                <button onclick="closeDeleteAllModal()" class="px-4 py-2 text-gray-700 bg-gray-200 font-semibold rounded-lg hover:bg-gray-300 transition">
-                    Cancel
-                </button>
-                <button onclick="confirmDeleteAll()" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">
-                    <i class="fas fa-trash-alt mr-1"></i> Delete All
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
 
 <style>
-@keyframes scale-in {
-    from {
-        transform: scale(0.9);
-        opacity: 0;
-    }
-    to {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-
-@keyframes slide-down {
-    from {
-        transform: translateY(-10px);
-        opacity: 0;
-    }
-    to {
-        transform: translateY(0);
-        opacity: 1;
-    }
-}
-
-@keyframes fade-out {
-    from {
-        opacity: 1;
-        transform: scale(1);
-    }
-    to {
-        opacity: 0;
-        transform: scale(0.95);
-    }
-}
-
-.animate-scale-in {
-    animation: scale-in 0.2s ease-out;
-}
-
-.animate-slide-down {
-    animation: slide-down 0.3s ease-out;
-}
-
-.animate-fade-out {
-    animation: fade-out 0.2s ease-out;
-}
-
 .notification-item {
     position: relative;
     transition: all 0.2s ease;
@@ -186,6 +13,21 @@
     background-color: #f9fafb;
 }
 
+.animate-fade-out {
+    animation: fadeOut 0.3s ease-out forwards;
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}
+
 .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -194,66 +36,154 @@
 }
 </style>
 
-<script>
-function markAsRead(notificationId) {
-    fetch('{% url "dashboard:mark_notification_read" 0 %}'.replace('0', notificationId), {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': getCookie('csrftoken') || '{{ csrf_token }}',
-            'Content-Type': 'application/json',
-        }
-    }).then(() => {
-        // Store that notification was read in localStorage
-        localStorage.setItem('notification_read_' + notificationId, 'true');
-        
-        // Reload notifications if in dropdown
-        if (typeof loadNotifications === 'function') {
-            const dropdown = document.getElementById('notificationsDropdown');
-            if (dropdown) {
-                dropdown.dataset.loaded = 'false';
-            }
-            loadNotifications();
-            // Update badge count
-            if (typeof updateNotificationBadge === 'function') {
-                updateNotificationBadge();
-            }
-        } else {
-            location.reload();
-        }
-    }).catch(error => {
-        console.error('Error marking notification as read:', error);
-    });
-}
+<!-- Action buttons -->
+{% if notifications %}
+<div class="mb-2 flex justify-between items-center px-3 py-2 border-b border-gray-200 bg-gray-50">
+    <span class="text-[10px] font-semibold text-gray-600">
+        <i class="fas fa-bell mr-1"></i>{{ notifications|length }} Notifications
+    </span>
+    <div class="flex items-center gap-2">
+        <button id="markAllReadBtn" type="button" onclick="markAllAsRead(); return false;" class="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold px-2 py-1 rounded hover:bg-indigo-50 transition">
+            <i class="fas fa-check-double text-[10px] mr-1"></i> Mark All as Read
+        </button>
+        <button id="deleteAllBtn" type="button" onclick="showDeleteAllModal(); return false;" class="text-[10px] text-red-600 hover:text-red-800 font-semibold px-2 py-1 rounded hover:bg-red-50 transition">
+            <i class="fas fa-trash-alt text-[10px] mr-1"></i> Delete All
+        </button>
+    </div>
+</div>
+{% endif %}
 
-function handleNotificationClick(notificationId, redirectUrl) {
-    // Mark as read first, then redirect
-    const csrftoken = getCookie('csrftoken') || '{{ csrf_token }}';
-    
-    fetch('{% url "dashboard:mark_notification_read" 0 %}'.replace('0', notificationId), {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': csrftoken,
-            'Content-Type': 'application/json',
-        }
-    }).then(response => {
-        if (!response.ok) {
-            throw new Error('Failed to mark as read');
-        }
-        return response.json();
-    }).then(data => {
-        if (data.success) {
-            // Update badge immediately and store in localStorage
-            if (typeof updateNotificationBadge === 'function') {
-                updateNotificationBadge();
+<!-- Notifications list -->
+<div class="divide-y divide-gray-200">
+    {% for notification in notifications %}
+    <div class="notification-item flex items-start p-2.5 hover:bg-gray-50 transition duration-150 relative group {% if notification.is_read %}opacity-80{% endif %}" 
+         data-notification-id="{{ notification.id }}">
+        
+        <!-- Unread indicator -->
+        {% if not notification.is_read %}
+        <div class="absolute top-2.5 left-0 w-0.5 h-full bg-indigo-600 rounded-r"></div>
+        {% endif %}
+        
+        <!-- Avatar -->
+        <div class="flex-shrink-0 mr-2.5">
+            {% if notification.notification_type == 'student_enrolled' and notification.related_user %}
+                {% if notification.related_user.profile_picture %}
+                <img src="{{ notification.related_user.profile_picture.url }}" 
+                     alt="{{ notification.related_user.full_name }}" 
+                     class="w-8 h-8 rounded-full object-cover ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}"
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[10px] text-white ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}" 
+                     style="background-color: #10b981; display: none;">
+                    {{ notification.related_user.full_name|first|upper }}
+                </div>
+                {% else %}
+                <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[10px] text-white ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}" 
+                     style="background-color: #10b981;">
+                    {{ notification.related_user.full_name|first|upper }}
+                </div>
+                {% endif %}
+            {% else %}
+                <div class="w-8 h-8 rounded-full flex items-center justify-center ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}" 
+                     style="background-color: {% if notification.notification_type == 'account_approved' or notification.notification_type == 'student_enrolled' %}#10b981{% elif notification.notification_type == 'account_rejected' or notification.notification_type == 'system_alert' %}#ef4444{% else %}#3b82f6{% endif %};">
+                    <i class="fas {% if notification.notification_type == 'account_approved' or notification.notification_type == 'student_enrolled' %}fa-check-circle{% elif notification.notification_type == 'account_rejected' or notification.notification_type == 'system_alert' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %} text-white text-xs"></i>
+                </div>
+            {% endif %}
+        </div>
+        
+        <!-- Content -->
+        <div class="flex-1 min-w-0 pr-16 cursor-pointer notification-content">
+            <div class="text-xs font-semibold {% if notification.is_read %}text-gray-400{% else %}text-gray-900{% endif %} truncate">
+                {% if notification.notification_type == 'student_enrolled' and notification.related_user %}
+                    {{ notification.related_user.full_name }}
+                {% else %}
+                    {{ notification.title }}
+                {% endif %}
+            </div>
+            <p class="text-[11px] {% if notification.is_read %}text-gray-500{% else %}text-gray-700{% endif %} mt-0.5 line-clamp-2 leading-tight">
+                {{ notification.message|default:notification.title }}
+            </p>
+            <div class="flex items-center gap-1.5 mt-1 text-[9px] {% if notification.is_read %}text-gray-400{% else %}text-gray-500{% endif %}">
+                <span>{{ notification.created_at|date:"M d, Y" }}</span>
+                <span>•</span>
+                <span>{{ notification.created_at|date:"g:i A" }}</span>
+            </div>
+        </div>
+        
+        <!-- Delete button -->
+        <div class="absolute right-1 top-2 flex-shrink-0 z-10">
+            <button type="button" class="deleteNotificationBtn text-gray-300 hover:text-red-600 transition p-0.5 rounded hover:bg-red-50" 
+                    data-notification-id="{{ notification.id }}" 
+                    title="Delete notification">
+                <i class="fas fa-times text-[10px]"></i>
+            </button>
+        </div>
+    </div>
+    {% empty %}
+    <div class="text-center py-8 text-gray-500">
+        <i class="fas fa-bell-slash text-3xl mb-2"></i>
+        <p class="text-xs">No notifications</p>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Delete All Modal -->
+<div id="deleteAllModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+        <h3 class="text-lg font-bold text-red-600 mb-4">Delete All Notifications</h3>
+        <p class="text-gray-700 mb-6">Are you sure you want to delete all notifications? This action cannot be undone.</p>
+        <div class="flex justify-end gap-3">
+            <button type="button" id="cancelDeleteAllBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                Cancel
+            </button>
+            <button type="button" id="confirmDeleteAllBtn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                Delete All
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Global notification handlers
+window.NotificationSystem = {
+    csrfToken: function() {
+        let token = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+        if (!token) {
+            // Try to get from cookie
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'csrftoken') {
+                    token = decodeURIComponent(value);
+                    break;
+                }
             }
-            // Store that notification was read
-            localStorage.setItem('notification_read_' + notificationId, 'true');
-            
-            // Then redirect if URL is provided and valid
-            if (redirectUrl && redirectUrl !== 'null' && redirectUrl !== '' && redirectUrl !== 'None') {
-                window.location.href = redirectUrl;
-            } else {
-                // Reload notifications if in dropdown
+        }
+        return token || '';
+    },
+
+    markAsRead: function(notificationId) {
+        console.log("NotificationSystem.markAsRead() - ID:", notificationId);
+        const csrfToken = this.csrfToken();
+        console.log("CSRF Token obtained:", csrfToken ? "✓" : "✗");
+        const url = `/dashboard/notifications/${notificationId}/read/`;
+        console.log("Fetching URL:", url);
+        fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => {
+            console.log("Mark as read response status:", response.status);
+            if (!response.ok) throw new Error('Network response was not ok');
+            return response.json();
+        })
+        .then(data => {
+            console.log("Mark as read response data:", data);
+            if (data.success) {
+                // Reload notifications
                 if (typeof loadNotifications === 'function') {
                     const dropdown = document.getElementById('notificationsDropdown');
                     if (dropdown) {
@@ -261,199 +191,578 @@ function handleNotificationClick(notificationId, redirectUrl) {
                     }
                     loadNotifications();
                 }
-            }
-        } else {
-            // Still redirect even if marking as read fails
-            if (redirectUrl && redirectUrl !== 'null' && redirectUrl !== '' && redirectUrl !== 'None') {
-                window.location.href = redirectUrl;
-            }
-        }
-    }).catch(error => {
-        console.error('Error marking notification as read:', error);
-        // Still redirect even if marking as read fails
-        if (redirectUrl && redirectUrl !== 'null' && redirectUrl !== '' && redirectUrl !== 'None') {
-            window.location.href = redirectUrl;
-        }
-    });
-}
-
-function deleteNotification(notificationId, eventObj) {
-    if (eventObj) {
-        eventObj.stopPropagation();
-        eventObj.preventDefault();
-    }
-    const notificationItem = eventObj ? eventObj.target.closest('.notification-item') : document.querySelector(`.notification-item[onclick*="${notificationId}"]`);
-    if (notificationItem) {
-        notificationItem.classList.add('animate-fade-out');
-        setTimeout(() => {
-            // Get CSRF token
-            const csrftoken = getCookie('csrftoken') || '{{ csrf_token }}';
-            
-            fetch('{% url "dashboard:delete_notification" 0 %}'.replace('0', notificationId), {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': csrftoken,
-                    'Content-Type': 'application/json',
+                // Update badge
+                if (typeof updateNotificationBadge === 'function') {
+                    updateNotificationBadge();
                 }
-            }).then(response => response.json()).then(data => {
-                if (data.success) {
-                    if (typeof loadNotifications === 'function') {
-                        const dropdown = document.getElementById('notificationsDropdown');
-                        if (dropdown) {
-                            dropdown.dataset.loaded = 'false';
+            }
+        })
+        .catch(error => console.error('Error marking notification as read:', error));
+    },
+
+    deleteNotification: function(notificationId) {
+        console.log("NotificationSystem.deleteNotification() - ID:", notificationId);
+        const csrfToken = this.csrfToken();
+        const notificationEl = document.querySelector(`[data-notification-id="${notificationId}"]`);
+        console.log("Notification element found:", notificationEl ? "✓" : "✗");
+        
+        if (notificationEl) {
+            console.log("Adding fade-out animation");
+            notificationEl.classList.add('animate-fade-out');
+            
+            setTimeout(() => {
+                const url = `/dashboard/notifications/${notificationId}/delete/`;
+                console.log("Fetching URL:", url);
+                fetch(url, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => {
+                    console.log("Delete response status:", response.status);
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    console.log("Delete response data:", data);
+                    console.log("Delete success:", data.success);
+                    if (data.success) {
+                        console.log("Notification deleted successfully, reloading notifications");
+                        // Reload notifications
+                        if (typeof loadNotifications === 'function') {
+                            const dropdown = document.getElementById('notificationsDropdown');
+                            if (dropdown) {
+                                dropdown.dataset.loaded = 'false';
+                            }
+                            loadNotifications();
                         }
-                        loadNotifications();
+                        // Update badge
                         if (typeof updateNotificationBadge === 'function') {
                             updateNotificationBadge();
                         }
                     } else {
-                        location.reload();
+                        console.error('Delete response success is false');
+                        notificationEl.classList.remove('animate-fade-out');
+                        console.error('Failed to delete notification');
                     }
-                } else {
-                    if (notificationItem) notificationItem.classList.remove('animate-fade-out');
-                    if (typeof showNotification === 'function') {
-                        showNotification(data.message || 'Error deleting notification', 'error');
-                    } else {
-                        alert(data.message || 'Error deleting notification');
+                })
+                .catch(error => {
+                    notificationEl.classList.remove('animate-fade-out');
+                    console.error('Error deleting notification:', error);
+                    console.error('Error details:', error.toString());
+                    console.error('Stack trace:', error.stack);
+                });
+            }, 300);
+        } else {
+            console.warn(`Notification element not found for ID: ${notificationId}`);
+        }
+    },
+
+    deleteAll: function() {
+        console.log("NotificationSystem.deleteAll() - deleting all notifications");
+        const csrfToken = this.csrfToken();
+        fetch('/dashboard/notifications/delete-all/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Network response was not ok');
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Close modal
+                document.getElementById('deleteAllModal').classList.add('hidden');
+                // Reload notifications
+                if (typeof loadNotifications === 'function') {
+                    const dropdown = document.getElementById('notificationsDropdown');
+                    if (dropdown) {
+                        dropdown.dataset.loaded = 'false';
                     }
+                    loadNotifications();
                 }
-            }).catch(error => {
-                console.error('Error:', error);
-                if (notificationItem) notificationItem.classList.remove('animate-fade-out');
-                if (typeof showNotification === 'function') {
-                    showNotification('Error deleting notification', 'error');
-                } else {
-                    alert('Error deleting notification');
+                // Update badge
+                if (typeof updateNotificationBadge === 'function') {
+                    updateNotificationBadge();
                 }
-            });
+            }
+        })
+        .catch(error => console.error('Error deleting all notifications:', error));
+    },
+
+    markAllAsRead: function() {
+        console.log("NotificationSystem.markAllAsRead() - marking all as read");
+        const csrfToken = this.csrfToken();
+        fetch('/dashboard/notifications/mark-all-read/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Network response was not ok');
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Reload notifications
+                if (typeof loadNotifications === 'function') {
+                    const dropdown = document.getElementById('notificationsDropdown');
+                    if (dropdown) {
+                        dropdown.dataset.loaded = 'false';
+                    }
+                    loadNotifications();
+                }
+                // Update badge
+                if (typeof updateNotificationBadge === 'function') {
+                    updateNotificationBadge();
+                }
+            }
+        })
+        .catch(error => console.error('Error marking all notifications as read:', error));
+    }
+};
+
+// Global functions for backward compatibility and onclick handlers
+function markAsRead(notificationId) {
+    console.log("markAsRead() called with ID:", notificationId);
+    window.NotificationSystem.markAsRead(notificationId);
+}
+
+function deleteNotification(notificationId, eventObj) {
+    console.log("deleteNotification() called with ID:", notificationId);
+    if (eventObj) {
+        eventObj.stopPropagation();
+        eventObj.preventDefault();
+    }
+    window.NotificationSystem.deleteNotification(notificationId);
+    return false;
+}
+
+function markAllAsRead() {
+    console.log("markAllAsRead() called");
+    window.NotificationSystem.markAllAsRead();
+}
+
+function deleteAll() {
+    console.log("deleteAll() called - showing modal");
+    document.getElementById('deleteAllModal').classList.remove('hidden');
+}
+
+function closeDeleteAllModal() {
+    console.log("closeDeleteAllModal() called");
+    document.getElementById('deleteAllModal').classList.add('hidden');
+}
+
+function showDeleteAllModal() {
+    console.log("showDeleteAllModal() called");
+    deleteAll();
+}
+
+function handleNotificationClick(notificationId, redirectUrl) {
+    console.log("handleNotificationClick() called with ID:", notificationId, "URL:", redirectUrl);
+    // Mark as read
+    window.NotificationSystem.markAsRead(notificationId);
+    
+    // Then redirect if URL is provided
+    if (redirectUrl && redirectUrl !== 'null' && redirectUrl !== '' && redirectUrl !== 'None') {
+        setTimeout(() => {
+            window.location.href = redirectUrl;
         }, 200);
     }
 }
 
-// Helper function to get CSRF token from cookies
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-}
-
-function showDeleteAllModal() {
-    const modal = document.getElementById('deleteAllModal');
-    if (modal) {
-        modal.classList.remove('hidden');
-    }
-}
-
-function closeDeleteAllModal() {
-    const modal = document.getElementById('deleteAllModal');
-    if (modal) {
-        modal.classList.add('hidden');
-    }
-}
-
-function confirmDeleteAll() {
-    fetch('{% url "dashboard:delete_all_notifications" %}', {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': '{{ csrf_token }}',
-            'Content-Type': 'application/json',
-        }
-    }).then(response => response.json()).then(data => {
-        if (data.success) {
-            closeDeleteAllModal();
-            if (typeof loadNotifications === 'function') {
-                document.getElementById('notificationsDropdown').dataset.loaded = 'false';
-                loadNotifications();
-                if (typeof updateNotificationBadge === 'function') {
-                    updateNotificationBadge();
-                }
-            } else {
-                location.reload();
-            }
-        } else {
-            alert(data.message || 'Error deleting notifications');
-        }
-    }).catch(error => {
-        console.error('Error:', error);
-        alert('Error deleting notifications');
-    });
-}
-
-// Mark all notifications as read
-function markAllAsRead() {
-    const csrftoken = getCookie('csrftoken') || '{{ csrf_token }}';
+// Event listeners - Use event delegation for dynamically loaded content
+function attachNotificationListeners() {
+    console.log("attachNotificationListeners() called - attaching event handlers");
     
-    fetch('{% url "dashboard:mark_all_notifications_read" %}', {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': csrftoken,
-            'Content-Type': 'application/json',
-        }
-    }).then(response => response.json()).then(data => {
-        if (data.success) {
-            // Reload notifications
-            if (typeof loadNotifications === 'function') {
-                const dropdown = document.getElementById('notificationsDropdown');
-                if (dropdown) {
-                    dropdown.dataset.loaded = 'false';
-                }
-                loadNotifications();
-                // Update badge - it should disappear
-                if (typeof updateNotificationBadge === 'function') {
-                    updateNotificationBadge();
-                }
-            } else {
-                location.reload();
-            }
-        } else {
-            if (typeof showNotification === 'function') {
-                showNotification(data.message || 'Error marking notifications as read', 'error');
-            } else {
-                alert(data.message || 'Error marking notifications as read');
-            }
-        }
-    }).catch(error => {
-        console.error('Error:', error);
-        if (typeof showNotification === 'function') {
-            showNotification('Error marking notifications as read', 'error');
-        } else {
-            alert('Error marking notifications as read');
+    // Delete individual notifications
+    document.querySelectorAll('.deleteNotificationBtn').forEach(btn => {
+        if (!btn.hasAttribute('data-listener-attached')) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const notificationId = this.dataset.notificationId;
+                window.NotificationSystem.deleteNotification(notificationId);
+                return false;
+            });
+            btn.setAttribute('data-listener-attached', 'true');
         }
     });
-}
 
-// Filter notifications by category (placeholder for future implementation)
-function filterNotificationsByCategory(category) {
-    // This is a placeholder - categories can be implemented later
-    // For now, just reload notifications
-    if (typeof loadNotifications === 'function') {
-        const dropdown = document.getElementById('notificationsDropdown');
-        if (dropdown) {
-            dropdown.dataset.loaded = 'false';
+    // Mark as read when clicking notification content
+    document.querySelectorAll('.notification-content').forEach(content => {
+        if (!content.hasAttribute('data-listener-attached')) {
+            content.addEventListener('click', function(e) {
+                const notificationItem = this.closest('[data-notification-id]');
+                if (notificationItem) {
+                    const notificationId = notificationItem.dataset.notificationId;
+                    window.NotificationSystem.markAsRead(notificationId);
+                }
+            });
+            content.setAttribute('data-listener-attached', 'true');
         }
-        loadNotifications();
-    }
-}
+    });
 
-// Close modal when clicking outside
-document.addEventListener('DOMContentLoaded', function() {
+    // Modal buttons
+    const cancelDeleteAllBtn = document.getElementById('cancelDeleteAllBtn');
+    if (cancelDeleteAllBtn && !cancelDeleteAllBtn.hasAttribute('data-listener-attached')) {
+        cancelDeleteAllBtn.addEventListener('click', closeDeleteAllModal);
+        cancelDeleteAllBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    const confirmDeleteAllBtn = document.getElementById('confirmDeleteAllBtn');
+    if (confirmDeleteAllBtn && !confirmDeleteAllBtn.hasAttribute('data-listener-attached')) {
+        confirmDeleteAllBtn.addEventListener('click', function() {
+            window.NotificationSystem.deleteAll();
+        });
+        confirmDeleteAllBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    // Close modal when clicking outside
     const modal = document.getElementById('deleteAllModal');
-    if (modal) {
+    if (modal && !modal.hasAttribute('data-listener-attached')) {
         modal.addEventListener('click', function(e) {
             if (e.target === this) {
                 closeDeleteAllModal();
             }
         });
+        modal.setAttribute('data-listener-attached', 'true');
     }
-});
+}
+
+// Attach listeners on page load
+document.addEventListener('DOMContentLoaded', attachNotificationListeners);
+
+// Also provide a function that the topbar can call after loading notifications
+window.attachNotificationListeners = attachNotificationListeners;
+
+// ========== DEBUGGING UTILITIES ==========
+// Available in console with: window.NotificationDebug.help()
+window.NotificationDebug = {
+    /**
+     * Show all available debug commands
+     */
+    help: function() {
+        console.log(`
+📋 NOTIFICATION SYSTEM DEBUG COMMANDS
+=====================================
+
+🔧 Setup & Inspection:
+  NotificationDebug.inspect()           - Show current system state
+  NotificationDebug.findCSRFToken()     - Find CSRF token
+  NotificationDebug.listNotifications() - List all notifications
+  NotificationDebug.checkListeners()    - Check event listeners
+
+🧪 Tests:
+  NotificationDebug.testDelete(id)      - Test delete for notification ID
+  NotificationDebug.testMarkAsRead(id)  - Test mark as read for notification ID
+  NotificationDebug.testReload()        - Test loadNotifications() function
+  NotificationDebug.testAPI(id)         - Test raw API call
+
+🛠️ Manual Actions:
+  NotificationDebug.deleteNow(id)       - Delete notification immediately (skip animation)
+  NotificationDebug.reloadNow()         - Reload notifications immediately
+  NotificationDebug.reattachListeners() - Re-attach all event listeners
+  NotificationDebug.clearAllLogs()      - Clear console
+
+📊 Stats:
+  NotificationDebug.stats()             - Show system statistics
+        `);
+    },
+
+    /**
+     * Inspect current system state
+     */
+    inspect: function() {
+        console.group('🔍 NOTIFICATION SYSTEM INSPECTION');
+        
+        console.group('CSRF Token');
+        const csrfToken = window.NotificationSystem.csrfToken();
+        console.log('Token found:', csrfToken ? '✅' : '❌');
+        if (csrfToken) {
+            console.log('Token preview:', csrfToken.substring(0, 30) + '...');
+        }
+        console.groupEnd();
+        
+        console.group('NotificationSystem Object');
+        console.log('Object exists:', window.NotificationSystem ? '✅' : '❌');
+        console.log('Methods available:', Object.keys(window.NotificationSystem).length);
+        Object.keys(window.NotificationSystem).forEach(key => {
+            console.log(`  - ${key}: ${typeof window.NotificationSystem[key]}`);
+        });
+        console.groupEnd();
+        
+        console.group('DOM Elements');
+        const notifs = document.querySelectorAll('[data-notification-id]');
+        console.log('Notification elements:', notifs.length);
+        const deleteButtons = document.querySelectorAll('.deleteNotificationBtn');
+        console.log('Delete buttons:', deleteButtons.length);
+        const dropdown = document.getElementById('notificationsDropdown');
+        console.log('Dropdown exists:', dropdown ? '✅' : '❌');
+        console.groupEnd();
+        
+        console.group('Functions');
+        console.log('loadNotifications:', typeof window.loadNotifications);
+        console.log('updateNotificationBadge:', typeof window.updateNotificationBadge);
+        console.log('attachNotificationListeners:', typeof window.attachNotificationListeners);
+        console.groupEnd();
+        
+        console.groupEnd();
+    },
+
+    /**
+     * Find CSRF token
+     */
+    findCSRFToken: function() {
+        console.group('🔐 CSRF Token Lookup');
+        
+        let token = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+        if (token) {
+            console.log('✅ Found in hidden input field');
+            console.log('Token:', token);
+            return token;
+        }
+        
+        const cookies = document.cookie.split(';');
+        for (let cookie of cookies) {
+            const [name, value] = cookie.trim().split('=');
+            if (name === 'csrftoken') {
+                token = decodeURIComponent(value);
+                console.log('✅ Found in cookies');
+                console.log('Token:', token);
+                console.groupEnd();
+                return token;
+            }
+        }
+        
+        console.log('❌ CSRF token not found!');
+        console.log('Available cookies:', document.cookie);
+        console.groupEnd();
+        return null;
+    },
+
+    /**
+     * List all notifications in the DOM
+     */
+    listNotifications: function() {
+        console.group('📝 All Notifications');
+        const notifs = document.querySelectorAll('[data-notification-id]');
+        console.log('Total:', notifs.length);
+        
+        notifs.forEach((notif, i) => {
+            const id = notif.dataset.notificationId;
+            const title = notif.querySelector('.text-xs')?.textContent || 'Unknown';
+            const isRead = notif.classList.contains('opacity-50');
+            console.log(`[${i+1}] ID: ${id} | Title: ${title} | Read: ${isRead ? '✅' : '❌'}`);
+        });
+        
+        console.groupEnd();
+    },
+
+    /**
+     * Check if event listeners are attached
+     */
+    checkListeners: function() {
+        console.group('🎯 Event Listeners');
+        
+        const deleteButtons = document.querySelectorAll('.deleteNotificationBtn');
+        console.log('Delete buttons with listeners:');
+        
+        let attached = 0;
+        deleteButtons.forEach((btn, i) => {
+            const hasListener = btn.hasAttribute('data-listener-attached');
+            const hasAttribute = hasListener ? '✅' : '❌';
+            console.log(`  [${i+1}] ID: ${btn.dataset.notificationId} - ${hasAttribute}`);
+            if (hasListener) attached++;
+        });
+        
+        console.log(`Total with listeners: ${attached}/${deleteButtons.length}`);
+        console.groupEnd();
+    },
+
+    /**
+     * Test delete API
+     */
+    testDelete: async function(notificationId) {
+        console.group(`🧪 Testing Delete for Notification ${notificationId}`);
+        
+        const csrfToken = window.NotificationSystem.csrfToken();
+        if (!csrfToken) {
+            console.error('❌ CSRF token not found');
+            console.groupEnd();
+            return;
+        }
+        
+        const url = `/dashboard/notifications/${notificationId}/delete/`;
+        console.log('URL:', url);
+        
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            console.log('Response status:', response.status, response.ok ? '✅' : '❌');
+            const data = await response.json();
+            console.log('Response data:', data);
+            
+            if (data.success) {
+                console.log('✅ DELETE SUCCESSFUL');
+            } else {
+                console.log('❌ Delete failed:', data.message);
+            }
+        } catch (error) {
+            console.error('❌ Fetch error:', error);
+        }
+        
+        console.groupEnd();
+    },
+
+    /**
+     * Test mark as read API
+     */
+    testMarkAsRead: async function(notificationId) {
+        console.group(`🧪 Testing Mark As Read for Notification ${notificationId}`);
+        
+        const csrfToken = window.NotificationSystem.csrfToken();
+        const url = `/dashboard/notifications/${notificationId}/read/`;
+        
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            console.log('Response status:', response.status);
+            const data = await response.json();
+            console.log('Response:', data);
+            
+            if (data.success) {
+                console.log('✅ MARK AS READ SUCCESSFUL');
+            }
+        } catch (error) {
+            console.error('❌ Error:', error);
+        }
+        
+        console.groupEnd();
+    },
+
+    /**
+     * Test if loadNotifications function works
+     */
+    testReload: function() {
+        console.group('🧪 Testing Reload Function');
+        
+        if (typeof window.loadNotifications === 'function') {
+            console.log('✅ loadNotifications function exists');
+            try {
+                window.loadNotifications();
+                console.log('✅ loadNotifications() executed');
+            } catch (error) {
+                console.error('❌ Error calling loadNotifications():', error);
+            }
+        } else {
+            console.log('❌ loadNotifications function not found');
+            console.log('Available window functions:', 
+                Object.getOwnPropertyNames(window).filter(n => typeof window[n] === 'function').slice(0, 20));
+        }
+        
+        console.groupEnd();
+    },
+
+    /**
+     * Delete notification immediately without animation
+     */
+    deleteNow: function(notificationId) {
+        console.log(`⚡ Deleting notification ${notificationId} immediately...`);
+        
+        const csrfToken = window.NotificationSystem.csrfToken();
+        const url = `/dashboard/notifications/${notificationId}/delete/`;
+        
+        fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                console.log('✅ Deleted, reloading...');
+                if (typeof window.loadNotifications === 'function') {
+                    const dropdown = document.getElementById('notificationsDropdown');
+                    if (dropdown) dropdown.dataset.loaded = 'false';
+                    window.loadNotifications();
+                }
+            }
+        })
+        .catch(e => console.error('Error:', e));
+    },
+
+    /**
+     * Reload notifications immediately
+     */
+    reloadNow: function() {
+        console.log('🔄 Reloading notifications...');
+        const dropdown = document.getElementById('notificationsDropdown');
+        if (dropdown) dropdown.dataset.loaded = 'false';
+        if (typeof window.loadNotifications === 'function') {
+            window.loadNotifications();
+        }
+    },
+
+    /**
+     * Reattach all event listeners
+     */
+    reattachListeners: function() {
+        console.log('🔌 Reattaching event listeners...');
+        if (typeof window.attachNotificationListeners === 'function') {
+            window.attachNotificationListeners();
+            console.log('✅ Listeners reattached');
+        }
+    },
+
+    /**
+     * Show system statistics
+     */
+    stats: function() {
+        const notifs = document.querySelectorAll('[data-notification-id]');
+        const unread = Array.from(notifs).filter(n => !n.classList.contains('opacity-50')).length;
+        
+        console.table({
+            'Total Notifications': notifs.length,
+            'Unread': unread,
+            'Read': notifs.length - unread,
+            'Delete Buttons': document.querySelectorAll('.deleteNotificationBtn').length,
+            'Listeners Attached': Array.from(document.querySelectorAll('.deleteNotificationBtn'))
+                .filter(b => b.hasAttribute('data-listener-attached')).length
+        });
+    }
+};
+
+// Make help available easily
+window.NotificationSystem.help = () => window.NotificationDebug.help();
+
 </script>
+
 {% endtimezone %}

@@ -1,0 +1,718 @@
+<!-- templates/dashboard/user_notifications.html -->
+<!-- This template is used for both instructor and student notifications -->
+{% load tz %}
+{% timezone "Asia/Manila" %}
+
+<!-- Define notification functions immediately -->
+<script>
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function markAsRead(notificationId) {
+    const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    fetch('/dashboard/notifications/' + notificationId + '/read/', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json',
+        }
+    }).then(() => {
+        localStorage.setItem('notification_read_' + notificationId, 'true');
+        if (typeof loadNotifications === 'function') {
+            const dropdown = document.getElementById('notificationsDropdown');
+            if (dropdown) {
+                dropdown.dataset.loaded = 'false';
+            }
+            loadNotifications();
+            if (typeof updateNotificationBadge === 'function') {
+                updateNotificationBadge();
+            }
+        } else {
+            location.reload();
+        }
+    }).catch(error => {
+        console.error('Error marking notification as read:', error);
+    });
+}
+
+function handleNotificationClick(notificationId, redirectUrl) {
+    const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    
+    fetch('/dashboard/notifications/' + notificationId + '/read/', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json',
+        }
+    }).then(response => {
+        if (!response.ok) throw new Error('Failed to mark as read');
+        return response.json();
+    }).then(data => {
+        if (data.success) {
+            if (typeof updateNotificationBadge === 'function') {
+                updateNotificationBadge();
+            }
+            localStorage.setItem('notification_read_' + notificationId, 'true');
+            if (redirectUrl && redirectUrl !== 'null' && redirectUrl !== '' && redirectUrl !== 'None') {
+                window.location.href = redirectUrl;
+            } else {
+                if (typeof loadNotifications === 'function') {
+                    const dropdown = document.getElementById('notificationsDropdown');
+                    if (dropdown) {
+                        dropdown.dataset.loaded = 'false';
+                    }
+                    loadNotifications();
+                }
+            }
+        } else {
+            if (redirectUrl && redirectUrl !== 'null' && redirectUrl !== '' && redirectUrl !== 'None') {
+                window.location.href = redirectUrl;
+            }
+        }
+    }).catch(error => {
+        console.error('Error marking notification as read:', error);
+        if (redirectUrl && redirectUrl !== 'null' && redirectUrl !== '' && redirectUrl !== 'None') {
+            window.location.href = redirectUrl;
+        }
+    });
+}
+
+function deleteNotification(notificationId, eventObj) {
+    if (eventObj) {
+        eventObj.stopPropagation();
+        eventObj.preventDefault();
+    }
+    const notificationItem = eventObj ? eventObj.target.closest('.notification-item') : null;
+    if (notificationItem) {
+        notificationItem.classList.add('animate-fade-out');
+        setTimeout(() => {
+            const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+            
+            fetch('/dashboard/notifications/' + notificationId + '/delete/', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRFToken': csrftoken,
+                    'Content-Type': 'application/json',
+                }
+            }).then(response => response.json()).then(data => {
+                if (data.success) {
+                    if (typeof loadNotifications === 'function') {
+                        const dropdown = document.getElementById('notificationsDropdown');
+                        if (dropdown) {
+                            dropdown.dataset.loaded = 'false';
+                        }
+                        loadNotifications();
+                        if (typeof updateNotificationBadge === 'function') {
+                            updateNotificationBadge();
+                        }
+                    } else {
+                        location.reload();
+                    }
+                } else {
+                    if (notificationItem) notificationItem.classList.remove('animate-fade-out');
+                    if (typeof showNotification === 'function') {
+                        showNotification(data.message || 'Error deleting notification', 'error');
+                    } else {
+                        alert(data.message || 'Error deleting notification');
+                    }
+                }
+            }).catch(error => {
+                console.error('Error:', error);
+                if (notificationItem) notificationItem.classList.remove('animate-fade-out');
+                if (typeof showNotification === 'function') {
+                    showNotification('Error deleting notification', 'error');
+                } else {
+                    alert('Error deleting notification');
+                }
+            });
+        }, 200);
+    }
+}
+
+function showDeleteAllModal() {
+    const modal = document.getElementById('deleteAllModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeDeleteAllModal() {
+    const modal = document.getElementById('deleteAllModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function confirmDeleteAll() {
+    const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    fetch('/dashboard/notifications/delete-all/', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json',
+        }
+    }).then(response => response.json()).then(data => {
+        if (data.success) {
+            closeDeleteAllModal();
+            if (typeof loadNotifications === 'function') {
+                const dropdown = document.getElementById('notificationsDropdown');
+                if (dropdown) {
+                    dropdown.dataset.loaded = 'false';
+                }
+                loadNotifications();
+                if (typeof updateNotificationBadge === 'function') {
+                    updateNotificationBadge();
+                }
+            } else {
+                location.reload();
+            }
+        } else {
+            alert(data.message || 'Error deleting notifications');
+        }
+    }).catch(error => {
+        console.error('Error:', error);
+        alert('Error deleting notifications');
+    });
+}
+
+function markAllAsRead() {
+    const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    
+    fetch('/dashboard/notifications/mark-all-read/', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json',
+        }
+    }).then(response => response.json()).then(data => {
+        if (data.success) {
+            if (typeof loadNotifications === 'function') {
+                const dropdown = document.getElementById('notificationsDropdown');
+                if (dropdown) {
+                    dropdown.dataset.loaded = 'false';
+                }
+                loadNotifications();
+                if (typeof updateNotificationBadge === 'function') {
+                    updateNotificationBadge();
+                }
+            } else {
+                location.reload();
+            }
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Error marking notifications as read', 'error');
+            } else {
+                alert(data.message || 'Error marking notifications as read');
+            }
+        }
+    }).catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('Error marking notifications as read', 'error');
+        } else {
+            alert('Error marking notifications as read');
+        }
+    });
+}
+
+function filterNotificationsByCategory(category) {
+    if (typeof loadNotifications === 'function') {
+        const dropdown = document.getElementById('notificationsDropdown');
+        if (dropdown) {
+            dropdown.dataset.loaded = 'false';
+        }
+        loadNotifications();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('deleteAllModal');
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeDeleteAllModal();
+            }
+        });
+    }
+});
+</script>
+
+{% if notifications %}
+<div class="mb-2 flex justify-between items-center px-3 py-2 border-b border-gray-200 bg-gray-50">
+    <span class="text-[10px] font-semibold text-gray-600">Categories: 
+        <button onclick="filterNotificationsByCategory('all')" class="px-1.5 py-0.5 rounded text-[10px] hover:opacity-80 transition" style="background-color: #DFCFD5; color: #3C4770;">All</button>
+    </span>
+    <div class="flex items-center gap-2">
+        <button onclick="markAllAsRead()" class="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold px-2 py-1 rounded hover:bg-indigo-50 transition">
+            <i class="fas fa-check-double text-[10px] mr-1"></i> Mark All as Read
+        </button>
+        <button onclick="showDeleteAllModal()" class="text-[10px] text-red-600 hover:text-red-800 font-semibold px-2 py-1 rounded hover:bg-red-50 transition">
+            <i class="fas fa-trash-alt text-[10px] mr-1"></i> Delete All
+        </button>
+    </div>
+</div>
+{% endif %}
+<div class="divide-y divide-gray-200">
+    {% for notification in notifications %}
+        <div class="notification-item flex items-start p-2.5 hover:bg-gray-50 transition duration-150 relative group {% if notification.is_read %}opacity-80{% endif %}" 
+             {% if notification.notification_type == 'student_enrolled' and notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:students' %}?course={{ notification.related_course.id }}');"{% elif notification.notification_type == 'upcoming_class' and notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:weekly_timetable' %}');"{% elif notification.notification_type == 'attendance_marked' and notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:instructor_my_classes' %}?course={{ notification.related_course.id }}');"{% elif notification.notification_type == 'attendance_control_updated' and notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:instructor_my_classes' %}?course={{ notification.related_course.id }}');"{% elif notification.notification_type == 'student_dropped' and notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:students' %}?course={{ notification.related_course.id }}');"{% elif notification.related_course %}onclick="handleNotificationClick({{ notification.id }}, '{% url 'dashboard:weekly_timetable' %}');"{% else %}onclick="handleNotificationClick({{ notification.id }}, null);"{% endif %}>
+            
+            <!-- Unread Indicator (left border) -->
+            {% if not notification.is_read %}
+            <div class="absolute top-2.5 left-0 w-0.5 h-full bg-indigo-600 rounded-r"></div>
+            {% endif %}
+            
+            <!-- Profile Picture / Avatar -->
+            <div class="flex-shrink-0 mr-2.5">
+                {% if notification.notification_type == 'student_enrolled' and notification.related_user %}
+                    {% if notification.related_user.profile_picture %}
+                    <img src="{{ notification.related_user.profile_picture.url }}?v={{ notification.related_user.id }}" 
+                         alt="{{ notification.related_user.full_name|default:notification.related_user.username }}" 
+                         class="w-8 h-8 rounded-full object-cover ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[10px] text-white ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}" style="background-color: #10b981; display: none;">
+                        {{ notification.related_user.full_name|first|upper|default:notification.related_user.username|first|upper }}
+                    </div>
+                    {% else %}
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[10px] text-white ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}" style="background-color: #10b981;">
+                        {{ notification.related_user.full_name|first|upper|default:notification.related_user.username|first|upper }}
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <!-- System/Icon Avatar -->
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center ring-1 {% if not notification.is_read %}ring-indigo-600{% else %}ring-gray-300{% endif %}" 
+                         style="background-color: {% if notification.notification_type == 'account_approved' or notification.notification_type == 'course_assigned' or notification.notification_type == 'student_enrolled' or notification.notification_type == 'attendance_marked' %}#10b981{% elif notification.notification_type == 'account_rejected' or notification.notification_type == 'system_alert' %}#ef4444{% elif notification.notification_type == 'attendance_control_updated' or notification.notification_type == 'upcoming_class' %}#f59e0b{% elif notification.notification_type == 'student_dropped' %}#ef4444{% elif notification.notification_type == 'course_added' %}#3b82f6{% else %}#3b82f6{% endif %};">
+                        <i class="fas {% if notification.notification_type == 'account_approved' or notification.notification_type == 'course_assigned' or notification.notification_type == 'student_enrolled' or notification.notification_type == 'attendance_marked' %}fa-check-circle{% elif notification.notification_type == 'account_rejected' or notification.notification_type == 'system_alert' or notification.notification_type == 'student_dropped' %}fa-exclamation-triangle{% elif notification.notification_type == 'attendance_reminder' or notification.notification_type == 'upcoming_class' %}fa-clock{% elif notification.notification_type == 'attendance_control_updated' %}fa-toggle-on{% elif notification.notification_type == 'course_added' %}fa-book{% else %}fa-info-circle{% endif %} text-white text-xs"></i>
+                    </div>
+                {% endif %}
+            </div>
+            
+            <!-- Message and Name Container -->
+            <div class="flex-1 min-w-0 pr-16">
+                <div class="flex items-center justify-between mb-0.5">
+                    <div class="text-xs font-semibold {% if notification.is_read %}text-gray-400{% else %}text-gray-900{% endif %} truncate">
+                        {% if notification.notification_type == 'student_enrolled' and notification.related_user %}
+                            {{ notification.related_user.full_name|default:notification.related_user.username }}
+                        {% elif notification.notification_type == 'system_alert' %}
+                            System Alert
+                        {% else %}
+                            {{ notification.title|default:"Notification" }}
+                        {% endif %}
+                    </div>
+                </div>
+                <p class="text-[11px] {% if notification.is_read %}text-gray-500{% else %}text-gray-700{% endif %} mt-0.5 line-clamp-2 leading-tight">
+                    {% if notification.notification_type == 'student_enrolled' %}
+                        {% if notification.related_user %}{{ notification.related_user.full_name|default:notification.related_user.username }}{% else %}A student{% endif %} enrolled in {% if notification.related_course %}{{ notification.related_course.code|default:'' }} - {{ notification.related_course.name|default:'' }}{% else %}a course{% endif %}
+                    {% elif notification.notification_type == 'attendance_marked' %}
+                        {{ notification.message|default:notification.title }}
+                    {% elif notification.notification_type == 'attendance_control_updated' %}
+                        {{ notification.message|default:notification.title }}
+                    {% elif notification.notification_type == 'student_dropped' %}
+                        {{ notification.message|default:notification.title }}
+                    {% elif notification.notification_type == 'upcoming_class' %}
+                        {{ notification.message|default:notification.title }}
+                    {% else %}
+                        {{ notification.message|default:notification.title }}
+                    {% endif %}
+                </p>
+                <!-- Date and Time (Always visible, below message) -->
+                <div class="flex items-center gap-1.5 mt-1 text-[9px] {% if notification.is_read %}text-gray-400{% else %}text-gray-500{% endif %}">
+                    <span>{{ notification.created_at|date:"M d, Y" }}</span>
+                    <span>•</span>
+                    <span>{{ notification.created_at|date:"g:i A" }}</span>
+                </div>
+            </div>
+            
+            <!-- Delete button (Small, top right) -->
+            <div class="absolute right-1 top-2 flex-shrink-0 z-10">
+                <button onclick="event.stopPropagation(); event.preventDefault(); deleteNotification({{ notification.id }}, event); return false;" 
+                        class="text-gray-300 hover:text-red-600 transition p-0.5 rounded hover:bg-red-50" 
+                        title="Delete notification">
+                    <i class="fas fa-times text-[10px]"></i>
+                </button>
+            </div>
+        </div>
+    {% empty %}
+    <div class="text-center py-8 text-gray-500">
+        <i class="fas fa-bell-slash text-3xl mb-2"></i>
+        <p class="text-xs">No notifications</p>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Delete All Confirmation Modal -->
+<div id="deleteAllModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-scale-in">
+        <div class="flex justify-between items-start mb-4">
+            <h3 class="text-lg font-bold text-red-600 flex items-center">
+                <i class="fas fa-exclamation-triangle w-5 h-5 mr-2"></i> Delete All Notifications
+            </h3>
+            <button onclick="closeDeleteAllModal()" class="text-gray-400 hover:text-gray-600 transition">
+                <i class="fas fa-times w-5 h-5"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <p class="text-gray-700">Are you sure you want to delete all notifications? This action cannot be undone.</p>
+            <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                <button onclick="closeDeleteAllModal()" class="px-4 py-2 text-gray-700 bg-gray-200 font-semibold rounded-lg hover:bg-gray-300 transition">
+                    Cancel
+                </button>
+                <button onclick="confirmDeleteAll()" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">
+                    <i class="fas fa-trash-alt mr-1"></i> Delete All
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+@keyframes scale-in {
+    from {
+        transform: scale(0.9);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes slide-down {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fade-out {
+    from {
+        opacity: 1;
+        transform: scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+}
+
+.animate-scale-in {
+    animation: scale-in 0.2s ease-out;
+}
+
+.animate-slide-down {
+    animation: slide-down 0.3s ease-out;
+}
+
+.animate-fade-out {
+    animation: fade-out 0.2s ease-out;
+}
+
+.notification-item {
+    position: relative;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.notification-item:hover {
+    background-color: #f9fafb;
+}
+
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+</style>
+
+<script>
+function markAsRead(notificationId) {
+    const csrftoken = getCookie('csrftoken') || '{{ csrf_token }}';
+    fetch('{% url "dashboard:mark_notification_read" 0 %}'.replace('0', notificationId), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json',
+        }
+    }).then(() => {
+        // Store that notification was read in localStorage
+        localStorage.setItem('notification_read_' + notificationId, 'true');
+        
+        // Reload notifications if in dropdown
+        if (typeof loadNotifications === 'function') {
+            const dropdown = document.getElementById('notificationsDropdown');
+            if (dropdown) {
+                dropdown.dataset.loaded = 'false';
+            }
+            loadNotifications();
+            // Update badge count
+            if (typeof updateNotificationBadge === 'function') {
+                updateNotificationBadge();
+            }
+        } else {
+            location.reload();
+        }
+    }).catch(error => {
+        console.error('Error marking notification as read:', error);
+    });
+}
+
+function handleNotificationClick(notificationId, redirectUrl) {
+    // Mark as read first, then redirect
+    const csrftoken = getCookie('csrftoken') || '{{ csrf_token }}';
+    
+    fetch('{% url "dashboard:mark_notification_read" 0 %}'.replace('0', notificationId), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json',
+        }
+    }).then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to mark as read');
+        }
+        return response.json();
+    }).then(data => {
+        if (data.success) {
+            // Update badge immediately and store in localStorage
+            if (typeof updateNotificationBadge === 'function') {
+                updateNotificationBadge();
+            }
+            // Store that notification was read
+            localStorage.setItem('notification_read_' + notificationId, 'true');
+            
+            // Then redirect if URL is provided and valid
+            if (redirectUrl && redirectUrl !== 'null' && redirectUrl !== '' && redirectUrl !== 'None') {
+                window.location.href = redirectUrl;
+            } else {
+                // Reload notifications if in dropdown
+                if (typeof loadNotifications === 'function') {
+                    const dropdown = document.getElementById('notificationsDropdown');
+                    if (dropdown) {
+                        dropdown.dataset.loaded = 'false';
+                    }
+                    loadNotifications();
+                }
+            }
+        } else {
+            // Still redirect even if marking as read fails
+            if (redirectUrl && redirectUrl !== 'null' && redirectUrl !== '' && redirectUrl !== 'None') {
+                window.location.href = redirectUrl;
+            }
+        }
+    }).catch(error => {
+        console.error('Error marking notification as read:', error);
+        // Still redirect even if marking as read fails
+        if (redirectUrl && redirectUrl !== 'null' && redirectUrl !== '' && redirectUrl !== 'None') {
+            window.location.href = redirectUrl;
+        }
+    });
+}
+
+function deleteNotification(notificationId, eventObj) {
+    if (eventObj) {
+        eventObj.stopPropagation();
+        eventObj.preventDefault();
+    }
+    const notificationItem = eventObj ? eventObj.target.closest('.notification-item') : document.querySelector(`.notification-item[onclick*="${notificationId}"]`);
+    if (notificationItem) {
+        notificationItem.classList.add('animate-fade-out');
+        setTimeout(() => {
+            // Get CSRF token
+            const csrftoken = getCookie('csrftoken') || '{{ csrf_token }}';
+            
+            fetch('{% url "dashboard:delete_notification" 0 %}'.replace('0', notificationId), {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRFToken': csrftoken,
+                    'Content-Type': 'application/json',
+                }
+            }).then(response => response.json()).then(data => {
+                if (data.success) {
+                    if (typeof loadNotifications === 'function') {
+                        const dropdown = document.getElementById('notificationsDropdown');
+                        if (dropdown) {
+                            dropdown.dataset.loaded = 'false';
+                        }
+                        loadNotifications();
+                        if (typeof updateNotificationBadge === 'function') {
+                            updateNotificationBadge();
+                        }
+                    } else {
+                        location.reload();
+                    }
+                } else {
+                    if (notificationItem) notificationItem.classList.remove('animate-fade-out');
+                    if (typeof showNotification === 'function') {
+                        showNotification(data.message || 'Error deleting notification', 'error');
+                    } else {
+                        alert(data.message || 'Error deleting notification');
+                    }
+                }
+            }).catch(error => {
+                console.error('Error:', error);
+                if (notificationItem) notificationItem.classList.remove('animate-fade-out');
+                if (typeof showNotification === 'function') {
+                    showNotification('Error deleting notification', 'error');
+                } else {
+                    alert('Error deleting notification');
+                }
+            });
+        }, 200);
+    }
+}
+
+// Helper function to get CSRF token from cookies
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function showDeleteAllModal() {
+    const modal = document.getElementById('deleteAllModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeDeleteAllModal() {
+    const modal = document.getElementById('deleteAllModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function confirmDeleteAll() {
+    const csrftoken = getCookie('csrftoken');
+    fetch('{% url "dashboard:delete_all_notifications" %}', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json',
+        }
+    }).then(response => response.json()).then(data => {
+        if (data.success) {
+            closeDeleteAllModal();
+            if (typeof loadNotifications === 'function') {
+                document.getElementById('notificationsDropdown').dataset.loaded = 'false';
+                loadNotifications();
+                if (typeof updateNotificationBadge === 'function') {
+                    updateNotificationBadge();
+                }
+            } else {
+                location.reload();
+            }
+        } else {
+            alert(data.message || 'Error deleting notifications');
+        }
+    }).catch(error => {
+        console.error('Error:', error);
+        alert('Error deleting notifications');
+    });
+}
+
+// Mark all notifications as read
+function markAllAsRead() {
+    const csrftoken = getCookie('csrftoken') || '{{ csrf_token }}';
+    
+    fetch('{% url "dashboard:mark_all_notifications_read" %}', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json',
+        }
+    }).then(response => response.json()).then(data => {
+        if (data.success) {
+            // Reload notifications
+            if (typeof loadNotifications === 'function') {
+                const dropdown = document.getElementById('notificationsDropdown');
+                if (dropdown) {
+                    dropdown.dataset.loaded = 'false';
+                }
+                loadNotifications();
+                // Update badge - it should disappear
+                if (typeof updateNotificationBadge === 'function') {
+                    updateNotificationBadge();
+                }
+            } else {
+                location.reload();
+            }
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Error marking notifications as read', 'error');
+            } else {
+                alert(data.message || 'Error marking notifications as read');
+            }
+        }
+    }).catch(error => {
+        console.error('Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('Error marking notifications as read', 'error');
+        } else {
+            alert('Error marking notifications as read');
+        }
+    });
+}
+
+// Filter notifications by category (placeholder for future implementation)
+function filterNotificationsByCategory(category) {
+    // This is a placeholder - categories can be implemented later
+    // For now, just reload notifications
+    if (typeof loadNotifications === 'function') {
+        const dropdown = document.getElementById('notificationsDropdown');
+        if (dropdown) {
+            dropdown.dataset.loaded = 'false';
+        }
+        loadNotifications();
+    }
+}
+
+// Close modal when clicking outside
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('deleteAllModal');
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeDeleteAllModal();
+            }
+        });
+    }
+});
+</script>
+{% endtimezone %}
