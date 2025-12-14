@@ -1,0 +1,226 @@
+/* Instructor dashboard — mobile-only overrides
+   Load this with: <link rel="stylesheet" href="{% static 'css/instructor_mobile.css' %}" media="(max-width: 767px)">
+   These rules are conservative and scoped to instructor topbar/sidebar IDs and classes so desktop/large screens are unaffected.
+*/
+
+@media (max-width: 767px) {
+  /* Topbar adjustments */
+  #teacher-top-bar { position: fixed; top: 0; left: 0; right: 0; height: 56px !important; }
+  #teacher-top-bar .max-w-full { padding-left: 56px !important; padding-right: 8px !important; }
+  #teacher-top-bar .h-16 { height: 56px !important; }
+  #teacher-top-bar .topbar-brand-text { font-size: 13px !important; max-width: 110px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #teacher-top-bar img { height: 28px !important; width: 28px !important; }
+  /* Show school-name area but keep it small and truncated to avoid overlap */
+  #teacher-top-bar .flex-1 { display: flex !important; justify-content: center !important; align-items: center !important; }
+  #teacher-top-bar .flex-1 .text-sm { font-size: 12px !important; max-width: 120px !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+
+  /* Make the inner topbar flex container space items and prevent overlap */
+  #teacher-top-bar .max-w-full > div.flex.items-center {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+  }
+
+  /* Profile button truncation to avoid overflow */
+  button[onclick="toggleProfileDropdown()"] {
+    min-width: 0 !important;
+    max-width: 180px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    padding: 6px 8px !important;
+  }
+
+  /* Limit the visible width of the user name inside the profile button */
+  button[onclick="toggleProfileDropdown()"] .text-white {
+    max-width: 110px !important;
+    display: inline-block !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  /* Ensure chevron stays visible */
+  button[onclick="toggleProfileDropdown()"] i.fas.fa-chevron-down { margin-left: 6px !important; }
+
+  /* Ensure mobile toggle is always fixed, visible and tappable on phones */
+  .mobile-sidebar-toggle {
+    display: inline-flex !important;
+    position: fixed !important; /* fixed so it's not affected by layout/overflow */
+    left: 10px !important;
+    top: 10px !important;
+    transform: none !important;
+    z-index: 200000 !important; /* extremely high so nothing covers it */
+    width: 44px !important;
+    height: 44px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: rgba(255,255,255,0.06) !important;
+    border-radius: 8px !important;
+    pointer-events: auto !important;
+  }
+  .mobile-sidebar-toggle i { font-size: 18px !important; pointer-events: none !important; }
+
+  /* Allow header to show overflow so fixed toggle isn't clipped */
+  #teacher-top-bar { overflow: visible !important; }
+
+  /* Fallback floating toggle (created by JS) */
+  #mobile-sidebar-fallback {
+    position: fixed !important;
+    top: 8px !important;
+    left: 8px !important;
+    width: 44px !important;
+    height: 44px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    z-index: 10001 !important;
+    background: rgba(255,255,255,0.06) !important;
+    color: #ffffff !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+  }
+
+  /* Make action icons compact */
+  #teacher-top-bar .flex.items-center.space-x-2 { gap: 6px !important; }
+  #teacher-top-bar .text-sm { font-size: 12px !important; }
+
+  /* Reduce topbar profile picture and text sizes */
+  img#topbar-profile-picture, button[onclick="toggleProfileDropdown()"] img#topbar-profile-picture {
+    width: 32px !important;
+    height: 32px !important;
+  }
+  img#topbar-center-profile-picture {
+    width: 20px !important;
+    height: 20px !important;
+  }
+  #topbar-profile-placeholder, #topbar-center-profile-placeholder {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 12px !important;
+  }
+
+  /* Sidebar becomes overlay panel on mobile */
+  #sidebar {
+    position: fixed !important;
+    top: 56px !important;
+    left: 0 !important;
+    height: calc(100vh - 56px) !important;
+    width: 85% !important;
+    max-width: 360px !important;
+    transform: translateX(-100%) !important;
+    transition: transform 280ms ease-in-out !important;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.45) !important;
+    z-index: 9998 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  /* When open (script toggles .open), slide in */
+  #sidebar.open { transform: translateX(0) !important; }
+
+  /* Overlay to dim page when sidebar open - default hidden; JS will set inline style to show */
+  #sidebar-overlay { display: none !important; pointer-events: none !important; z-index: 9997 !important; }
+  #sidebar-overlay.hidden { display: none !important; pointer-events: none !important; }
+
+  /* Reduce sidebar internal paddings and font sizes */
+  #sidebar .px-4, #sidebar .p-6, #sidebar .px-6 { padding-left: 12px !important; padding-right: 12px !important; }
+  #sidebar .sidebar-link { padding: 10px 12px !important; border-radius: 12px !important; }
+  #sidebar .sidebar-link .font-medium, #sidebar .sidebar-link span { font-size: 14px !important; }
+  #sidebar h2 { font-size: 18px !important; }
+
+  /* Profile section compact */
+  #sidebar .w-10, #sidebar .h-10, #sidebar img#sidebar-profile-picture { width: 40px !important; height: 40px !important; }
+  #sidebar .ml-3 .text-sm, #sidebar .ml-3 .text-xs { font-size: 12px !important; }
+  #sidebar .pt-4 { padding-top: 8px !important; }
+
+  /* Make modal max widths smaller on very small screens */
+  .bg-white.rounded-2xl.w-full.max-w-2xl { max-width: 96vw !important; padding: 0.6rem !important; }
+
+  /* Small adjustments for content area to account for fixed topbar */
+  body { -webkit-text-size-adjust: 100% !important; overflow-y: auto !important; }
+  .main-content { display: block !important; overflow-y: auto !important; margin-top: 56px !important; -webkit-overflow-scrolling: touch !important; }
+  .content { margin-top: 0 !important; }
+
+  /* Buttons and taps: make inputs comfortable */
+  button, .btn, .button { min-height: 44px !important; }
+
+  /* Reduce large spacing to fit mobile view */
+  .mb-6 { margin-bottom: 0.9rem !important; }
+  .p-6 { padding: 0.6rem !important; }
+
+  /* Ensure the brand/logo image fits without being cropped */
+  .topbar-brand img {
+    object-fit: contain !important;
+    display: block !important;
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Ensure profile images are circular and cover area */
+  #topbar-profile-picture, #topbar-center-profile-picture {
+    object-fit: cover !important;
+    border-radius: 9999px !important;
+    display: block !important;
+  }
+}
+
+/* Extra small screens: hide brand text entirely to maximize space for controls */
+@media (max-width: 420px) {
+  #teacher-top-bar .topbar-brand-text { display: none !important; }
+  /* also hide center profile area if still visible */
+  #teacher-top-bar .flex-1 { display: none !important; }
+}
+
+/* Additional overrides to ensure the mobile toggle is always tappable above other UI
+   and provide a slightly larger hit area for phones. Placed at end so it wins. */
+@media (max-width: 1024px) {
+  .mobile-sidebar-toggle {
+    width: 56px !important;
+    height: 56px !important;
+    left: 8px !important;
+    top: 8px !important;
+    border-radius: 10px !important;
+    z-index: 999999 !important; /* top-most */
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
+    -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
+    background: rgba(0,0,0,0.28) !important;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35) !important;
+  }
+
+  /* Make sure the toggle's icon doesn't intercept pointer events */
+  .mobile-sidebar-toggle i { pointer-events: none !important; }
+
+  /* Fallback injected toggle should match and be visible */
+  #mobile-sidebar-fallback {
+    width: 56px !important;
+    height: 56px !important;
+    left: 8px !important;
+    top: 8px !important;
+    z-index: 999998 !important;
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
+  }
+
+  /* Ensure header doesn't create a stacking context above the toggle */
+  header#teacher-top-bar {
+    z-index: 1000 !important;
+    -webkit-transform: none !important;
+    transform: none !important;
+  }
+
+  /* Ensure main page content sits below overlay/sidebar when opened */
+  .main-content { z-index: 0 !important; }
+}
+
+/* Make the toggle visually prominent by default so it's easy to spot on devices */
+@media (max-width: 1024px) {
+  .mobile-sidebar-toggle {
+    background: rgba(190,129,153,0.95) !important;
+    color: #fff !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+  }
+}

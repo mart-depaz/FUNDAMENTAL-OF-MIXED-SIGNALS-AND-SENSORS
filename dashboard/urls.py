@@ -76,6 +76,10 @@ urlpatterns = [
     path('enroll-course/', views.enroll_course_view, name='enroll_course'),
     path('verify-enrollment-code/', views.verify_enrollment_code_view, name='verify_enrollment_code'),
     path('unenroll-course/<int:enrollment_id>/', views.unenroll_course_view, name='unenroll_course'),
+    # Student trash / dropped enrollments
+    path('student/dropped-enrollments/', views.student_dropped_enrollments_view, name='student_dropped_enrollments'),
+    path('student/enrollments/<int:enrollment_id>/restore/', views.student_restore_enrollment_view, name='student_restore_enrollment'),
+    path('student/enrollments/<int:enrollment_id>/permanent-delete/', views.student_permanent_delete_enrollment_view, name='student_permanent_delete_enrollment'),
     path('', views.home_view, name='home'),
     # Admin dashboard routes
     path('admin-dashboard/', admin_views.admin_dashboard_view, name='admin_dashboard'),

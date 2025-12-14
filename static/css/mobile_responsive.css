@@ -115,10 +115,105 @@
     min-height: 44px !important;
     font-size: 0.95rem !important;
   }
+
+  /* Sidebar toggle visibility (phones) - ensure student dashboard shows the toggle */
+  .sidebar-toggle, .menu-toggle, .hamburger, #sidebarToggle, .drawer-toggle, .toggle-sidebar {
+    display: inline-flex !important;
+    position: fixed !important;
+    top: 12px !important;
+    left: 12px !important;
+    z-index: 9999 !important;
+    background: rgba(0,0,0,0.6) !important;
+    color: #ffffff !important;
+    border: none !important;
+    padding: 8px 10px !important;
+    border-radius: 6px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    box-sizing: border-box !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+  }
+
+  .sidebar-toggle.hidden, .menu-toggle.hidden, .sidebar-toggle[aria-hidden="true"], .menu-toggle[aria-hidden="true"] {
+    display: inline-flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  body.sidebar-open .sidebar-toggle, body.sidebar-open .menu-toggle {
+    left: calc(var(--sidebar-width, 240px) + 16px) !important;
+  }
+
+  header .sidebar-toggle, header .menu-toggle {
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    margin-right: 8px !important;
+  }
+
+  .sidebar-toggle .icon, .menu-toggle .icon, .hamburger .icon {
+    font-size: 18px !important;
+    line-height: 1 !important;
+  }
 }
 
 /* Very small screens tweaks */
 @media (max-width: 420px) {
   .px-3.py-1.5 { padding: 0.5rem 0.6rem !important; }
   .open-instructor-scanner { font-size: 0.86rem !important; }
+}
+
+/* Additional container-focused media queries to ensure clean stacking and spacing
+   for the instructor home dashboard (hero, stat cards, columns, quick actions). */
+@media (max-width: px) {
+  /* Ensure main content and page containers are full width and readable */
+  main#main-content, .min-h-screen, .p-4, .p-6, .p-8, .flex-grow {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    box-sizing: border-box !important;
+    margin-left: 0 !important;
+  }
+
+  /* Hero card: stack elements and reduce padding */
+  .bg-gradient-to-r.rounded-3xl {
+    display: block !important;
+    padding: 1rem !important;
+    border-radius: 12px !important;
+  }
+  .bg-gradient-to-r.rounded-3xl .flex { flex-direction: column !important; gap: 0.5rem !important; }
+
+  /* Stat cards: ensure they collapse to single or two columns depending on width */
+  .grid.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-4,
+  .grid.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-3 {
+    grid-template-columns: repeat(1, 1fr) !important;
+    gap: 0.75rem !important;
+  }
+  .rounded-2xl.p-5 { padding: 0.85rem !important; }
+
+  /* Detailed columns: make three-column section collapse neatly */
+  section.grid.grid-cols-1.xl\:grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Quick Actions: allow 2 columns on medium then 1 column on small screens */
+  .grid.grid-cols-1.sm\:grid-cols-2.lg\:grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 0.6rem !important;
+  }
+
+  /* Ensure avatars and icon blocks scale down */
+  .w-24.h-24 { width: 56px !important; height: 56px !important; }
+  .w-12.h-12 { width: 40px !important; height: 40px !important; }
+
+  /* Make table/list containers horizontally scrollable to avoid layout breaks */
+  .table-responsive, .overflow-x-auto { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+
+  /* Top bar & sidebar adjustments */
+  #teacher-topbar, #teacher-top-bar { padding: 0.6rem !important; gap: 0.5rem !important; }
+  .sidebar-toggle, .menu-toggle { top: 8px !important; left: 8px !important; }
 }

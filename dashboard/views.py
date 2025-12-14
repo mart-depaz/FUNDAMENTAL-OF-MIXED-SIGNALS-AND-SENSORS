@@ -968,6 +968,62 @@ def student_todays_status_view(request):
                 focus_course.qr_code = None
                 focus_course.save(update_fields=['attendance_status', 'qr_code'])
     
+    # Compute whether to show the transient "Your Status" box.
+    # Rules:
+    # - If the specific schedule instance has an end_dt and now > end_dt => do not show.
+    # - Otherwise, show only when there's an AttendanceRecord for this student for that instance
+    #   and the current time falls within the instance window (if available).
+    show_student_status = False
+    try:
+        start_dt = focus_course_next_entry.get('start_dt') if focus_course_next_entry else None
+        end_dt = focus_course_next_entry.get('end_dt') if focus_course_next_entry else None
+
+        # Derive end_dt from CourseSchedule or course-level end_time if missing
+        if start_dt and not end_dt and focus_course:
+            try:
+                day_label = focus_course_next_entry.get('day_label') if focus_course_next_entry else None
+                if day_label:
+                    day_map = {
+                        'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 'Thursday': 'Thu',
+                        'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'
+                    }
+                    schedule_day = day_map.get(day_label, day_label)
+                    day_schedule = CourseSchedule.objects.filter(course=focus_course, day=schedule_day).first()
+                    if day_schedule and getattr(day_schedule, 'end_time', None):
+                        et = day_schedule.end_time
+                        end_dt = start_dt.replace(hour=et.hour, minute=et.minute)
+                if not end_dt and getattr(focus_course, 'end_time', None):
+                    et = focus_course.end_time
+                    end_dt = start_dt.replace(hour=et.hour, minute=et.minute)
+            except Exception:
+                end_dt = end_dt
+
+        # If we have an end_dt and it's already passed, do not show
+        instance_finished = False
+        if end_dt:
+            try:
+                if now_ph > end_dt:
+                    instance_finished = True
+            except Exception:
+                instance_finished = course_finished
+
+        if instance_finished:
+            show_student_status = False
+            # propagate instance_finished into course_finished so templates can show finished message
+            course_finished = course_finished or instance_finished
+        else:
+            if student_attendance_today:
+                if start_dt and end_dt:
+                    show_student_status = (start_dt <= now_ph <= end_dt)
+                elif start_dt:
+                    show_student_status = (now_ph.date() == start_dt.date() and now_ph >= start_dt)
+                else:
+                    show_student_status = not course_finished
+            else:
+                show_student_status = False
+    except Exception:
+        show_student_status = (student_attendance_today is not None and not course_finished)
+
     context = {
         'school_admin': school_admin,
         'unread_notifications': unread_notifications,
@@ -977,7 +1033,92 @@ def student_todays_status_view(request):
         'schedule_entries': schedule_entries,
         'student_attendance_today': student_attendance_today,
         'course_finished': course_finished,  # Flag to show message when schedule finishes
+        'show_student_status': show_student_status,
     }
+    # If we have a focus schedule and it's open, compute present window expiry (ms) and duration
+    try:
+        present_expiry_ms = None
+        present_duration_minutes = None
+        focus_schedule_identifier = None
+        if focus_course_next_entry:
+            # Try to find schedule object for the focused course/day
+            focus_schedule_identifier = focus_course_next_entry.get('schedule_id')
+            # Determine schedule object: prefer CourseSchedule by day matching
+            from django.utils import timezone
+            try:
+                day_label = focus_course_next_entry.get('day_label')
+                day_map = {
+                    'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 'Thursday': 'Thu',
+                    'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'
+                }
+                day_code = day_map.get(day_label, None)
+            except Exception:
+                day_code = None
+
+            sched_obj = None
+            try:
+                if day_code and focus_course:
+                    sched_obj = CourseSchedule.objects.filter(course=focus_course, day__iexact=day_code).first()
+            except Exception:
+                sched_obj = None
+
+            # Get present duration from schedule or course
+            if sched_obj and getattr(sched_obj, 'attendance_present_duration', None):
+                present_duration_minutes = int(getattr(sched_obj, 'attendance_present_duration'))
+            else:
+                present_duration_minutes = int(getattr(focus_course, 'attendance_present_duration', 0) or 0)
+
+            # Determine QR opened timestamp (schedule-level or course-level)
+            qr_opened_at = None
+            try:
+                if sched_obj and getattr(sched_obj, 'qr_code_opened_at', None):
+                    qr_opened_at = getattr(sched_obj, 'qr_code_opened_at')
+                elif getattr(focus_course, 'qr_code_opened_at', None):
+                    qr_opened_at = getattr(focus_course, 'qr_code_opened_at')
+            except Exception:
+                qr_opened_at = None
+
+            # Only show present-window countdown when the instructor actually opened it
+            # (i.e., a schedule-level qr_code_opened_at exists for this specific occurrence).
+            # Do NOT fallback to start_dt or to timezone.now() as that causes countdowns
+            # to appear even when the instructor never opened the present window.
+            qr_opened_at = None
+            try:
+                # Only consider schedule-level object (sched_obj) which was looked up above.
+                if sched_obj and getattr(sched_obj, 'qr_code_opened_at', None):
+                    # If schedule has a qr_code_date set, ensure it matches the occurrence date
+                    try:
+                        occ_date = focus_course_next_entry.get('start_dt').date() if focus_course_next_entry.get('start_dt') else None
+                    except Exception:
+                        occ_date = None
+
+                    sched_qr_date = getattr(sched_obj, 'qr_code_date', None)
+                    if sched_qr_date and occ_date:
+                        # Only use the opened timestamp when the QR code was generated for this occurrence date
+                        if sched_qr_date == occ_date:
+                            qr_opened_at = getattr(sched_obj, 'qr_code_opened_at')
+                    else:
+                        # If no qr_code_date to compare (legacy), be conservative and require qr_code_opened_at
+                        qr_opened_at = getattr(sched_obj, 'qr_code_opened_at')
+            except Exception:
+                qr_opened_at = None
+
+            # If we have an explicit opened timestamp and a configured duration, compute expiry
+            if qr_opened_at and present_duration_minutes and present_duration_minutes > 0:
+                try:
+                    expiry = qr_opened_at + timezone.timedelta(minutes=int(present_duration_minutes))
+                    # convert to ms since epoch
+                    present_expiry_ms = int(expiry.timestamp() * 1000)
+                except Exception:
+                    present_expiry_ms = None
+
+        context['focus_present_window_expiry_ms'] = present_expiry_ms
+        context['focus_present_duration_minutes'] = present_duration_minutes
+        context['focus_present_schedule_id'] = focus_schedule_identifier
+    except Exception:
+        context['focus_present_window_expiry_ms'] = None
+        context['focus_present_duration_minutes'] = None
+        context['focus_present_schedule_id'] = None
     return render(request, 'dashboard/student/student_todays_status.html', context)
 
 @login_required
@@ -1030,6 +1171,15 @@ def student_attendance_log_view(request):
             selected_course = next((c for c in enrolled_courses if c.id == int(selected_course_id)), None)
             if selected_course:
                 # Get attendance records for selected course
+                # Ensure any missing absent records are finalized for today's schedules
+                try:
+                    # finalize_all_course_attendance is idempotent and will create absent records
+                    # for students who didn't scan today; pass the course instructor for notifications
+                    finalize_all_course_attendance(selected_course, getattr(selected_course, 'instructor', None))
+                except Exception:
+                    # If finalization fails, continue and allow manual inspection
+                    logger.exception('finalize_all_course_attendance failed')
+
                 records_qs = AttendanceRecord.objects.filter(
                     student=user,
                     course=selected_course
@@ -1038,8 +1188,31 @@ def student_attendance_log_view(request):
                 # Apply status filter if provided
                 if status_filter:
                     records_qs = records_qs.filter(status=status_filter)
-                
+
                 attendance_records = records_qs
+
+                # Annotate each attendance record with whether the schedule for that
+                # record's day was marked as postponed. This allows templates to
+                # display a 'Postponed' label instead of normal statuses.
+                try:
+                    for rec in attendance_records:
+                        rec.is_postponed = False
+                        try:
+                            # Prefer day code stored on the record (e.g., 'Mon', 'Tue')
+                            day_code = getattr(rec, 'schedule_day', None)
+                            if day_code:
+                                sched = selected_course.course_schedules.filter(day__iexact=day_code).first()
+                                if sched and getattr(sched, 'attendance_status', '') == 'postponed':
+                                    rec.is_postponed = True
+                                    continue
+                            # Fallback: if course-level attendance_status is postponed
+                            if getattr(selected_course, 'attendance_status', '') == 'postponed':
+                                rec.is_postponed = True
+                        except Exception:
+                            rec.is_postponed = False
+                except Exception:
+                    # If anything goes wrong, leave records unannotated (templates will behave normally)
+                    pass
         except (ValueError, TypeError):
             selected_course = None
             attendance_records = []
@@ -1841,25 +2014,66 @@ def finalize_all_course_attendance(course, instructor):
         
         if not has_attendance:
             # Student didn't scan - mark as absent for all today's schedules
-            for schedule in today_schedules:
-                schedule_day_str = schedule.day_of_week or schedule.day
+            # If there are explicit CourseSchedule rows for today, use them.
+            # Otherwise, fallback to course-level `days` (synchronized schedules) and create
+            # a single absent record for today's day code (e.g., 'Mon').
+            schedules_to_mark = list(today_schedules) if today_schedules.exists() else []
+
+            # Fallback: if no day-specific schedules but course.days includes today, use abbrev
+            if not schedules_to_mark:
+                try:
+                    course_days_raw = getattr(course, 'days', '') or ''
+                    days_list = [d.strip() for d in course_days_raw.split(',') if d.strip()]
+                    if today_day in days_list or today_day_abbrev in days_list:
+                        # Use the abbreviated day code as schedule placeholder
+                        schedules_to_mark = [today_day_abbrev]
+                except Exception:
+                    schedules_to_mark = []
+
+            for schedule in schedules_to_mark:
+                # schedule may be a CourseSchedule instance or a short day string
+                if hasattr(schedule, 'day_of_week') or hasattr(schedule, 'day'):
+                    schedule_day_raw = getattr(schedule, 'day_of_week', None) or getattr(schedule, 'day', None)
+                else:
+                    schedule_day_raw = str(schedule)
+
+                # Normalize schedule day to short form (Mon, Tue, Wed, Thu, Fri, Sat, Sun)
+                try:
+                    sd = str(schedule_day_raw).strip()
+                    day_map_norm = {
+                        'Monday': 'Mon', 'Mon': 'Mon', 'M': 'Mon',
+                        'Tuesday': 'Tue', 'Tue': 'Tue', 'T': 'Tue',
+                        'Wednesday': 'Wed', 'Wed': 'Wed', 'W': 'Wed',
+                        'Thursday': 'Thu', 'Thu': 'Thu', 'Th': 'Thu',
+                        'Friday': 'Fri', 'Fri': 'Fri', 'F': 'Fri',
+                        'Saturday': 'Sat', 'Sat': 'Sat', 'S': 'Sat',
+                        'Sunday': 'Sun', 'Sun': 'Sun', 'Su': 'Sun'
+                    }
+                    schedule_day_str = day_map_norm.get(sd, sd)
+                except Exception:
+                    schedule_day_str = str(schedule_day_raw)
+
                 existing_record = AttendanceRecord.objects.filter(
                     course=course,
                     student=enrollment.student,
                     attendance_date=today,
                     schedule_day=schedule_day_str
                 ).first()
-                
+
                 if not existing_record:
-                    AttendanceRecord.objects.create(
-                        course=course,
-                        student=enrollment.student,
-                        enrollment=enrollment,
-                        attendance_date=today,
-                        schedule_day=schedule_day_str,
-                        attendance_time=None,
-                        status='absent'
-                    )
+                    try:
+                        AttendanceRecord.objects.create(
+                            course=course,
+                            student=enrollment.student,
+                            enrollment=enrollment,
+                            attendance_date=today,
+                            schedule_day=schedule_day_str,
+                            attendance_time=None,
+                            status='absent'
+                        )
+                        logger.info(f"[FINALIZE] created ABSENT record: course={course.id} student={enrollment.student.id} date={today} schedule_day={schedule_day_str}")
+                    except Exception as e:
+                        logger.error(f"[FINALIZE] failed creating absent record for course={getattr(course,'id',None)} student={getattr(enrollment.student,'id',None)} date={today} schedule_day={schedule_day_str}: {e}")
             
             # Create notification for student
             try:
@@ -1975,14 +2189,27 @@ def instructor_update_attendance_status_view(request, course_id):
                     pass
 
                 # When opening attendance, record the exact open timestamp (qr/session opened)
+                # Only set qr_code_opened_at when the instructor explicitly provided a present_duration
+                # (i.e., they confirmed a present-window). This prevents accidental countdowns
+                # when attendance is simply toggled to 'open' without confirming a present window.
                 from django.utils import timezone
-                if status == 'open':
-                    try:
-                        day_schedule.qr_code_opened_at = timezone.now()
-                        # Also set qr_code_date to today for consistency
-                        day_schedule.qr_code_date = timezone.localtime(timezone.now()).date()
-                    except Exception:
-                        pass
+                try:
+                    pd_raw = data.get('present_duration')
+                    pd_val = None
+                    if pd_raw is not None:
+                        try:
+                            pd_val = int(pd_raw)
+                        except Exception:
+                            pd_val = None
+                    if status == 'open' and pd_val and pd_val > 0:
+                        try:
+                            day_schedule.qr_code_opened_at = timezone.now()
+                            # Also set qr_code_date to today for consistency
+                            day_schedule.qr_code_date = timezone.localtime(timezone.now()).date()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
 
                 # Save all modified fields
                 save_fields = ['attendance_status', 'attendance_present_duration', 'qr_code_opened_at', 'qr_code_date']
@@ -2022,11 +2249,28 @@ def instructor_update_attendance_status_view(request, course_id):
                 except Exception as e:
                     logger.error(f"Error creating attendance control update notifications: {str(e)}")
                 
-                # Return response with updated status for client verification
+                # Compute present window expiry (ms) if we recorded an opened timestamp and duration
+                present_expiry_ms = None
+                try:
+                    from django.utils import timezone
+                    if getattr(day_schedule, 'qr_code_opened_at', None):
+                        pd = getattr(day_schedule, 'attendance_present_duration', None) or 0
+                        try:
+                            pd_int = int(pd)
+                        except Exception:
+                            pd_int = 0
+                        if pd_int and pd_int > 0:
+                            expiry = getattr(day_schedule, 'qr_code_opened_at') + timezone.timedelta(minutes=int(pd_int))
+                            present_expiry_ms = int(expiry.timestamp() * 1000)
+                except Exception:
+                    present_expiry_ms = None
+
+                # Return response with updated status and optional expiry for client verification
                 response_data = {
                     'success': True,
                     'message': f'Attendance status updated to {status_display} for {day_display}',
-                    'updated_status': day_schedule.attendance_status
+                    'updated_status': day_schedule.attendance_status,
+                    'present_expiry_ms': present_expiry_ms
                 }
                 logger.info(f"[ATTENDANCE_UPDATE] returning day_schedule response: {response_data}")
                 return JsonResponse(response_data)
@@ -2050,12 +2294,24 @@ def instructor_update_attendance_status_view(request, course_id):
             pass
 
         # When opening attendance at course-level, record open timestamp
+        # Only set qr_code_opened_at when instructor explicitly provided a present_duration
+        # (i.e., confirmed the present window). Prevents countdowns when simply opening attendance.
         from django.utils import timezone
-        if status == 'open':
-            try:
-                course.qr_code_opened_at = timezone.now()
-            except Exception:
-                pass
+        try:
+            pd_raw = data.get('present_duration')
+            pd_val = None
+            if pd_raw is not None:
+                try:
+                    pd_val = int(pd_raw)
+                except Exception:
+                    pd_val = None
+            if status == 'open' and pd_val and pd_val > 0:
+                try:
+                    course.qr_code_opened_at = timezone.now()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         # Save course with its updated fields
         course.save()
@@ -2092,11 +2348,28 @@ def instructor_update_attendance_status_view(request, course_id):
         except Exception as e:
             logger.error(f"Error creating attendance control update notifications: {str(e)}")
         
-        # Return response with updated status for client verification
+        # Compute present window expiry (ms) if we recorded an opened timestamp and duration
+        present_expiry_ms = None
+        try:
+            from django.utils import timezone
+            if getattr(course, 'qr_code_opened_at', None):
+                pd = getattr(course, 'attendance_present_duration', None) or 0
+                try:
+                    pd_int = int(pd)
+                except Exception:
+                    pd_int = 0
+                if pd_int and pd_int > 0:
+                    expiry = getattr(course, 'qr_code_opened_at') + timezone.timedelta(minutes=int(pd_int))
+                    present_expiry_ms = int(expiry.timestamp() * 1000)
+        except Exception:
+            present_expiry_ms = None
+
+        # Return response with updated status and optional expiry for client verification
         response_data = {
             'success': True,
             'message': f'Attendance status updated to {status.replace("_", " ").title()}',
-            'updated_status': course.attendance_status
+            'updated_status': course.attendance_status,
+            'present_expiry_ms': present_expiry_ms
         }
         logger.info(f"[ATTENDANCE_UPDATE] returning course response: {response_data}")
         return JsonResponse(response_data)
@@ -7296,6 +7569,89 @@ def instructor_permanent_delete_enrollment_view(request, enrollment_id):
         logger.error(f"Error permanently deleting enrollment: {str(e)}")
         return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
 
+
+@login_required
+@require_http_methods(["GET"])
+def student_dropped_enrollments_view(request):
+    """List dropped (soft-deleted) enrollments for the current student"""
+    user = request.user
+    if not user.is_authenticated or not user.is_student:
+        return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
+
+    try:
+        from django.utils import timezone
+        now = timezone.now()
+
+        dropped = CourseEnrollment.objects.filter(student=user, deleted_at__isnull=False).select_related('course').order_by('-deleted_at')
+        enrollments = []
+        for e in dropped:
+            days_left = None
+            if e.deleted_at:
+                days_until = 14 - (now - e.deleted_at).days
+                days_left = max(0, days_until)
+
+            enrollments.append({
+                'id': e.id,
+                'course_id': e.course.id if e.course else None,
+                'course_code': e.course.code if e.course else 'N/A',
+                'course_name': e.course.name if e.course else 'N/A',
+                'section': e.course.section if e.course else '',
+                'dropped_date': e.deleted_at.strftime('%B %d, %Y') if e.deleted_at else 'N/A',
+                'days_left': days_left,
+            })
+
+        return JsonResponse({'success': True, 'dropped_enrollments': enrollments, 'count': len(enrollments)})
+    except Exception as e:
+        logger.error(f"Error fetching student dropped enrollments: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'}, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def student_restore_enrollment_view(request, enrollment_id):
+    """Restore a student's dropped enrollment"""
+    user = request.user
+    if not user.is_authenticated or not user.is_student:
+        return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
+
+    enrollment = get_object_or_404(CourseEnrollment, id=enrollment_id, deleted_at__isnull=False)
+
+    # Verify ownership
+    if enrollment.student != user:
+        return JsonResponse({'success': False, 'message': 'You can only restore your own enrollments.'}, status=403)
+
+    try:
+        enrollment.deleted_at = None
+        enrollment.is_active = True
+        enrollment.save()
+        return JsonResponse({'success': True, 'message': f'Enrollment for "{enrollment.full_name}" restored successfully!'})
+    except Exception as e:
+        logger.error(f"Error restoring enrollment: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
+
+@login_required
+@require_http_methods(["POST"])
+def student_permanent_delete_enrollment_view(request, enrollment_id):
+    """Permanently delete a student's dropped enrollment"""
+    user = request.user
+    if not user.is_authenticated or not user.is_student:
+        return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
+
+    enrollment = get_object_or_404(CourseEnrollment, id=enrollment_id, deleted_at__isnull=False)
+
+    # Verify ownership
+    if enrollment.student != user:
+        return JsonResponse({'success': False, 'message': 'You can only delete your own enrollments.'}, status=403)
+
+    try:
+        course_name = enrollment.full_name
+        enrollment.delete()
+        return JsonResponse({'success': True, 'message': f'Enrollment permanently deleted.'})
+    except Exception as e:
+        logger.error(f"Error permanently deleting enrollment: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
 @login_required
 def instructor_attendance_reports_view(request):
     """Attendance reports view for instructors"""
@@ -7313,12 +7669,13 @@ def instructor_attendance_reports_view(request):
         ).first()
     
     # Get all active courses for this instructor - group multi-section courses
+    # Order by creation time so the first course added appears first (preserve manage-courses behavior)
     all_courses = Course.objects.filter(
         instructor=user,
         is_active=True,
         deleted_at__isnull=True,
         is_archived=False
-    ).select_related('program', 'instructor').order_by('code', 'name', 'semester', 'school_year')
+    ).select_related('program', 'instructor').order_by('created_at')
     
     # Group courses by code, name, semester, school_year (multi-section as one)
     grouped_courses_map = {}
@@ -7343,7 +7700,56 @@ def instructor_attendance_reports_view(request):
             if section_upper not in grouped_courses_map[key]['sections']:
                 grouped_courses_map[key]['sections'].append(section_upper)
     
-    grouped_courses = sorted(grouped_courses_map.values(), key=lambda x: (x['code'], x['name']))
+    # Preserve insertion order so the first-added representative stays first
+    # grouped_courses_map is populated in the order of `all_courses` (which is ordered by created_at)
+    grouped_courses = list(grouped_courses_map.values())
+    # Build display gradients/colors for grouped courses so templates can reuse
+    try:
+        for rep in grouped_courses:
+            try:
+                # Find actual Course objects that belong to this grouped key
+                group_list = [c for c in all_courses if (
+                    (c.code or '').strip().upper() == (rep.get('code') or '').strip().upper() and
+                    (c.name or '').strip().upper() == (rep.get('name') or '').strip().upper() and
+                    (c.semester or '').strip().lower() == (rep.get('semester') or '').strip().lower() and
+                    (c.school_year or '').strip() == (rep.get('school_year') or '').strip()
+                )]
+
+                colors = [getattr(g, 'color', None) for g in group_list if (getattr(g, 'color', None) or '').strip()]
+                if not colors:
+                    # fallback to representative course color if available
+                    if group_list:
+                        colors = [(group_list[0].color or '#3C4770')]
+                    else:
+                        colors = ['#3C4770']
+
+                # Keep unique colors preserving order
+                unique_colors = []
+                for c in colors:
+                    if c and c not in unique_colors:
+                        unique_colors.append(c)
+                if not unique_colors:
+                    unique_colors = ['#3C4770']
+
+                # Build multi-stop gradient
+                stops = []
+                if len(unique_colors) == 1:
+                    stops = [f"{unique_colors[0]} 0%", f"{unique_colors[0]} 100%"]
+                else:
+                    total = len(unique_colors) - 1
+                    for idx, col in enumerate(unique_colors):
+                        pct = int(round((idx / total) * 100))
+                        stops.append(f"{col} {pct}%")
+
+                rep['display_gradient'] = f"linear-gradient(135deg, {', '.join(stops)})"
+                rep['display_color_start'] = unique_colors[0]
+                rep['display_color_end'] = unique_colors[1] if len(unique_colors) > 1 else unique_colors[0]
+            except Exception:
+                rep.setdefault('display_gradient', 'linear-gradient(135deg, #3C4770 0%, #447294 100%)')
+                rep.setdefault('display_color_start', '#3C4770')
+                rep.setdefault('display_color_end', '#447294')
+    except Exception:
+        pass
     
     # Get filter parameters
     course_id = request.GET.get('course', '').strip()
@@ -7607,8 +8013,55 @@ def instructor_attendance_reports_view(request):
                     
                     current += timedelta(days=1)
                 
-                # Combine all record dates + future dates
-                dates_to_check = sorted(list(all_record_dates.union(future_dates_set)))
+                # Combine all record dates + future dates and normalize to date objects
+                combined_dates = set()
+                for d in all_record_dates.union(future_dates_set):
+                    try:
+                        # If it's a datetime, convert to date
+                        if hasattr(d, 'date') and not isinstance(d, type(today)):
+                            combined_dates.add(d.date())
+                        else:
+                            combined_dates.add(d)
+                    except Exception:
+                        try:
+                            combined_dates.add(d)
+                        except Exception:
+                            continue
+                dates_to_check = sorted(list(combined_dates))
+
+                # If a specific date filter is active, restrict processing to that date only
+                if date_filter:
+                    try:
+                        from datetime import datetime as _dt
+                        filter_date_obj = _dt.strptime(date_filter, '%Y-%m-%d').date()
+                        dates_to_check = [filter_date_obj]
+                    except Exception:
+                        # keep computed dates if parsing fails
+                        pass
+
+                # Determine which dates were marked as postponed for the schedule
+                postponed_dates_set = set()
+                try:
+                    # Map weekday index to CourseSchedule.day code
+                    weekday_to_code = {0: 'Mon', 1: 'Tue', 2: 'Wed', 3: 'Thu', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
+                    for d in dates_to_check:
+                        # For each date, check the schedules for courses_to_process to see if any day-schedule
+                        # for that weekday is explicitly marked as 'postponed'
+                        wd = d.weekday()
+                        day_code = weekday_to_code.get(wd)
+                        if not day_code:
+                            continue
+                        for course in courses_to_process:
+                            try:
+                                # Look for a CourseSchedule for this day
+                                sched = course.course_schedules.filter(day__iexact=day_code).first()
+                                if sched and getattr(sched, 'attendance_status', '') == 'postponed':
+                                    postponed_dates_set.add(d.strftime('%Y-%m-%d'))
+                                    break
+                            except Exception:
+                                continue
+                except Exception:
+                    postponed_dates_set = set()
                 
                 # Build attendance data - include all enrolled students, mark absent if no record
                 # Create a map of attendance records by (student_id, date)
@@ -7671,24 +8124,89 @@ def instructor_attendance_reports_view(request):
                             # - Absent: No scan at all (handled below)
                             final_status = record.status
                             
-                            # Re-evaluate status based on course time
-                            # Rules: Present if scanned within course time, Late if after course end time
-                            if record.attendance_time and attendance_start_time and attendance_end_time:
-                                # Convert time objects to comparable format
-                                from datetime import datetime, time as dtime
+                            # Re-evaluate status based on present-window (preferred) or course time
+                            if record.attendance_time:
+                                from datetime import datetime, time as dtime, timedelta
                                 scan_time = record.attendance_time
                                 if isinstance(scan_time, dtime):
                                     scan_dt = datetime.combine(date_to_check, scan_time)
-                                    start_dt = datetime.combine(date_to_check, attendance_start_time)
-                                    end_dt = datetime.combine(date_to_check, attendance_end_time)
-                                    
-                                    if start_dt <= scan_dt <= end_dt:
-                                        # Within course time - present
-                                        final_status = 'present'
-                                    elif scan_dt > end_dt:
-                                        # Past course end time - late
-                                        final_status = 'late'
-                                    # If before start time, keep original status
+
+                                    # Determine present-cutoff using present_duration (schedule or course) and qr_opened_at if available
+                                    present_duration_minutes = None
+                                    schedule_obj = None
+                                    try:
+                                        # Attempt to find CourseSchedule for this date (by weekday)
+                                        weekday_map = {0: 'Mon', 1: 'Tue', 2: 'Wed', 3: 'Thu', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
+                                        wd = date_to_check.weekday()
+                                        day_code = weekday_map.get(wd)
+                                        schedule_obj = record.course.course_schedules.filter(day__iexact=day_code).first()
+                                    except Exception:
+                                        schedule_obj = None
+
+                                    if schedule_obj and getattr(schedule_obj, 'attendance_present_duration', None):
+                                        present_duration_minutes = schedule_obj.attendance_present_duration
+                                    elif getattr(record.course, 'attendance_present_duration', None):
+                                        present_duration_minutes = record.course.attendance_present_duration
+
+                                    qr_opened_at = None
+                                    try:
+                                        if schedule_obj and getattr(schedule_obj, 'qr_code_opened_at', None):
+                                            qr_opened_at = schedule_obj.qr_code_opened_at
+                                        elif getattr(record.course, 'qr_code_opened_at', None):
+                                            qr_opened_at = record.course.qr_code_opened_at
+                                    except Exception:
+                                        qr_opened_at = None
+
+                                    # If we have a present duration, compute cutoff and decide present/late
+                                    if present_duration_minutes:
+                                        try:
+                                            if qr_opened_at:
+                                                present_cutoff_dt = qr_opened_at + timedelta(minutes=int(present_duration_minutes))
+                                            elif schedule_obj and getattr(schedule_obj, 'start_time', None):
+                                                from datetime import datetime as _dt
+                                                schedule_start = schedule_obj.start_time
+                                                present_cutoff_dt = _dt.combine(date_to_check, schedule_start) + timedelta(minutes=int(present_duration_minutes))
+                                                # make timezone-aware if PH_TZ available
+                                                try:
+                                                    if PH_TZ:
+                                                        if hasattr(PH_TZ, 'localize'):
+                                                            import pytz as _pytz
+                                                            present_cutoff_dt = _pytz.timezone('Asia/Manila').localize(present_cutoff_dt)
+                                                        else:
+                                                            present_cutoff_dt = present_cutoff_dt.replace(tzinfo=PH_TZ)
+                                                except Exception:
+                                                    pass
+                                            else:
+                                                present_cutoff_dt = None
+
+                                            if present_cutoff_dt:
+                                                # Compare using timezone-aware datetimes if possible
+                                                if scan_dt <= present_cutoff_dt:
+                                                    final_status = 'present'
+                                                else:
+                                                    final_status = 'late'
+                                                # finished decision for present-window
+                                            else:
+                                                # Fallback: use course start/end logic
+                                                if attendance_start_time and attendance_end_time:
+                                                    start_dt = datetime.combine(date_to_check, attendance_start_time)
+                                                    end_dt = datetime.combine(date_to_check, attendance_end_time)
+                                                    if start_dt <= scan_dt <= end_dt:
+                                                        final_status = 'present'
+                                                    elif scan_dt > end_dt:
+                                                        final_status = 'late'
+                                        except Exception as e:
+                                            logger.debug(f"[REPORT] present-window check failed: {e}")
+                                            # Fall back to original logic below
+                                    else:
+                                        # No present window configured; fall back to course time logic
+                                        if attendance_start_time and attendance_end_time:
+                                            start_dt = datetime.combine(date_to_check, attendance_start_time)
+                                            end_dt = datetime.combine(date_to_check, attendance_end_time)
+                                            if start_dt <= scan_dt <= end_dt:
+                                                final_status = 'present'
+                                            elif scan_dt > end_dt:
+                                                final_status = 'late'
                             
                             # Get course schedule times for this date
                             course_start_time = None
@@ -7821,25 +8339,45 @@ def instructor_attendance_reports_view(request):
                     # Keep overall order by date descending; stable sort will preserve insertion order within same date
                     attendance_data.sort(key=lambda x: x['attendance_date'], reverse=True)
                 
-                # Group attendance data by date for folder-style display
+                # Group attendance data by normalized date objects for folder-style display
                 from collections import defaultdict
                 attendance_by_date = defaultdict(list)
-                for record in attendance_data:
-                    attendance_by_date[record['attendance_date']].append(record)
 
-                # Sort students alphabetically within each date, then convert to list of tuples
-                for dt, recs in attendance_by_date.items():
-                    # Sort records within the date by student surname (A->Z)
-                    def _rec_surname_key(r):
-                        name = (r.get('student_name') or '').strip()
-                        if not name:
-                            return ''
-                        parts = name.split()
-                        return parts[-1].lower()
-                    recs.sort(key=_rec_surname_key)
+                # Ensure attendance_date values are date objects (not datetimes or strings)
+                for record in attendance_data:
+                    dt_val = record.get('attendance_date')
+                    try:
+                        # If it's a datetime, convert to date
+                        if hasattr(dt_val, 'date'):
+                            dt_key = dt_val.date()
+                        else:
+                            dt_key = dt_val
+                    except Exception:
+                        dt_key = dt_val
+                    attendance_by_date[dt_key].append(record)
+
+                # Sort students alphabetically within each date (A->Z by surname)
+                def _rec_surname_key(r):
+                    name = (r.get('student_name') or '').strip()
+                    if not name:
+                        return ''
+                    parts = name.split()
+                    return parts[-1].lower()
+
+                for dt in list(attendance_by_date.keys()):
+                    try:
+                        attendance_by_date[dt].sort(key=_rec_surname_key)
+                    except Exception:
+                        # If sort fails for a specific date group, leave order as-is
+                        pass
 
                 # Convert to list of tuples (date, records) sorted by date (newest first)
-                attendance_data_grouped = sorted(attendance_by_date.items(), key=lambda x: x[0], reverse=True)
+                # Ensure keys are date objects so sorting and template grouping are consistent
+                attendance_data_grouped = sorted(
+                    [(d if hasattr(d, 'weekday') else d, recs) for d, recs in attendance_by_date.items()],
+                    key=lambda x: x[0],
+                    reverse=True
+                )
                 
                 # Calculate course statistics
                 total_records = len(attendance_data)
@@ -8099,7 +8637,20 @@ def instructor_attendance_reports_view(request):
         'weeks': weeks,
         'quick_pick_schedules': quick_pick_schedules,
         'today': today,
+        'postponed_dates': sorted(list(postponed_dates_set)) if 'postponed_dates_set' in locals() else [],
     }
+    # Format date string for template header (use full month name) when provided as YYYY-MM-DD
+    formatted_date = None
+    if date_filter:
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(date_filter, '%Y-%m-%d').date()
+            # Use day integer to avoid platform-specific %-d support
+            formatted_date = f"{dt.strftime('%B')} {dt.day}, {dt.year}"
+        except Exception:
+            formatted_date = None
+    # Inject formatted_date into context
+    context['formatted_date'] = formatted_date
     
     return render(request, 'dashboard/instructor/instructor_attendance_reports.html', context)
 
@@ -8183,7 +8734,9 @@ def instructor_attendance_reports_download_view(request):
             pass
     
     # Apply day-based filtering if specified
-    if day_filter or week_filter or month_filter or weeks:
+    # Note: do NOT treat default `weeks` (an int, default=4) as a boolean flag here
+    # otherwise the filter will always run and accidentally exclude explicit `date` exports.
+    if day_filter or week_filter or month_filter:
         from datetime import datetime, timedelta
         from django.utils import timezone
         try:
@@ -8298,10 +8851,8 @@ def instructor_attendance_reports_download_view(request):
             name = (rec.student.full_name or rec.student.username or '').strip()
         except Exception:
             name = ''
-        if not name:
-            return ''
-        parts = name.split()
-        return parts[-1].lower()
+        # Previously this keyed by surname. Use full name (First Middle Last) for alphabetical sorting.
+        return name.lower() if name else ''
 
     try:
         attendance_records.sort(key=_record_surname_key)
@@ -8365,42 +8916,36 @@ def instructor_attendance_reports_download_view(request):
                 if enr.student and enr.student.id not in unique_students:
                     unique_students[enr.student.id] = enr
 
-            # Rebuild attendance_records to include absent students
+            # Rebuild attendance_records to include ALL enrolled students for the date
+            # Preserve original saved status and attendance_time for students who have records
             from types import SimpleNamespace
             rebuilt_records = []
             for student_id, enrollment in unique_students.items():
                 student = enrollment.student
-                # If attendance exists for this student on date, use it but recalc status
-                if student_id in attendance_map:
-                    rec = attendance_map[student_id]
-                    # Re-evaluate status based on schedule times
-                    start_t, end_t = get_course_schedule_times(rec.course, date_obj)
-                    final_status = rec.status
-                    if rec.attendance_time and start_t and end_t:
-                        try:
-                            from datetime import datetime as _dt, time as _time
-                            scan_time = rec.attendance_time
-                            scan_dt = _dt.combine(date_obj, scan_time)
-                            start_dt = _dt.combine(date_obj, start_t)
-                            end_dt = _dt.combine(date_obj, end_t)
-                            if start_dt <= scan_dt <= end_dt:
-                                final_status = 'present'
-                            elif scan_dt > end_dt:
-                                final_status = 'late'
-                        except Exception:
-                            pass
-                    # Build a simple record-like object
+                # Find an attendance record for this student on the requested date
+                student_record = None
+                for rec in attendance_records:
+                    if rec.student and rec.student.id == student_id and rec.attendance_date == date_obj:
+                        student_record = rec
+                        break
+
+                if student_record:
+                    # Preserve the original record's status and time
                     built = SimpleNamespace(
-                        student=SimpleNamespace(id=student.id, school_id=getattr(student, 'school_id', 'N/A'), full_name=getattr(student, 'full_name', getattr(student, 'username', ''))),
-                        course=SimpleNamespace(section=getattr(rec.course, 'section', 'N/A')),
-                        attendance_date=date_obj,
-                        attendance_time=getattr(rec, 'attendance_time', None),
-                        status=final_status
+                        student=SimpleNamespace(
+                            id=student.id,
+                            school_id=getattr(student, 'school_id', 'N/A'),
+                            full_name=getattr(student, 'full_name', getattr(student, 'username', ''))
+                        ),
+                        course=SimpleNamespace(section=getattr(student_record.course, 'section', 'N/A')),
+                        attendance_date=student_record.attendance_date,
+                        attendance_time=getattr(student_record, 'attendance_time', None),
+                        status=student_record.status
                     )
                     rebuilt_records.append(built)
                 else:
-                    # No attendance record - determine if class has finished; if so mark absent
-                    # Determine schedule times using any one of the courses_to_include (prefer enrollment.course)
+                    # No attendance record for this student on this date
+                    # Only mark as absent if the class has already finished on that date
                     course_for_check = enrollment.course
                     start_t, end_t = get_course_schedule_times(course_for_check, date_obj)
                     class_has_finished = False
@@ -8423,10 +8968,13 @@ def instructor_attendance_reports_download_view(request):
                         class_has_finished = True
 
                     if class_has_finished:
-                        # Create absent record
                         built = SimpleNamespace(
-                            student=SimpleNamespace(id=student.id, school_id=getattr(student, 'school_id', 'N/A'), full_name=getattr(student, 'full_name', getattr(student, 'username', ''))),
-                            course=SimpleNamespace(section=getattr(enrollment.course, 'section', 'N/A')),
+                            student=SimpleNamespace(
+                                id=student.id,
+                                school_id=getattr(student, 'school_id', 'N/A'),
+                                full_name=getattr(student, 'full_name', getattr(student, 'username', ''))
+                            ),
+                            course=SimpleNamespace(section=getattr(course_for_check, 'section', 'N/A')),
                             attendance_date=date_obj,
                             attendance_time=None,
                             status='absent'
@@ -8435,6 +8983,11 @@ def instructor_attendance_reports_download_view(request):
 
             # Replace attendance_records with rebuilt list for downstream export
             attendance_records = rebuilt_records
+            # Ensure alphabetical ordering by surname for exported file
+            try:
+                attendance_records.sort(key=_record_surname_key)
+            except Exception:
+                pass
         except Exception as e:
             # On error, fall back to existing attendance_records (only those with records)
             logger.exception('Error building full attendance export for date: %s', e)
@@ -8482,6 +9035,25 @@ def instructor_attendance_reports_download_view(request):
     ws = wb.active
     ws.title = "Attendance Report"
     
+    # Helper: format student name as 'Last, First Middle' for exports
+    def _format_student_name(name):
+        try:
+            if not name:
+                return ''
+            parts = [p for p in str(name).split() if p]
+            if not parts:
+                return ''
+            if len(parts) == 1:
+                return parts[0]
+            # Format as: First Middle Last
+            first = parts[0]
+            middle = ' '.join(parts[1:-1]) if len(parts) > 2 else ''
+            last = parts[-1]
+            full = f"{first} {middle} {last}".strip()
+            return full
+        except Exception:
+            return str(name)
+    
     # Header style
     header_fill = PatternFill(start_color="3C4770", end_color="3C4770", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=12)
@@ -8489,7 +9061,8 @@ def instructor_attendance_reports_download_view(request):
     
     # Course Information
     row = 1
-    ws.merge_cells(f'A{row}:D{row}')
+    # Expand header to cover all attendance columns so long titles are visible
+    ws.merge_cells(f'A{row}:G{row}')
     ws[f'A{row}'] = f"Attendance Report - {course.code} - {course.name}"
     ws[f'A{row}'].font = title_font
     ws[f'A{row}'].alignment = Alignment(horizontal='center')
@@ -8526,8 +9099,12 @@ def instructor_attendance_reports_download_view(request):
     for record in attendance_records:
         # Student ID (Column 1)
         ws.cell(row=row, column=1, value=record.student.school_id or 'N/A')
-        # Student Name (Column 2)
-        ws.cell(row=row, column=2, value=record.student.full_name or record.student.username)
+        # Student Name (Column 2) - formatted as 'Last, First Middle'
+        try:
+            raw_name = record.student.full_name if getattr(record.student, 'full_name', None) else getattr(record.student, 'username', '')
+        except Exception:
+            raw_name = getattr(record.student, 'username', '')
+        ws.cell(row=row, column=2, value=_format_student_name(raw_name))
         # Section (Column 3)
         ws.cell(row=row, column=3, value=record.course.section or 'N/A')
         # Date (Column 4)
@@ -8598,8 +9175,9 @@ def instructor_attendance_reports_download_view(request):
     for record in attendance_records:
         student_id = record.student.id
         if student_id not in student_attendance_map:
+            raw_name = getattr(record.student, 'full_name', None) or getattr(record.student, 'username', '')
             student_attendance_map[student_id] = {
-                'student_name': record.student.full_name or record.student.username,
+                'student_name': _format_student_name(raw_name),
                 'student_id_number': record.student.school_id or 'N/A',
                 'present': 0,
                 'late': 0,
@@ -8975,10 +9553,13 @@ def instructor_scan_student_qr_code_view(request):
             related_course=course,
             related_user=student
         )
-        
+        # Return status info so frontend can show appropriate popup (Present vs Late)
+        resp_status = getattr(attendance_record, 'status', 'present')
+        resp_message = 'Marked as ' + resp_status.title() if resp_status else 'Attendance recorded successfully'
         return JsonResponse({
             'success': True,
-            'message': 'Attendance recorded successfully',
+            'message': resp_message,
+            'status': resp_status,
             'student_name': student.full_name,
             'student_id': student.school_id,
             'course_code': course.code
@@ -9199,29 +9780,52 @@ def instructor_scan_student_school_id_view(request):
         
         # Determine attendance status: check if student scanned after present window duration
         attendance_status = 'present'  # Default status
-        
+
         # Get the schedule/course to check present window duration
         present_duration_minutes = None
-        if active_schedule and active_schedule.attendance_present_duration:
+        if active_schedule and getattr(active_schedule, 'attendance_present_duration', None):
             present_duration_minutes = active_schedule.attendance_present_duration
-        elif course and course.attendance_present_duration:
+        elif getattr(course, 'attendance_present_duration', None):
             present_duration_minutes = course.attendance_present_duration
-        
-        # If present window is configured and we have a start time, check if student is late
-        if present_duration_minutes and active_schedule and active_schedule.start_time:
+
+        # Prefer using a recorded QR open timestamp when available (more accurate than schedule start)
+        qr_opened_at = None
+        try:
+            if active_schedule and getattr(active_schedule, 'qr_code_opened_at', None):
+                qr_opened_at = active_schedule.qr_code_opened_at
+            elif getattr(course, 'qr_code_opened_at', None):
+                qr_opened_at = course.qr_code_opened_at
+        except Exception:
+            qr_opened_at = None
+
+        # If present window is configured, compute cutoff using qr_opened_at if present, otherwise fall back to schedule start
+        if present_duration_minutes:
             try:
                 from datetime import timedelta
-                # Calculate the deadline: schedule start time + present window duration
-                schedule_start = active_schedule.start_time
-                deadline_time = (
-                    datetime.combine(today, schedule_start) + 
-                    timedelta(minutes=int(present_duration_minutes))
-                ).time()
-                
-                # Compare student's scan time with deadline
-                if now_ph.time() > deadline_time:
-                    attendance_status = 'late'
-                    logger.info(f"[SCAN] Student {student.full_name} scanned at {now_ph.time()} after deadline {deadline_time} - marked LATE")
+                # If instructor explicitly opened QR/session (qr_opened_at), use that as the baseline
+                if qr_opened_at:
+                    # Ensure timezone-aware comparison using now_ph
+                    present_cutoff_dt = qr_opened_at + timedelta(minutes=int(present_duration_minutes))
+                    if now_ph > present_cutoff_dt:
+                        attendance_status = 'late'
+                        logger.info(f"[SCAN] Student {student.full_name} scanned at {now_ph} after present cutoff {present_cutoff_dt} - marked LATE")
+                elif active_schedule and active_schedule.start_time:
+                    # Fallback: schedule start time + present duration on today's date
+                    schedule_start = active_schedule.start_time
+                    present_cutoff_dt = datetime.combine(today, schedule_start) + timedelta(minutes=int(present_duration_minutes))
+                    # Make present_cutoff_dt timezone-aware to match now_ph if possible
+                    try:
+                        if hasattr(ph_tz, 'localize'):
+                            # pytz
+                            import pytz as _pytz
+                            present_cutoff_dt = _pytz.timezone('Asia/Manila').localize(present_cutoff_dt)
+                        else:
+                            present_cutoff_dt = present_cutoff_dt.replace(tzinfo=ph_tz)
+                    except Exception:
+                        pass
+                    if now_ph > present_cutoff_dt:
+                        attendance_status = 'late'
+                        logger.info(f"[SCAN] Student {student.full_name} scanned at {now_ph} after fallback present cutoff {present_cutoff_dt} - marked LATE")
             except Exception as e:
                 logger.debug(f"[SCAN] Could not calculate late status: {e}")
         
@@ -9255,13 +9859,16 @@ def instructor_scan_student_school_id_view(request):
             related_course=course,
             related_user=student
         )
-        
+        # Return a message indicating whether the scan marked the student Present or Late
+        resp_status = attendance_status or 'present'
+        resp_message = 'Marked as ' + resp_status.title()
         return JsonResponse({
             'success': True,
-            'message': 'Attendance recorded successfully',
-                'student_name': student.full_name,
-                'student_id': student.school_id,
-                'student_pk': student.id,
+            'message': resp_message,
+            'status': resp_status,
+            'student_name': student.full_name,
+            'student_id': student.school_id,
+            'student_pk': student.id,
             'course_code': course.code,
             'scanned_value': school_id
         })
@@ -9304,18 +9911,20 @@ def instructor_get_scanned_students_view(request):
         now_ph = timezone.now().astimezone(ph_tz)
         today = now_ph.date()
         
+        # Include both present and late so the scanned list reflects actual scan statuses
         records = AttendanceRecord.objects.filter(
             course=course,
             attendance_date=today,
-            status='present'
+            status__in=['present', 'late']
         ).select_related('student').order_by('-attendance_time')
-        
+
         students_data = []
         for record in records:
             students_data.append({
                 'name': record.student.full_name,
                 'id': record.student.school_id or 'N/A',
-                'time': record.attendance_time.strftime('%I:%M %p') if record.attendance_time else 'N/A'
+                'time': record.attendance_time.strftime('%I:%M %p') if record.attendance_time else 'N/A',
+                'status': record.status
             })
         
         return JsonResponse({'students': students_data, 'count': records.count()})

@@ -1,5 +1,7 @@
 <!-- templates/dashboard/instructor/teacher_topbar.html -->
 {% load static %}
+<!-- Instructor mobile CSS (applies up to tablet widths so toggle styles load on devices <= 1024px) -->
+<link rel="stylesheet" href="{% static 'css/instructor_mobile.css' %}" media="(max-width: 1024px)">
 <style>
     .topbar-brand { text-decoration: none; }
     .topbar-brand:hover .topbar-brand-text { text-decoration: underline; }
@@ -75,39 +77,6 @@
 
             <!-- Right Section: Action Icons -->
             <div class="flex items-center space-x-2 sm:space-x-3">
-                <!-- Notifications Button with Dropdown -->
-                <div class="relative">
-                    <button type="button" onclick="toggleNotificationsDropdown()" class="relative p-2 text-white hover:bg-white/20 transition duration-150 rounded-full cursor-pointer" title="Notifications">
-                        <i class="fas fa-bell w-5 h-5"></i>
-                        <!-- Notification badge - always present, shown/hidden by JavaScript -->
-                        <span class="notification-badge-dot absolute top-0 right-0 block h-2 w-2 rounded-full ring-2 ring-white bg-red-500" style="display: {% if unread_notifications|default:0 > 0 %}block{% else %}none{% endif %};"></span>
-                        <span class="notification-badge-count absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center" style="display: {% if unread_notifications|default:0 > 0 %}flex{% else %}none{% endif %};">
-                            {% if unread_notifications|default:0 > 9 %}9+{% else %}{{ unread_notifications|default:0 }}{% endif %}
-                        </span>
-                    </button>
-                    
-                    <!-- Notifications Dropdown (Cloud/Speech Bubble Style) -->
-                    <div id="notificationsDropdown" class="hidden absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-2xl border border-gray-200 z-50" style="max-height: 500px;">
-                        <!-- Arrow pointing up -->
-                        <div class="absolute -top-2 right-6 w-4 h-4 bg-white border-l border-t border-gray-200 transform rotate-45"></div>
-                        
-                        <!-- Header -->
-                        <div class="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-xl">
-                            <h3 class="text-lg font-bold text-gray-900 flex items-center">
-                                <i class="fas fa-bell w-5 h-5 mr-2" style="color: #3C4770;"></i> Notifications
-                            </h3>
-                            <button onclick="closeNotificationsDropdown()" class="text-gray-400 hover:text-gray-600 transition">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                        
-                        <!-- Notifications Content -->
-                        <div id="notificationsContent" class="overflow-y-auto p-4 space-y-3" style="max-height: 400px;">
-                            <!-- Notifications will be loaded here -->
-                        </div>
-                    </div>
-                </div>
-
                 <!-- User Profile Avatar/Dropdown -->
                 <div class="relative">
                     <button onclick="toggleProfileDropdown()" class="flex items-center justify-center space-x-2 p-1.5 bg-white/20 rounded-full transition duration-150 hover:bg-white/30 hover:shadow-md" title="User Profile">
@@ -136,6 +105,90 @@
         </div>
     </div>
 </header>
+
+<script>
+// Ensure toggleSidebar exists for instructor pages and also toggles the overlay
+window.toggleSidebar = function() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (!sidebar) return;
+    // Toggle the open class and also set inline styles as a fallback for CSS ordering issues
+    const opened = sidebar.classList.toggle('open');
+    try { console.debug('toggleSidebar clicked, opened=', opened); } catch (e) {}
+    // show/hide overlay when sidebar opens/closes
+    if (overlay) {
+        if (opened) {
+            overlay.classList.remove('hidden');
+            // ensure overlay is visible even if utility classes conflict
+            overlay.style.display = 'block';
+            overlay.style.pointerEvents = 'auto';
+            // fallback: ensure sidebar transform is visible
+            sidebar.style.transform = 'translateX(0)';
+        } else {
+            overlay.classList.add('hidden');
+            overlay.style.display = 'none';
+            overlay.style.pointerEvents = 'none';
+            sidebar.style.transform = 'translateX(-100%)';
+        }
+    }
+};
+
+// Attach click handlers to any toggle buttons in case inline onclick is not present or overridden
+document.addEventListener('DOMContentLoaded', function() {
+    // Bind mobile toggle buttons
+    const toggles = document.querySelectorAll('.mobile-sidebar-toggle');
+    toggles.forEach(btn => {
+        // Add a safe bound handler and log clicks
+        btn.addEventListener('click', function(e) {
+            try { console.debug('mobile toggle clicked'); } catch (er) {}
+            e.preventDefault();
+            window.toggleSidebar();
+        });
+    });
+
+    // Create a floating fallback toggle if clicks are not reaching the original toggle
+    (function ensureFallbackToggle() {
+        // If an existing visible toggle is present and not covered, do nothing
+        const firstToggle = document.querySelector('.mobile-sidebar-toggle');
+        let visible = false;
+        if (firstToggle) {
+            const rect = firstToggle.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) visible = true;
+        }
+
+        if (!visible) {
+            if (!document.getElementById('mobile-sidebar-fallback')) {
+                const fb = document.createElement('button');
+                fb.id = 'mobile-sidebar-fallback';
+                fb.setAttribute('aria-label', 'Open menu');
+                fb.innerHTML = '<i class="fas fa-bars"></i>';
+                fb.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    try { console.debug('fallback toggle clicked'); } catch (z) {}
+                    window.toggleSidebar();
+                });
+                document.body.appendChild(fb);
+            }
+        } else {
+            // remove fallback if present
+            const fb = document.getElementById('mobile-sidebar-fallback');
+            if (fb) fb.remove();
+        }
+    })();
+
+    // Clicking the overlay should close the sidebar
+    const overlay = document.getElementById('sidebar-overlay');
+    if (overlay) {
+        overlay.addEventListener('click', function() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar && sidebar.classList.contains('open')) {
+                sidebar.classList.remove('open');
+                overlay.classList.add('hidden');
+            }
+        });
+    }
+});
+</script>
 
 <script>
 function toggleProfileDropdown() {

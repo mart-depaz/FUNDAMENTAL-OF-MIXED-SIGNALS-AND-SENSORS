@@ -110,9 +110,12 @@
                 <i class="fas fa-book-open text-indigo-600"></i>
                 My Enrolled Courses
             </h3>
-            <span class="px-3 py-1 bg-indigo-100 text-indigo-700 text-sm font-semibold rounded-full">
-                {{ enrolled_courses|length|default:0 }} course{{ enrolled_courses|length|default:0|pluralize }}
-            </span>
+            <div class="flex items-center gap-3">
+                <button id="openDroppedBtn" type="button" onclick="safeOpenDroppedModal()" class="px-3 py-1 bg-red-50 text-red-700 text-sm font-semibold rounded-full hover:bg-red-100 transition">Dropped</button>
+                <span class="px-3 py-1 bg-indigo-100 text-indigo-700 text-sm font-semibold rounded-full">
+                    {{ enrolled_courses|length|default:0 }} course{{ enrolled_courses|length|default:0|pluralize }}
+                </span>
+            </div>
         </div>
         <div id="enrolledCoursesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {% if enrolled_courses %}
@@ -167,7 +170,7 @@
                         </div>
                     </div>
                 
-            `;
+        
                     <!-- Unenroll Button -->
                     <div class="pt-3 mt-3 border-t border-gray-200 flex-shrink-0">
                         <button onclick="event.stopPropagation(); showUnenrollModal({{ enrollment.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}')" 
@@ -645,6 +648,117 @@ function closeEnrolledCourseDetails() {
     }
 }
 </script>
+<script>
+function safeOpenDroppedModal() {
+    try {
+        console.log('[Dropped] safeOpenDroppedModal clicked');
+        if (typeof openDroppedModal === 'function') {
+            openDroppedModal();
+            return;
+        }
+        const modal = document.getElementById('droppedEnrollmentsModal');
+        const list = document.getElementById('droppedList');
+        if (!modal || !list) {
+            console.warn('Dropped modal or list not found in DOM');
+            return;
+        }
+        list.innerHTML = '<div class="text-center py-8 text-gray-500">Loading...</div>';
+        modal.classList.remove('hidden');
+        fetch('{% url "dashboard:student_dropped_enrollments" %}')
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) {
+                    list.innerHTML = `<div class="text-red-600 p-4">${data.message || 'Failed to load dropped enrollments.'}</div>`;
+                    return;
+                }
+                if (!data.dropped_enrollments || data.dropped_enrollments.length === 0) {
+                    list.innerHTML = '<div class="text-center py-8 text-gray-500">No dropped enrollments.</div>';
+                    return;
+                }
+                list.innerHTML = '';
+                data.dropped_enrollments.forEach(en => {
+                    const daysLeft = en.days_left !== null && en.days_left !== undefined ? `${en.days_left} day(s) left` : 'N/A';
+                    const item = document.createElement('div');
+                    item.className = 'p-3 border rounded-lg flex items-center justify-between gap-3';
+                    item.innerHTML = `
+                        <div>
+                            <div class="font-semibold">${en.course_code} - ${en.course_name}</div>
+                            <div class="text-xs text-gray-500">Dropped: ${en.dropped_date} • ${daysLeft}</div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="promptDroppedAction('restore', ${en.id}, '${en.course_code} - ${en.course_name}')" class="px-3 py-1 bg-emerald-600 text-white rounded text-sm">Restore</button>
+                            <button onclick="promptDroppedAction('delete', ${en.id}, '${en.course_code} - ${en.course_name}')" class="px-3 py-1 bg-red-600 text-white rounded text-sm">Delete</button>
+                        </div>
+                    `;
+                    list.appendChild(item);
+                });
+            })
+            .catch(err => {
+                list.innerHTML = '<div class="text-red-600 p-4">Error loading dropped enrollments.</div>';
+                console.error(err);
+            });
+    } catch (e) {
+        console.error('safeOpenDroppedModal error', e);
+    }
+}
+
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btn = document.getElementById('openDroppedBtn');
+    if (btn) {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (typeof openDroppedModal === 'function') {
+                openDroppedModal();
+                return;
+            }
+
+            // Fallback: perform fetch and show modal even if openDroppedModal is unavailable
+            const modal = document.getElementById('droppedEnrollmentsModal');
+            const list = document.getElementById('droppedList');
+            if (!modal || !list) return;
+            list.innerHTML = '<div class="text-center py-8 text-gray-500">Loading...</div>';
+            modal.classList.remove('hidden');
+
+            fetch('{% url "dashboard:student_dropped_enrollments" %}')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) {
+                        list.innerHTML = `<div class="text-red-600 p-4">${data.message || 'Failed to load dropped enrollments.'}</div>`;
+                        return;
+                    }
+                    if (!data.dropped_enrollments || data.dropped_enrollments.length === 0) {
+                        list.innerHTML = '<div class="text-center py-8 text-gray-500">No dropped enrollments.</div>';
+                        return;
+                    }
+                    list.innerHTML = '';
+                    data.dropped_enrollments.forEach(en => {
+                        const daysLeft = en.days_left !== null && en.days_left !== undefined ? `${en.days_left} day(s) left` : 'N/A';
+                        const item = document.createElement('div');
+                        item.className = 'p-3 border rounded-lg flex items-center justify-between gap-3';
+                        item.innerHTML = `
+                            <div>
+                                <div class="font-semibold">${en.course_code} - ${en.course_name}</div>
+                                <div class="text-xs text-gray-500">Dropped: ${en.dropped_date} • ${daysLeft}</div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="promptDroppedAction('restore', ${en.id}, '${en.course_code} - ${en.course_name}')" class="px-3 py-1 bg-emerald-600 text-white rounded text-sm">Restore</button>
+                                <button onclick="promptDroppedAction('delete', ${en.id}, '${en.course_code} - ${en.course_name}')" class="px-3 py-1 bg-red-600 text-white rounded text-sm">Delete</button>
+                            </div>
+                        `;
+                        list.appendChild(item);
+                    });
+                })
+                .catch(err => {
+                    list.innerHTML = '<div class="text-red-600 p-4">Error loading dropped enrollments.</div>';
+                    console.error(err);
+                });
+        });
+    }
+});
+</script>
 
 <!-- Unenroll Confirmation Modal -->
 <div id="unenrollModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[110] flex items-center justify-center p-4">
@@ -676,6 +790,106 @@ function closeEnrolledCourseDetails() {
     </div>
 </div>
 {% include 'dashboard/partials/qr_scanner_basic.html' %}
+
+        <!-- Dropped Enrollments Modal (inserted) -->
+        <div id="droppedEnrollmentsModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[115] flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl p-6 md:p-8 max-h-[80vh] overflow-y-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold">Dropped Courses</h3>
+                    <button onclick="document.getElementById('droppedEnrollmentsModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                </div>
+                <div id="droppedList" class="space-y-3">
+                    <!-- Dropped enrollments will be loaded here -->
+                </div>
+                <div class="mt-6 text-sm text-gray-600">Dropped enrollments are kept for 14 days before permanent deletion.</div>
+            </div>
+        </div>
+
+        <!-- Confirmation Modal for Dropped Actions -->
+        <div id="droppedConfirmModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden z-[120] flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+                <h3 class="text-lg font-bold mb-2" id="droppedConfirmTitle">Confirm action</h3>
+                <p class="text-sm text-gray-700 mb-4" id="droppedConfirmMessage">Are you sure?</p>
+                <div class="flex justify-end gap-3">
+                    <button onclick="closeDroppedConfirm()" class="px-4 py-2 bg-gray-200 rounded">Cancel</button>
+                    <button id="droppedConfirmBtn" onclick="executeDroppedAction()" class="px-4 py-2 bg-red-600 text-white rounded">Confirm</button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        // State for pending action
+        window._droppedPending = { type: null, id: null, name: null };
+
+        function promptDroppedAction(type, enrollmentId, name) {
+            // type: 'restore' or 'delete'
+            window._droppedPending = { type: type, id: enrollmentId, name: name };
+            const title = type === 'restore' ? 'Restore enrollment' : 'Permanently delete enrollment';
+            const message = type === 'restore' ? `Restore ${name}? This will re-activate your enrollment.` : `Permanently delete ${name}? This cannot be undone.`;
+            document.getElementById('droppedConfirmTitle').textContent = title;
+            document.getElementById('droppedConfirmMessage').textContent = message;
+            document.getElementById('droppedConfirmBtn').textContent = type === 'restore' ? 'Restore' : 'Delete permanently';
+            // style confirm button
+            document.getElementById('droppedConfirmBtn').className = type === 'restore' ? 'px-4 py-2 bg-emerald-600 text-white rounded' : 'px-4 py-2 bg-red-600 text-white rounded';
+            document.getElementById('droppedConfirmModal').classList.remove('hidden');
+        }
+
+        function closeDroppedConfirm() {
+            document.getElementById('droppedConfirmModal').classList.add('hidden');
+            window._droppedPending = { type: null, id: null, name: null };
+        }
+
+        function executeDroppedAction() {
+            const pending = window._droppedPending;
+            if (!pending || !pending.id || !pending.type) return closeDroppedConfirm();
+
+            const enrollmentId = pending.id;
+            const action = pending.type;
+            const url = action === 'restore' ? `{% url 'dashboard:student_restore_enrollment' 0 %}`.replace('0', enrollmentId) : `{% url 'dashboard:student_permanent_delete_enrollment' 0 %}`.replace('0', enrollmentId);
+            const method = 'POST';
+            const headers = { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value };
+
+            // Disable confirm button while processing
+            const btn = document.getElementById('droppedConfirmBtn');
+            const origText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
+
+            fetch(url, { method: method, headers: headers })
+                .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = origText;
+                closeDroppedConfirm();
+                if (data && data.success) {
+                    if (typeof showNotification === 'function') {
+                        showNotification(data.message || 'Success', 'success');
+                    } else {
+                        alert(data.message || 'Success');
+                    }
+                    // Always reload the page shortly after success to reflect changes
+                    setTimeout(() => { window.location.reload(); }, 600);
+                } else {
+                    if (typeof showNotification === 'function') {
+                        showNotification(data.message || 'Failed', 'error');
+                    } else {
+                        alert(data.message || 'Failed');
+                    }
+                }
+            })
+                .catch(err => {
+                    btn.disabled = false;
+                    btn.innerHTML = origText;
+                    closeDroppedConfirm();
+                    console.error(err);
+                    if (typeof showNotification === 'function') {
+                        showNotification('An error occurred. Please try again.', 'error');
+                    } else {
+                        alert('An error occurred. Please try again.');
+                    }
+                });
+        }
+        </script>
 
 {% endblock %}
 

@@ -35,8 +35,8 @@
                             <p class="text-xs uppercase tracking-wide text-white/70">Upcoming Classes</p>
                         </div>
                         <div>
-                            <p class="text-3xl font-bold">{{ unread_notifications|default:0 }}</p>
-                            <p class="text-xs uppercase tracking-wide text-white/70">Notifications</p>
+                            <p class="text-sm font-semibold"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#10B981;margin-right:6px;"></span>Operational</p>
+                            <p class="text-xs uppercase tracking-wide text-white/70">System Status</p>
                         </div>
                     </div>
                 </div>
@@ -79,12 +79,12 @@
         </div>
         <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #FEEBC8 0%, #F3C7A6 100%);">
             <div class="w-12 h-12 rounded-full bg-white/50 text-amber-700 flex items-center justify-center text-xl shadow inner-shadow">
-                <i class="fas fa-bell"></i>
+                <i class="fas fa-server"></i>
             </div>
             <div class="text-amber-900">
-                <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Alerts</p>
-                <p class="text-2xl font-bold">{{ unread_notifications|default:0 }}</p>
-                <p class="text-xs opacity-70">New notifications</p>
+                <p class="text-xs uppercase tracking-wide font-semibold opacity-80">System Center</p>
+                <p class="text-2xl font-bold">Operational</p>
+                <p class="text-xs opacity-70">Platform status & announcements</p>
             </div>
         </div>
         <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #1B2D52 0%, #4D608E 100%);">

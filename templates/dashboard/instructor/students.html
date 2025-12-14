@@ -208,23 +208,24 @@
             </h2>
             {% if selected_course_enrollments %}
             <div id="selected-course-student-list" class="space-y-3">
-                {% for enrollment in selected_course_enrollments %}
-                <div class="student-card flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-indigo-300 transition cursor-pointer group" 
+                 {% for enrollment in selected_course_enrollments %}
+                 {% with display_name=enrollment.student.full_name|default:enrollment.full_name %}
+                 <div class="student-card flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-indigo-300 transition cursor-pointer group" 
                      data-student-section="{{ enrollment.section_display }}"
-                     onclick="if (!event.target.closest('button') && !event.target.closest('a')) { window.showStudentDetails({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}', '{{ enrollment.email|escapejs }}', '{{ enrollment.student_id_number|escapejs }}', '{{ enrollment.section_display|default:'N/A'|escapejs }}', {{ enrollment.year_level }}, '{{ enrollment.enrolled_at|date:'F d, Y g:i A'|escapejs }}', {% if enrollment.student.profile_picture %}'{{ enrollment.student.profile_picture.url }}'{% else %}null{% endif %}); }">
+                     onclick="if (!event.target.closest('button') && !event.target.closest('a')) { window.showStudentDetails({{ enrollment.id }}, '{{ display_name|escapejs }}', '{{ enrollment.email|escapejs }}', '{{ enrollment.student_id_number|escapejs }}', '{{ enrollment.section_display|default:'N/A'|escapejs }}', {{ enrollment.year_level }}, '{{ enrollment.enrolled_at|date:'F d, Y g:i A'|escapejs }}', {% if enrollment.student.profile_picture %}'{{ enrollment.student.profile_picture.url }}'{% else %}null{% endif %}); }">
                     <div class="flex items-center gap-4 flex-grow min-w-0">
                         <div class="flex-shrink-0">
                             {% if enrollment.student.profile_picture %}
-                            <img src="{{ enrollment.student.profile_picture.url }}?v={{ enrollment.student.id }}" alt="{{ enrollment.full_name }}" class="w-14 h-14 rounded-full object-cover border-4 border-white shadow-lg">
+                            <img src="{{ enrollment.student.profile_picture.url }}?v={{ enrollment.student.id }}" alt="{{ display_name }}" class="w-14 h-14 rounded-full object-cover border-4 border-white shadow-lg">
                             {% else %}
-                            <div class="w-14 h-14 rounded-full flex items-center justify-center font-bold text-lg text-white shadow-lg" style="background: linear-gradient(135deg, #3C4770, #447294);">
-                                {{ enrollment.full_name|first|upper }}
+                                <div class="w-14 h-14 rounded-full flex items-center justify-center font-bold text-lg text-white shadow-lg" style="background: linear-gradient(135deg, #3C4770, #447294);">
+                                {{ display_name|first|upper }}
                             </div>
                             {% endif %}
                         </div>
                         <div class="flex-grow min-w-0">
                             <div class="flex items-center gap-2 flex-wrap mb-1">
-                                <h3 class="text-base font-semibold text-gray-900 truncate">{{ enrollment.full_name }}</h3>
+                                <h3 class="text-base font-semibold text-gray-900 truncate">{{ display_name }}</h3>
                                 {% if enrollment.section_display %}
                                 <span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">Sec {{ enrollment.section_display }}</span>
                                 {% endif %}
@@ -234,7 +235,7 @@
                                 <span class="flex items-center gap-1"><i class="fas fa-envelope text-xs"></i><span class="truncate max-w-[8rem]" title="{{ enrollment.email }}">{{ enrollment.email }}</span></span>
                                 <span class="flex items-center gap-1"><i class="fas fa-id-card text-xs"></i>{{ enrollment.student_id_number }}</span>
                             </div>
-                            <p class="text-xs text-gray-500 mt-1 flex items-center gap-1"><i class="fas fa-clock"></i>Enrolled: {{ enrollment.enrolled_at|date:"F d, Y g:i A" }}</p>
+                                <p class="text-xs text-gray-500 mt-1 flex items-center gap-1"><i class="fas fa-clock"></i>Enrolled: {{ enrollment.enrolled_at|date:"F d, Y g:i A" }}</p>
                         </div>
                         <div class="flex items-center gap-2">
                             {% if selected_course.instructor == user %}
@@ -250,7 +251,7 @@
                                 </button>
                                 {% endif %}
                             {% endif %}
-                            <button onclick="event.stopPropagation(); window.showDropStudentModal({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" 
+                            <button onclick="event.stopPropagation(); window.showDropStudentModal({{ enrollment.id }}, '{{ display_name|escapejs }}')" 
                                     class="px-3 py-1.5 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 transition flex items-center gap-2" 
                                     title="Drop student from course">
                                 <i class="fas fa-user-minus text-xs"></i>
@@ -262,6 +263,7 @@
                         </div>
                     </div>
                 </div>
+                {% endwith %}
                 {% endfor %}
             </div>
             {% else %}

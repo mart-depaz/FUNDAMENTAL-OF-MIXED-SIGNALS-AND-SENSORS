@@ -32,6 +32,8 @@
     .course-card-wrapper {
         animation: fadeInScale 0.4s ease-out;
         animation-fill-mode: both;
+        /* make wrapper a flex item so inner card can stretch to equal height in the grid */
+        display: flex;
     }
     .course-card-wrapper:nth-child(1) { animation-delay: 0.05s; }
     .course-card-wrapper:nth-child(2) { animation-delay: 0.1s; }
@@ -185,7 +187,13 @@
             
             <div>
                 <p class="text-xs tracking-widest uppercase text-white/80 font-semibold mb-2">
-                    {% if request.GET.date %}Attendance Details - {{ request.GET.date|stringformat:'s'|date:'M d, Y' }}{% else %}Attendance Report{% endif %}
+                    {% if formatted_date %}
+                        Attendance Details - {{ formatted_date }}
+                    {% elif request.GET.date %}
+                        Attendance Details - {{ request.GET.date }}
+                    {% else %}
+                        Attendance Report
+                    {% endif %}
                 </p>
                 <h1 class="text-2xl md:text-3xl font-bold text-white drop-shadow flex flex-wrap items-center gap-2 truncate" title="{{ selected_course.code }} • {{ selected_course.name }}">
                     {{ selected_course.code }} <span class="text-white/70 text-2xl">•</span> {{ selected_course.name }}
@@ -193,6 +201,24 @@
                 <div class="flex flex-wrap items-center gap-3 text-sm text-white/80 mt-2">
                     <span class="flex items-center gap-1"><i class="fas fa-list text-xs"></i>Total Records: {{ attendance_data|length }}</span>
                 </div>
+                    {% comment %} Show selected section when present in URL (or 'all') {% endcomment %}
+                    {% if request.GET.date and section_filter %}
+                    <div class="mt-2 text-sm text-white/80 flex items-center gap-3">
+                        <span class="font-medium">Section:</span>
+                        <span class="text-white/90 font-semibold">{% if section_filter|lower == 'all' %}All sections{% else %}{{ section_filter|upper }}{% endif %}</span>
+                    </div>
+                    {% endif %}
+                <!-- Section selector (when course has multiple sections) -->
+                {% if not request.GET.date and selected_sections and selected_sections|length > 0 %}
+                <div class="mt-4 text-sm text-white/90 flex items-center gap-3">
+                    <label for="sectionSelect" class="font-medium">Section</label>
+                    <select id="sectionSelect" class="rounded-md text-sm px-3 py-1 bg-white/20 backdrop-blur-sm text-black" style="color: white" onchange="onSectionChange(event)">
+                        {% for sec in selected_sections %}
+                            <option value="{{ sec }}" style="color:#000" {% if section_filter and section_filter|upper == sec %}selected{% endif %}>{{ sec }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -207,11 +233,15 @@
                 </h2>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {% regroup attendance_data|dictsort:"attendance_date" by attendance_date as records_by_date %}
+                {% regroup attendance_data|dictsortreversed:"attendance_date" by attendance_date as records_by_date %}
                 {% for date, records in records_by_date %}
-                <div class="date-folder-card group rounded-xl shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer folder-clickable" 
-                     data-folder-date="{{ date|date:'Y-m-d' }}"
-                     data-course-id="{{ selected_course.id }}">
+                 {% comment %} If this date was postponed, mark it and disable opening {% endcomment %}
+                 {% with dstr=date|date:'Y-m-d' %}
+                 <div class="date-folder-card group rounded-xl shadow-md hover:shadow-xl transition-all duration-300 {% if dstr in postponed_dates %}opacity-80{% else %}cursor-pointer folder-clickable{% endif %}" 
+                     data-folder-date="{{ dstr }}"
+                     data-course-id="{{ selected_course.id }}"
+                     {% if dstr in postponed_dates %}data-postponed="1"{% endif %}>
+                 {% endwith %}
                     <!-- Folder Header -->
                     <div class="bg-gradient-to-br from-amber-50 to-orange-50 border-t-4 border-amber-400 rounded-t-xl p-5 hover:bg-amber-100/50 transition-colors group-hover:shadow-lg">
                         <div class="flex items-center justify-between">
@@ -228,19 +258,27 @@
                                 <p class="text-3xl font-bold text-amber-600">{{ records|length }}</p>
                                 <p class="text-xs text-gray-600 font-medium">Records</p>
                             </div>
+                            {% if dstr in postponed_dates %}
+                            <div class="ml-4 text-right">
+                                <span class="status-badge" style="background:#FEF3C7;color:#92400E;">Postponed</span>
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
                     
                     <!-- Folder Footer - Click Hint -->
+                        {% if dstr in postponed_dates %}
+                        <div class="bg-white border border-t-0 border-gray-200 rounded-b-xl p-6 flex items-center justify-center">
+                            <span class="status-badge" style="background:#FEF3C7;color:#92400E;font-weight:700;padding:10px 16px;font-size:14px;">Postponed</span>
+                        </div>
+                        {% else %}
                         <div class="bg-white border border-t-0 border-gray-200 rounded-b-xl p-4 flex items-center justify-between">
                             <p class="text-sm text-gray-600 flex items-center justify-center gap-2">
                                 <i class="fas fa-arrow-right text-indigo-600"></i>Click to view details
                             </p>
-                            <a href="{% url 'dashboard:instructor_attendance_reports_download' %}?course={{ selected_course.id }}&date={{ date|date:'Y-m-d' }}" class="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-green-600" onclick="event.stopPropagation();">
-                                <i class="fas fa-download text-gray-500"></i>
-                                <span class="text-xs font-semibold">Download</span>
-                            </a>
+                            {# Download handled in attendance detail view; folder-level download removed to avoid duplicate buttons #}
                         </div>
+                        {% endif %}
                 </div>
                 {% endfor %}
             </div>
@@ -260,15 +298,22 @@
         <!-- Attendance Details for Selected Date -->
         <div class="p-6">
             {% if attendance_data %}
-            <div class="mb-6 flex items-center justify-between">
+                <div class="mb-6 flex items-center justify-between">
                 <h2 class="text-xl font-bold text-gray-800 flex items-center gap-3">
                     <div class="w-1 h-8 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></div>
                     Attendance Details
                 </h2>
-                <a href="{% url 'dashboard:instructor_attendance_reports_download' %}?course={{ selected_course.id }}&date={{ request.GET.date }}" class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-semibold transition flex items-center gap-2">
+                {% if request.GET.date and request.GET.date in postponed_dates %}
+                <button onclick="alert('This scheduled class is postponed. Download is disabled.');" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg text-sm font-semibold transition flex items-center gap-2 cursor-not-allowed" title="Download disabled for postponed schedule">
+                    <i class="fas fa-download text-xs"></i>Download Excel
+                </button>
+                {% else %}
+                <a href="{% url 'dashboard:instructor_attendance_reports_download' %}?course={{ selected_course.id }}&date={{ request.GET.date }}&section={{ section_filter|default:'all'|urlencode }}" class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-semibold transition flex items-center gap-2">
                     <i class="fas fa-download text-xs"></i>Download Excel
                 </a>
+                {% endif %}
             </div>
+            {# Date display removed here to avoid duplication with header. The header shows the formatted date already. #}
             
             <div class="space-y-3">
                 {% for record in attendance_data %}
@@ -339,10 +384,10 @@
     {% if grouped_courses %}
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5">
         {% for course in grouped_courses %}
-        <div class="course-card-wrapper" data-course-id="{{ course.id }}">
-            <div class="course-card-block group rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-center py-8 px-4 min-h-[140px] flex flex-col justify-center items-center relative overflow-hidden border-2 border-white/20 cursor-pointer"
-                 style="--course-color-start: #3C4770; --course-color-end: #447294; background: linear-gradient(135deg, #3C4770 0%, #447294 100%);"
-                 data-course-id="{{ course.id }}">
+        <div class="course-card-wrapper h-full" data-course-id="{{ course.id }}">
+              <div class="course-card-block group rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-center p-6 min-h-[140px] flex-1 flex flex-col justify-center items-center relative overflow-hidden border-2 border-white/20 cursor-pointer h-full"
+                  style="--course-color-start: {{ course.display_color_start|default:'#3C4770' }}; --course-color-end: {{ course.display_color_end|default:'#447294' }}; background: {{ course.display_gradient|default:'linear-gradient(135deg, #3C4770 0%, #447294 100%)' }};"
+                  data-course-id="{{ course.id }}">
                 <!-- Decorative Pattern Overlay -->
                 <div class="absolute inset-0 opacity-10">
                     <div class="absolute top-0 right-0 w-20 h-20 bg-white rounded-full -mr-10 -mt-10"></div>
@@ -417,6 +462,23 @@
         window.location.href = "?course=" + courseId;
     }
 
+    function onSectionChange(event) {
+        const val = event.target.value;
+        const params = new URLSearchParams(window.location.search);
+        // Ensure course param is preserved when changing section
+        const courseId = '{{ selected_course.id|default:"" }}';
+        if (courseId) params.set('course', courseId);
+        if (val && val !== 'all') {
+            params.set('section', val);
+        } else {
+            // use 'all' to indicate all sections (view logic expects 'all')
+            params.set('section', 'all');
+        }
+        // Reset date when changing section to avoid stale filters
+        params.delete('date');
+        window.location.search = params.toString();
+    }
+
     function clearCourse() {
         window.location.href = window.location.pathname;
     }
@@ -456,8 +518,26 @@
                 event.stopPropagation();
                 const date = this.getAttribute('data-folder-date');
                 const courseId = this.getAttribute('data-course-id');
+                // If this folder is marked postponed, show message and do not open
+                if (this.getAttribute('data-postponed') === '1') {
+                    event.preventDefault();
+                    alert('This scheduled class for ' + (date || '') + ' is postponed. Attendance folder is disabled.');
+                    return;
+                }
                 if (date && courseId) {
-                    window.location.href = "?course=" + courseId + "&date=" + date;
+                    // Preserve section filter if present in current URL or selected dropdown
+                    const params = new URLSearchParams(window.location.search);
+                    let section = params.get('section');
+                    // If no section in URL, try to read from page select (if present)
+                    const sel = document.getElementById('sectionSelect');
+                    if ((!section || section === '') && sel) {
+                        section = sel.value || null;
+                    }
+                    let href = "?course=" + courseId + "&date=" + date;
+                    if (section) {
+                        href += "&section=" + encodeURIComponent(section);
+                    }
+                    window.location.href = href;
                 }
             });
         });

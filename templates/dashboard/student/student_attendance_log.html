@@ -153,14 +153,16 @@
                                 {{ record.attendance_time|time:"g:i A" }}
                             </td>
                             <td class="px-4 py-3">
-                                {% if record.status == 'present' %}
-                                <span class="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">Present</span>
+                                {% if record.is_postponed %}
+                                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">Postponed</span>
+                                {% elif record.status == 'present' %}
+                                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">Present</span>
                                 {% elif record.status == 'late' %}
-                                <span class="px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700">Late</span>
+                                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700">Late</span>
                                 {% elif record.status == 'absent' %}
-                                <span class="px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">Absent</span>
+                                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">Absent</span>
                                 {% else %}
-                                <span class="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">{{ record.status|title }}</span>
+                                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">{{ record.status|title }}</span>
                                 {% endif %}
                             </td>
                         </tr>

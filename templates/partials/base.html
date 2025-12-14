@@ -11,8 +11,10 @@ templates folder: library_system/templates/partials/base.html
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <!-- Tailwind CSS (play CDN for responsive utilities) -->
+    <!-- Tailwind CSS (play CDN for quick dev preview) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- If you build Tailwind locally, include the generated stylesheet (overrides CDN when present) -->
+    <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
     <!-- Mobile Responsive CSS (overrides for very small screens) -->
     <link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
     <title>{% block title %}Attendance System{% endblock %}</title>

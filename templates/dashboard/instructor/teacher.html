@@ -67,8 +67,64 @@ templates folder: library_system/templates/dashboard/teacher.html
     }
 </style>
 
-<!-- Notification System -->
-{% include 'dashboard/shared/notification_system.html' %}
+<!-- Mobile tweaks: reduce spacing, font sizes and card padding for small phones (e.g. 412x892) -->
+<style>
+    @media (max-width: 412px) {
+        /* Main content padding */
+        #main-content { padding: 8px !important; margin-top: 56px !important; }
+
+        /* Hero adjustments */
+        .bg-gradient-to-r.rounded-3xl { padding: 12px !important; border-radius: 12px !important; }
+        .bg-gradient-to-r.rounded-3xl h1 { font-size: 1rem !important; line-height: 1.1 !important; }
+        .bg-gradient-to-r.rounded-3xl p { font-size: 12px !important; }
+
+        /* Avatar */
+        .w-24.h-24 { width:48px !important; height:48px !important; }
+        .w-24.h-24 img { width:48px !important; height:48px !important; }
+
+        /* Stat cards: stack into single column and reduce padding */
+        .grid.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-4 { grid-template-columns: 1fr !important; gap:8px !important; }
+        .rounded-2xl.p-5 { padding: 10px !important; border-radius: 12px !important; }
+        .rounded-2xl.p-5 .w-12.h-12 { width:44px !important; height:44px !important; }
+        .rounded-2xl.p-5 p.text-2xl { font-size: 1.25rem !important; }
+
+        /* Cards and sections general */
+        .rounded-3xl, .rounded-2xl { padding: 10px !important; }
+        section { padding: 10px !important; }
+
+        /* Buttons */
+        a.inline-flex.items-center.gap-2, .p-4.rounded-2xl, button { padding: 8px 10px !important; font-size: 13px !important; }
+        .inline-flex.items-center.gap-2 i { font-size: 14px !important; }
+
+        /* Reduce headings everywhere to fit */
+        .text-xl { font-size: 1rem !important; }
+        .text-2xl { font-size: 1.05rem !important; }
+
+        /* Make grids single-column where space is tight */
+        .grid.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-3 { grid-template-columns: 1fr !important; }
+
+        /* Quick actions grid spacing */
+        .grid.grid-cols-1.sm\:grid-cols-2.lg\:grid-cols-4 { grid-template-columns: repeat(2, 1fr) !important; gap:8px !important; }
+
+        /* Topbar adjustments */
+        #teacher-topbar, #teacher-top-bar { padding: 8px !important; }
+        .mobile-sidebar-toggle, #mobile-sidebar-toggle { width:44px !important; height:44px !important; left:8px !important; top:8px !important; }
+    }
+
+    /* Slightly larger phones / small tablets */
+    @media (min-width: 413px) and (max-width: 768px) {
+        #main-content { padding: 12px !important; }
+        .bg-gradient-to-r.rounded-3xl { padding: 16px !important; }
+        .rounded-2xl.p-5 { padding: 12px !important; }
+    }
+</style>
+
+<!-- Notification System removed (notifications feature deprecated). Showing System Center placeholder. -->
+<style>
+    .system-status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
+    .system-status-ok { background:#10B981; }
+    .system-status-down { background:#EF4444; }
+</style>
 
 <!-- Teacher Top Bar -->
 {% include 'dashboard/instructor/teacher_topbar.html' %}
@@ -105,7 +161,7 @@ templates folder: library_system/templates/dashboard/teacher.html
                                 </p>
                                 </div>
                             </div>
-                            <div class="rounded-2xl px-6 py-4 backdrop-blur-md border border-white/10 shadow-lg text-sm text-white" style="background: linear-gradient(135deg, #1a1b1f 0%, #341428 35%, #55104b 65%, #7a2d68 100%);">
+                                        <div class="rounded-2xl px-6 py-4 backdrop-blur-md border border-white/10 shadow-lg text-sm text-white" style="background: linear-gradient(135deg, #1a1b1f 0%, #341428 35%, #55104b 65%, #7a2d68 100%);">
                                 <p class="font-semibold text-white/80 uppercase tracking-wide text-xs">Daily Outlook</p>
                                 <div class="flex items-center gap-6 mt-2 text-white">
                                     <div>
@@ -117,8 +173,8 @@ templates folder: library_system/templates/dashboard/teacher.html
                                         <p class="text-xs uppercase tracking-wide text-white/70">Students Reached</p>
                                     </div>
                                     <div>
-                                        <p class="text-3xl font-bold">{{ unread_notifications|default:0 }}</p>
-                                        <p class="text-xs uppercase tracking-wide text-white/70">Pending Alerts</p>
+                                        <p class="text-sm font-semibold"><span class="system-status-dot system-status-ok"></span>Operational</p>
+                                        <p class="text-xs uppercase tracking-wide text-white/70">System Status</p>
                                     </div>
                                 </div>
                             </div>
@@ -161,12 +217,12 @@ templates folder: library_system/templates/dashboard/teacher.html
                     </div>
                     <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #FEEBC8 0%, #F3C7A6 100%);">
                         <div class="w-12 h-12 rounded-full bg-white/50 text-amber-700 flex items-center justify-center text-xl shadow inner-shadow">
-                            <i class="fas fa-bell"></i>
+                            <i class="fas fa-server"></i>
                         </div>
                         <div class="text-amber-900">
-                            <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Alerts</p>
-                            <p class="text-2xl font-bold">{{ unread_notifications|default:0 }}</p>
-                            <p class="text-xs opacity-70">Awaiting review</p>
+                            <p class="text-xs uppercase tracking-wide font-semibold opacity-80">System Center</p>
+                            <p class="text-2xl font-bold">Operational</p>
+                            <p class="text-xs opacity-70">Platform status & announcements</p>
                         </div>
                     </div>
                     <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #1B2D52 0%, #4D608E 100%);">
@@ -317,11 +373,11 @@ templates folder: library_system/templates/dashboard/teacher.html
                                 <p class="text-xs text-gray-500">Enrollments & attendance</p>
                             </div>
                         </a>
-                        <button type="button" onclick="toggleNotificationsDropdown(); return false;" class="text-left p-4 rounded-2xl border border-gray-100 hover:border-indigo-200 hover:shadow-lg transition flex items-center gap-4 w-full">
-                            <span class="w-12 h-12 rounded-2xl bg-pink-100 text-pink-600 flex items-center justify-center text-xl"><i class="fas fa-bell"></i></span>
+                        <button type="button" onclick="toggleSystemCenterDropdown(); return false;" class="text-left p-4 rounded-2xl border border-gray-100 hover:border-indigo-200 hover:shadow-lg transition flex items-center gap-4 w-full">
+                            <span class="w-12 h-12 rounded-2xl bg-pink-100 text-pink-600 flex items-center justify-center text-xl"><i class="fas fa-server"></i></span>
                             <div>
-                                <p class="text-sm font-semibold text-gray-900">Notifications</p>
-                                <p class="text-xs text-gray-500">Opens the top-bar layer</p>
+                                <p class="text-sm font-semibold text-gray-900">System Center</p>
+                                <p class="text-xs text-gray-500">Platform status & announcements</p>
                             </div>
                         </button>
                     </div>
@@ -331,6 +387,17 @@ templates folder: library_system/templates/dashboard/teacher.html
         </div>
     </main>
 </div>
+<script>
+function toggleSystemCenterDropdown() {
+    // Simple placeholder behavior: show a brief informational modal/alert.
+    // Replace with a real UI later if you have a system center page.
+    try {
+        alert('System Center\n\nThe notifications feature was removed. Visit the System Center for platform status and announcements.');
+    } catch (e) {
+        console.log('System Center clicked');
+    }
+}
+</script>
 {% endblock %}
 
 
