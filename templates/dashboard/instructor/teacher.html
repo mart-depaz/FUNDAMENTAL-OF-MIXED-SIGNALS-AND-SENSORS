@@ -111,6 +111,72 @@ templates folder: library_system/templates/dashboard/teacher.html
         .mobile-sidebar-toggle, #mobile-sidebar-toggle { width:44px !important; height:44px !important; left:8px !important; top:8px !important; }
     }
 
+    /* Force full-width layout and responsive elements to prevent collapsing */
+    @media (max-width: 1024px) {
+        /* make sure all container boxes use full width */
+        .min-h-screen, .flex-grow, main, #main-content, .p-4, .p-6, .p-8 {
+            box-sizing: border-box !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+            padding-left: 8px !important;
+            padding-right: 8px !important;
+        }
+
+        /* ensure cards don't overflow and scale their contents */
+        .rounded-2xl, .rounded-3xl, .shadow-inner, .shadow, .shadow-xl {
+            max-width: 100% !important;
+            width: 100% !important;
+        }
+
+        /* images and avatars scale down */
+        img, .object-cover, .w-full { max-width: 100% !important; height: auto !important; }
+
+        /* prevent long text from overflowing */
+        .truncate, .text-2xl, .text-xl, p, h1, h2, h3 {
+            word-break: break-word !important;
+            overflow-wrap: anywhere !important;
+        }
+
+        /* ensure grid columns collapse to single column when needed */
+        .grid, .grid-cols-1, .md\:grid-cols-2, .xl\:grid-cols-3, .xl\:grid-cols-4 {
+            grid-template-columns: 1fr !important;
+        }
+
+        /* reduce interactive element sizes and ensure touch targets remain usable */
+        a, button { min-height: 36px !important; padding: 8px 10px !important; font-size: 13px !important; }
+    }
+
+    /* Fix overlapping cards: ensure grid children and flex items can shrink and wrap on small screens */
+    @media (max-width: 768px) {
+        /* Make grid children occupy full width and prevent overflow */
+        .grid > div, .grid > a, .grid > section {
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+            min-width: 0 !important; /* allow flex items to shrink */
+        }
+
+        /* Ensure headers and inline flex rows wrap instead of overflowing */
+        .flex.items-center.justify-between, .flex.items-center, .flex.flex-col.lg\:flex-row {
+            flex-wrap: wrap !important;
+            gap: 6px !important;
+        }
+
+        /* Allow truncation for long text and titles */
+        h1, h2, h3, p, .truncate {
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+        }
+
+        /* Specific card adjustments to avoid overlap */
+        .rounded-3xl, .rounded-2xl { padding: 12px !important; }
+        .rounded-3xl .flex > div, .rounded-2xl .flex > div { min-width: 0 !important; }
+    }
+
     /* Slightly larger phones / small tablets */
     @media (min-width: 413px) and (max-width: 768px) {
         #main-content { padding: 12px !important; }
@@ -161,7 +227,7 @@ templates folder: library_system/templates/dashboard/teacher.html
                                 </p>
                                 </div>
                             </div>
-                                        <div class="rounded-2xl px-6 py-4 backdrop-blur-md border border-white/10 shadow-lg text-sm text-white" style="background: linear-gradient(135deg, #1a1b1f 0%, #341428 35%, #55104b 65%, #7a2d68 100%);">
+                            <div class="rounded-2xl px-6 py-4 backdrop-blur-md border border-white/10 shadow-lg text-sm text-white" style="background: linear-gradient(135deg, #1a1b1f 0%, #341428 35%, #55104b 65%, #7a2d68 100%);">
                                 <p class="font-semibold text-white/80 uppercase tracking-wide text-xs">Daily Outlook</p>
                                 <div class="flex items-center gap-6 mt-2 text-white">
                                     <div>
@@ -173,8 +239,8 @@ templates folder: library_system/templates/dashboard/teacher.html
                                         <p class="text-xs uppercase tracking-wide text-white/70">Students Reached</p>
                                     </div>
                                     <div>
-                                        <p class="text-sm font-semibold"><span class="system-status-dot system-status-ok"></span>Operational</p>
-                                        <p class="text-xs uppercase tracking-wide text-white/70">System Status</p>
+                                        <p class="text-3xl font-bold">{% if attendance_reports_count %}{{ attendance_reports_count }}{% elif reports_count %}{{ reports_count }}{% elif attendance_count %}{{ attendance_count }}{% else %}0{% endif %}</p>
+                                        <p class="text-xs uppercase tracking-wide text-white/70">Attendance Reports</p>
                                     </div>
                                 </div>
                             </div>
@@ -215,14 +281,14 @@ templates folder: library_system/templates/dashboard/teacher.html
                             <p class="text-xs opacity-80">Currently enrolled</p>
                         </div>
                     </div>
-                    <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #FEEBC8 0%, #F3C7A6 100%);">
+                    <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #FDE68A 0%, #F3C7A6 100%);">
                         <div class="w-12 h-12 rounded-full bg-white/50 text-amber-700 flex items-center justify-center text-xl shadow inner-shadow">
-                            <i class="fas fa-server"></i>
+                            <i class="fas fa-file-alt"></i>
                         </div>
                         <div class="text-amber-900">
-                            <p class="text-xs uppercase tracking-wide font-semibold opacity-80">System Center</p>
-                            <p class="text-2xl font-bold">Operational</p>
-                            <p class="text-xs opacity-70">Platform status & announcements</p>
+                            <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Attendance Reports</p>
+                            <p class="text-3xl font-bold">{% if attendance_reports_count %}{{ attendance_reports_count }}{% elif reports_count %}{{ reports_count }}{% elif attendance_count %}{{ attendance_count }}{% else %}—{% endif %}</p>
+                            <p class="text-xs opacity-70">View & download attendance files</p>
                         </div>
                     </div>
                     <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #1B2D52 0%, #4D608E 100%);">
@@ -315,7 +381,7 @@ templates folder: library_system/templates/dashboard/teacher.html
 
                     <div class="rounded-3xl border border-transparent shadow-xl p-6 space-y-4" style="background: linear-gradient(135deg, #FFE5C4 0%, #E8C0C2 50%, #C48AA2 100%);">
                         <div class="flex items-center justify-between">
-                            <h3 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                <h3 class="text-lg font-bold text-gray-900 flex items-center gap-2">
                                 <i class="fas fa-chart-pie text-indigo-600"></i>
                                 Attendance Reports
                             </h3>
@@ -323,7 +389,7 @@ templates folder: library_system/templates/dashboard/teacher.html
                                 View Reports
                             </a>
                         </div>
-                        <p class="text-sm text-gray-600">Track student attendance, generate reports, and download Excel files for your courses.</p>
+                        <p class="text-sm text-gray-600">View & download attendance files</p>
                         <div class="grid grid-cols-1 gap-3 text-sm">
                             <div class="p-4 rounded-2xl border border-indigo-100 bg-white/70">
                                 <p class="font-semibold text-gray-900 mb-1 flex items-center gap-2">
@@ -373,13 +439,13 @@ templates folder: library_system/templates/dashboard/teacher.html
                                 <p class="text-xs text-gray-500">Enrollments & attendance</p>
                             </div>
                         </a>
-                        <button type="button" onclick="toggleSystemCenterDropdown(); return false;" class="text-left p-4 rounded-2xl border border-gray-100 hover:border-indigo-200 hover:shadow-lg transition flex items-center gap-4 w-full">
-                            <span class="w-12 h-12 rounded-2xl bg-pink-100 text-pink-600 flex items-center justify-center text-xl"><i class="fas fa-server"></i></span>
-                            <div>
-                                <p class="text-sm font-semibold text-gray-900">System Center</p>
-                                <p class="text-xs text-gray-500">Platform status & announcements</p>
+                        <a href="{% url 'dashboard:instructor_attendance_reports' %}" class="text-left p-4 rounded-2xl border border-gray-100 hover:border-indigo-200 hover:shadow-lg transition flex items-center gap-4 w-full">
+                            <span class="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-xl"><i class="fas fa-file-excel"></i></span>
+                            <div class="flex-1">
+                                <p class="text-sm font-semibold text-gray-900">Attendance Reports</p>
+                                <p class="text-xs text-gray-500">View & download attendance files</p>
                             </div>
-                        </button>
+                        </a>
                     </div>
                 </section>
             </div>
@@ -389,12 +455,11 @@ templates folder: library_system/templates/dashboard/teacher.html
 </div>
 <script>
 function toggleSystemCenterDropdown() {
-    // Simple placeholder behavior: show a brief informational modal/alert.
-    // Replace with a real UI later if you have a system center page.
+    // Redirect to the Attendance Reports page as the System Center was replaced
     try {
-        alert('System Center\n\nThe notifications feature was removed. Visit the System Center for platform status and announcements.');
+        window.location.href = '{% url "dashboard:instructor_attendance_reports" %}';
     } catch (e) {
-        console.log('System Center clicked');
+        console.log('Redirect to attendance reports failed', e);
     }
 }
 </script>

@@ -1,12 +1,11 @@
 (function(){
   // Robust sidebar toggle wiring for instructor mobile
-  function log(){ try{ console.log.apply(console, arguments); console.debug.apply(console, arguments); }catch(e){} }
+  function log(){ try{ console.debug.apply(console, arguments); }catch(e){} }
 
   function ensureHandlers(){
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
-    // look for a variety of possible toggle selectors (mobile-specific and legacy)
-    const toggles = Array.from(document.querySelectorAll('.mobile-sidebar-toggle, .sidebar-toggle, [data-toggle="sidebar"], button[onclick*="toggleSidebar"], a[onclick*="toggleSidebar"]'));
+    const toggles = Array.from(document.querySelectorAll('.mobile-sidebar-toggle'));
 
     function openSidebar(){
       if(!sidebar) return;
@@ -38,30 +37,13 @@
     }
 
     // attach to existing toggles
-    function attachToToggles(){
-      toggles.forEach(btn=>{
-      // ensure button is visible on mobile even if some CSS hides it
-      try{
-        const cs = window.getComputedStyle(btn);
-        if(cs && (cs.display === 'none' || cs.visibility === 'hidden')){
-          btn.style.display = 'inline-flex';
-        }
-      }catch(e){ }
-
-      // position and stacking to ensure it's clickable on mobile
-      btn.style.position = btn.style.position || 'relative';
-      btn.style.zIndex = btn.style.zIndex || '200000';
-      btn.style.pointerEvents = btn.style.pointerEvents || 'auto';
-
-      // remove any previous handlers we control, then attach both touch and click handlers
+    toggles.forEach(btn=>{
       btn.removeEventListener('click', toggle);
-      btn.removeEventListener('touchstart', toggle);
+      btn.addEventListener('click', function(e){ e.preventDefault(); toggle(); log('mobile toggle clicked'); });
+      // ensure button is visible and on top
+      btn.style.position='fixed'; btn.style.left='10px'; btn.style.top='10px'; btn.style.zIndex='200000'; btn.style.pointerEvents='auto';
+    });
 
-      btn.addEventListener('click', function(e){ e.preventDefault(); toggle(); log('mobile toggle clicked (click)'); });
-      btn.addEventListener('touchstart', function(e){ e.preventDefault(); toggle(); log('mobile toggle clicked (touchstart)'); }, {passive:false});
-      });
-    }
-    attachToToggles();
     // attach to overlay
     if(overlay){ overlay.addEventListener('click', function(e){ e.preventDefault(); closeSidebar(); }); }
 
@@ -84,48 +66,31 @@
     attachCloseOnLinks();
     setTimeout(attachCloseOnLinks, 500);
 
-    // If no visible toggle, create a permanent fallback button (immediately so user always has a control)
-    function ensureFallback(){
-      const visibleToggle = toggles.find(t=>{ try{ const r=t.getBoundingClientRect(); return r.width>0 && r.height>0; }catch(e){ return false; } });
-      if(!visibleToggle){
-        if(!document.getElementById('mobile-sidebar-fallback')){
-          const fb = document.createElement('button');
-          fb.id='mobile-sidebar-fallback';
-          fb.setAttribute('aria-label','Open menu');
-          fb.innerHTML = '<i class="fas fa-bars"></i>';
-          fb.style.position='fixed';
-          fb.style.left='10px';
-          fb.style.top='10px';
-          fb.style.zIndex='200001';
-          fb.style.width='44px';
-          fb.style.height='44px';
-          fb.style.border='none';
-          fb.style.background='rgba(0,0,0,0.3)';
-          fb.style.color='#fff';
-          fb.style.borderRadius='8px';
-          fb.style.display='inline-flex';
-          fb.style.alignItems='center';
-          fb.style.justifyContent='center';
-          fb.addEventListener('click', function(e){ e.preventDefault(); toggle(); log('fallback toggle clicked'); });
-          fb.addEventListener('touchstart', function(e){ e.preventDefault(); toggle(); log('fallback toggle touched'); }, {passive:false});
-          document.body.appendChild(fb);
-        }
+    // If no visible toggle, create a permanent fallback button
+    const visibleToggle = toggles.find(t=>{ const r=t.getBoundingClientRect(); return r.width>0 && r.height>0; });
+    if(!visibleToggle){
+      if(!document.getElementById('mobile-sidebar-fallback')){
+        const fb = document.createElement('button');
+        fb.id='mobile-sidebar-fallback';
+        fb.setAttribute('aria-label','Open menu');
+        fb.innerHTML = '<i class="fas fa-bars"></i>';
+        fb.style.position='fixed';
+        fb.style.left='10px';
+        fb.style.top='10px';
+        fb.style.zIndex='200001';
+        fb.style.width='44px';
+        fb.style.height='44px';
+        fb.style.border='none';
+        fb.style.background='rgba(0,0,0,0.3)';
+        fb.style.color='#fff';
+        fb.style.borderRadius='8px';
+        fb.style.display='inline-flex';
+        fb.style.alignItems='center';
+        fb.style.justifyContent='center';
+        fb.addEventListener('click', function(e){ e.preventDefault(); toggle(); log('fallback toggle clicked'); });
+        document.body.appendChild(fb);
       }
     }
-    ensureFallback();
-
-    // Try to attach again shortly in case elements are rendered later
-    setTimeout(function(){
-      // refresh toggles list and reattach
-      const newToggles = Array.from(document.querySelectorAll('.mobile-sidebar-toggle, .sidebar-toggle, [data-toggle="sidebar"], button[onclick*="toggleSidebar"], a[onclick*="toggleSidebar"]'));
-      if(newToggles.length && newToggles !== toggles){
-        // replace toggles array (shallow) and attach
-        while(toggles.length) toggles.pop();
-        newToggles.forEach(t=>toggles.push(t));
-        attachToToggles();
-      }
-      ensureFallback();
-    }, 350);
 
     // Handle window resize - ensure desktop view shows sidebar and mobile hides overlay
     window.addEventListener('resize', function(){

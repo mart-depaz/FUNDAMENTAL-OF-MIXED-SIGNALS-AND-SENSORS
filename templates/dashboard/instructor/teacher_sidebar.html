@@ -82,19 +82,37 @@
     #sidebar button:active {
         text-decoration: none !important;
     }
+
+    /* Utility: show element only on mobile (cellphone) screens) */
+    .mobile-only {
+        display: none !important;
+    }
+    @media (max-width: 1023px) {
+        .mobile-only {
+            display: inline-flex !important;
+        }
+    }
+    /* Generic sidebar toggle helper (hidden on desktop) */
+    .sidebar-toggle {
+        display: none !important;
+    }
+    @media (max-width: 1023px) {
+        .sidebar-toggle {
+            display: inline-flex !important;
+        }
+    }
 </style>
-<!-- Mobile Overlay -->
-<div id="sidebar-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 lg:hidden hidden" onclick="toggleSidebar()" style="z-index:200090; display:none; pointer-events:none;"></div>
+<!-- Sidebar overlay removed (handled by page dimming or native app styles). -->
 
 <!-- Sidebar Content -->
-<aside id="sidebar" class="fixed inset-y-0 left-0 transform -translate-x-full lg:translate-x-0 lg:fixed lg:w-64 w-64 text-white p-6 shadow-2xl transition-transform duration-300 ease-in-out flex flex-col relative overflow-hidden" style="background: linear-gradient(180deg, #3C4770 0%, #447294 100%); box-shadow: 2px 0 10px rgba(60, 71, 112, 0.3); top: 64px; height: calc(100vh - 64px); z-index:200080;">
+<aside id="sidebar" class="fixed inset-y-0 left-0 transform -translate-x-full lg:translate-x-0 lg:fixed lg:w-64 w-64 text-white p-6 shadow-2xl transition-transform duration-300 ease-in-out z-40 flex flex-col relative overflow-hidden" style="background: linear-gradient(180deg, #3C4770 0%, #447294 100%); box-shadow: 2px 0 10px rgba(60, 71, 112, 0.3); top: 64px; height: calc(100vh - 64px);">
     <!-- Header - Fixed at top -->
     <div class="flex items-center justify-between mb-8 pb-4 border-b flex-shrink-0" style="border-color: rgba(190, 129, 153, 0.3);">
         <div class="flex items-center">
             <i class="fas fa-chalkboard-teacher text-2xl mr-2" style="color: #BE8199;"></i>
             <h2 class="text-2xl font-bold tracking-wider">Instructor</h2>
         </div>
-        <button class="lg:hidden p-1 rounded-full hover:bg-white/20" onclick="toggleSidebar()">
+        <button class="lg:hidden p-1 rounded-full hover:bg-white/20 mobile-only" onclick="toggleSidebar()">
             <i class="fas fa-times text-xl"></i>
         </button>
     </div>
@@ -237,6 +255,54 @@
                 });
             }
         }, 100);
+    });
+</script>
+
+<script>
+    // Ensure hamburger/open buttons across the app behave as mobile-only toggles
+    document.addEventListener('DOMContentLoaded', function() {
+        try {
+            // Common icon/button selectors that represent a hamburger
+            const selectors = [
+                '.fa-bars',        // font-awesome icon
+                '.hamburger',      // common class
+                '.navbar-toggler', // bootstrap
+                '[data-sidebar-toggle]',
+                '#sidebarToggle',
+                '.sidebar-open'
+            ];
+
+            const found = new Set();
+            selectors.forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => found.add(el));
+            });
+
+            found.forEach(icon => {
+                // prefer the clickable ancestor (button or a)
+                const btn = icon.closest('button, a') || icon;
+                if (!btn) return;
+
+                // mark as mobile-only toggle so CSS hides it on desktop
+                btn.classList.add('mobile-only', 'sidebar-toggle');
+
+                // ensure it toggles the sidebar on click
+                btn.addEventListener('click', function(e) {
+                    // allow normal behavior for links if they have explicit href other than '#'
+                    e.preventDefault();
+                    toggleSidebar();
+                });
+            });
+
+            // Delegated handler: any element with .sidebar-toggle or [data-toggle-sidebar]
+            document.body.addEventListener('click', function(e) {
+                if (e.target.closest('.sidebar-toggle') || e.target.closest('[data-toggle-sidebar]')) {
+                    e.preventDefault();
+                    toggleSidebar();
+                }
+            });
+        } catch (err) {
+            console.error('Sidebar toggle enhancement failed:', err);
+        }
     });
 </script>
 
@@ -463,15 +529,61 @@
 <script>
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('sidebar-overlay');
+        if (!sidebar) return;
+
+        const isMobile = (typeof window.matchMedia === 'function') ? window.matchMedia('(max-width: 1024px)').matches : false;
         const isOpen = !sidebar.classList.contains('-translate-x-full');
-        
+
+        // Helper to create an overlay dynamically on mobile only
+        function ensureOverlay() {
+            let ov = document.getElementById('sidebar-overlay');
+            if (!ov) {
+                ov = document.createElement('div');
+                ov.id = 'sidebar-overlay';
+                ov.style.position = 'fixed';
+                ov.style.inset = '0';
+                ov.style.background = 'rgba(0,0,0,0.6)';
+                ov.style.zIndex = '9998';
+                ov.style.transition = 'opacity 200ms ease';
+                ov.classList.add('mobile-only');
+                ov.addEventListener('click', function() { toggleSidebar(); });
+                document.body.appendChild(ov);
+            }
+            return ov;
+        }
+
         if (isOpen) {
+            // close
             sidebar.classList.add('-translate-x-full');
-            overlay.classList.add('hidden');
+            sidebar.classList.remove('open');
+            // set transform fallback for older browsers
+            sidebar.style.transform = 'translateX(-100%)';
+            sidebar.setAttribute('aria-hidden', 'true');
+
+            // remove overlay if it exists
+            const existing = document.getElementById('sidebar-overlay');
+            if (existing) {
+                existing.parentNode.removeChild(existing);
+            }
+            // restore body scroll
+            try { document.body.style.overflow = ''; } catch(e) {}
         } else {
+            // open
             sidebar.classList.remove('-translate-x-full');
-            overlay.classList.remove('hidden');
+            sidebar.classList.add('open');
+            // ensure visible over content
+            sidebar.style.transform = 'translateX(0)';
+            sidebar.style.zIndex = '9999';
+            sidebar.setAttribute('aria-hidden', 'false');
+
+            // only create overlay on mobile so desktop doesn't get dimmed
+            if (isMobile) {
+                const ov = ensureOverlay();
+                // make overlay visible
+                ov.style.opacity = '1';
+                // prevent body/body scrolling while sidebar is open
+                try { document.body.style.overflow = 'hidden'; } catch(e) {}
+            }
         }
     }
 

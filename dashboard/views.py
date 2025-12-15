@@ -351,6 +351,17 @@ def teacher_dashboard_view(request):
     except Exception:
         recent_notifications = []
     
+    # Compute attendance reports count (all attendance records for this instructor's active, non-deleted, non-archived courses)
+    try:
+        attendance_reports_count = AttendanceRecord.objects.filter(
+            course__instructor=user,
+            course__is_active=True,
+            course__deleted_at__isnull=True,
+            course__is_archived=False
+        ).count()
+    except Exception:
+        attendance_reports_count = 0
+
     context = {
         'school_admin': school_admin,
         'unread_notifications': unread_notifications,
@@ -361,6 +372,7 @@ def teacher_dashboard_view(request):
         'upcoming_more_count': upcoming_more_count,
         'recent_notifications': recent_notifications,
         'avg_students_per_course': avg_students_per_course,
+        'attendance_reports_count': attendance_reports_count,
     }
     return render(request, 'dashboard/instructor/teacher.html', context)
 

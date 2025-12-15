@@ -1,0 +1,153 @@
+/* Responsive helpers for instructor, student and admin dashboards
+	 Applies when viewport width is 600px or less (typical mobile). */
+
+@media (max-width: 600px) {
+	/* Make page use full width and stack major regions vertically */
+	html, body {
+		-webkit-text-size-adjust: 100%;
+		font-size: 14px; /* slightly smaller base font on small screens */
+		line-height: 1.35;
+	}
+
+	/* Generic layout containers: stack columns into a single column */
+	.container, .main-container, .page-wrapper, .content-wrapper, .dashboard-layout {
+		width: 100% !important;
+		max-width: 100% !important;
+		padding-left: 12px !important;
+		padding-right: 12px !important;
+		box-sizing: border-box;
+	}
+
+	/* Sidebar: collapse into a top area or hide to preserve space */
+	.sidebar, .sidenav, .side-nav, #sidebar, .left-nav, .admin-sidebar, .instructor-sidebar, .student-sidebar {
+		display: none !important; /* hide bulky sidebars on mobile */
+	}
+
+	/* If a template uses a responsive sidebar that becomes top nav, allow it */
+	.mobile-sidebar, .mobile-nav, .mobile-menu-toggle {
+		display: block !important;
+	}
+
+	/* Dashboard content should expand to full width */
+	.content, .main, .dashboard-content, .page-content, .right-column {
+		width: 100% !important;
+		padding: 8px 0 !important;
+	}
+
+	/* Top navigation: wrap links, reduce padding and font-size */
+	.top-nav, .navbar, .header, .topbar, .page-header {
+		display: flex !important;
+		flex-wrap: wrap !important;
+		align-items: center !important;
+		gap: 8px;
+		padding: 8px 12px !important;
+	}
+
+	/* Make buttons and controls easier to tap and fit horizontally */
+	button, .btn, .button, input[type="button"], input[type="submit"] {
+		padding: 8px 10px !important;
+		font-size: 14px !important;
+		min-height: 36px;
+	}
+
+	/* Tables: allow horizontal scrolling rather than squashing columns */
+	table, .table {
+		width: 100% !important;
+		table-layout: auto !important;
+		font-size: 13px;
+	}
+	.table-responsive, .responsive-table {
+		overflow-x: auto !important;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	/* Forms: make inputs full width and stack labels above fields */
+	label {
+		display: block;
+		margin-bottom: 6px;
+		font-weight: 600;
+	}
+	input[type="text"], input[type="email"], input[type="password"], select, textarea, .form-control {
+		width: 100% !important;
+		box-sizing: border-box !important;
+		padding: 8px 10px !important;
+		font-size: 14px !important;
+		margin-bottom: 10px !important;
+	}
+
+	/* Avatars / images should scale down */
+	img, .avatar, .profile-picture {
+		max-width: 100% !important;
+		height: auto !important;
+		display: block;
+	}
+
+	/* Cards and panels: full width with reduced padding */
+	.card, .panel, .box, .module {
+		width: 100% !important;
+		padding: 10px !important;
+		margin-bottom: 12px !important;
+	}
+
+	/* Reduce margins and whitespace to fit mobile screens */
+	h1, h2, h3, h4, h5, h6 {
+		margin-top: 10px !important;
+		margin-bottom: 8px !important;
+		line-height: 1.2;
+	}
+
+	/* Ensure utility elements (status, badges) wrap cleanly */
+	.badge, .status, .meta {
+		white-space: normal !important;
+		display: inline-block;
+		margin-top: 4px;
+	}
+
+	/* Action row (buttons) stack vertically on very small screens */
+	.action-row, .actions, .btn-group {
+		display: flex !important;
+		flex-direction: column !important;
+		gap: 8px;
+	}
+
+	/* Prevent fixed or absolute positioned elements from overflowing */
+	.fixed, .fixed-top, .fixed-bottom, .floating {
+		position: relative !important;
+		width: 100% !important;
+	}
+
+	/* Adjust any map/canvas containers to be responsive */
+	.map, .canvas, .qr-canvas {
+		width: 100% !important;
+		height: auto !important;
+	}
+
+	/* Small tweaks for lists & nav items */
+	ul.nav, ul.menu, .nav-list {
+		padding-left: 0 !important;
+		display: flex !important;
+		flex-wrap: wrap !important;
+		gap: 8px;
+	}
+
+	/* Accessibility: make clickable rows obvious */
+	.clickable, tr.clickable {
+		cursor: pointer;
+	}
+}
+
+/* Wider breakpoint for tablets (optional) */
+@media (min-width: 601px) and (max-width: 900px) {
+	.container, .main-container, .content {
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+	.sidebar, .sidenav { display: none; }
+}
+
+/* Utility: always make images and svg scale nicely */
+img, svg {
+	max-width: 100%;
+	height: auto;
+}
+
