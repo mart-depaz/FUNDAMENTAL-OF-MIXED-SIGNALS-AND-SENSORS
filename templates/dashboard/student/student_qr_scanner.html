@@ -27,25 +27,25 @@
     }
 </style>
 
-<div class="max-w-4xl mx-auto">
-    <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8 mb-6">
-        <h1 class="text-2xl font-bold text-gray-900 mb-2 flex items-center">
-            <i class="fas fa-qrcode text-indigo-600 mr-3"></i> Scan QR Code for Attendance
+<div class="max-w-4xl mx-auto px-1">
+    <div class="bg-white rounded-lg shadow-sm p-3 md:p-4 border border-gray-100">
+        <h1 class="text-lg md:text-2xl font-bold text-gray-900 mb-2 flex items-center gap-2">
+            <i class="fas fa-qrcode text-blue-600 text-base md:text-xl\"></i> Scan QR Code for Attendance
         </h1>
-        <p class="text-gray-600">Point your camera at the QR code displayed by your instructor to mark your attendance.</p>
+        <p class="text-xs md:text-sm text-gray-600">Point your camera at the QR code displayed by your instructor to mark your attendance.</p>
     </div>
 
-    <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
-        <div id="qr-reader-loading" class="text-center py-8">
-            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
-            <p class="text-gray-600 font-semibold">Initializing camera...</p>
+    <div class="bg-white rounded-lg shadow-sm p-3 md:p-4 border border-gray-100">
+        <div id="qr-reader-loading" class="text-center py-6 md:py-8">
+            <div class="inline-block animate-spin rounded-full h-10 md:h-12 w-10 md:w-12 border-b-2 border-blue-600 mb-3\"></div>
+            <p class="text-gray-600 font-semibold text-sm md:text-base\">Initializing camera...</p>
         </div>
-        <div id="qr-reader" class="mb-4 hidden"></div>
-        <div id="qr-reader-results" class="hidden mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <p class="text-green-800 font-semibold" id="scan-result-message"></p>
+        <div id="qr-reader" class="mb-3 hidden\"></div>
+        <div id="qr-reader-results" class="hidden mt-3 p-3 md:p-4 bg-green-50 border border-green-200 rounded\">
+            <p class="text-green-800 font-semibold text-xs md:text-sm\" id=\"scan-result-message\"></p>
         </div>
-        <div id="qr-reader-error" class="hidden mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p class="text-red-800 font-semibold" id="scan-error-message"></p>
+        <div id="qr-reader-error" class="hidden mt-3 p-3 md:p-4 bg-red-50 border border-red-200 rounded\">
+            <p class="text-red-800 font-semibold text-xs md:text-sm\" id=\"scan-error-message\"></p>
         </div>
     </div>
 </div>
@@ -113,10 +113,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('qr-reader-results').classList.remove('hidden');
                 document.getElementById('qr-reader-error').classList.add('hidden');
                 document.getElementById('scan-result-message').textContent = data.message || 'Attendance marked successfully!';
+                
+                // Different notification type based on status
+                const notificationType = data.status === 'late' ? 'warning' : 'success';
+                const notificationMessage = data.is_late ? 
+                    `⏰ Marked as Late - ${data.message || 'You scanned after the present window closed.'}` :
+                    (data.message || 'Attendance marked successfully!');
+                
                 if (typeof showNotification === 'function') {
-                    showNotification(data.message || 'Attendance marked successfully!', 'success');
+                    showNotification(notificationMessage, notificationType);
                 } else {
-                    alert('✓ Success!\n\n' + (data.message || 'Attendance marked successfully!'));
+                    alert((data.is_late ? '⏰ Late - ' : '✓ ') + (data.message || 'Attendance marked successfully!'));
                 }
                 // Restart scanner quickly after 1.5 seconds (reduced from 3)
                 setTimeout(() => {
@@ -134,10 +141,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('qr-reader-results').classList.add('hidden');
                 document.getElementById('qr-reader-error').classList.remove('hidden');
                 
-                // Show appropriate message based on attendance status
+                // Show appropriate message based on error type
                 let errorMessage = data.message || 'Failed to mark attendance.';
                 let alertMessage = errorMessage;
-                if (data.attendance_status === 'closed') {
+                
+                // Handle special error types
+                if (data.error_type === 'qr_not_registered') {
+                    errorMessage = '⚠️ QR Code Not Registered\n\nYour QR code has not been registered for this course.\nPlease register it first before marking attendance.';
+                    alertMessage = '⚠️ QR Code Not Registered\n\nYour QR code has NOT been registered in this course.\nPlease register your QR code first before you can mark attendance.\n\nGo to your Enrolled Courses and click "Register QR for this Course".';
+                } else if (data.attendance_status === 'closed') {
                     errorMessage = 'Attendance is currently CLOSED for this course. Please contact your instructor.';
                     alertMessage = '✗ Attendance Closed\n\nAttendance is currently CLOSED for this course.\nPlease contact your instructor.';
                 } else if (data.attendance_status === 'stopped') {

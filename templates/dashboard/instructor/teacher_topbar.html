@@ -1,45 +1,107 @@
 <!-- templates/dashboard/instructor/teacher_topbar.html -->
 {% load static %}
-<!-- Instructor mobile CSS (applies up to tablet widths so toggle styles load on devices <= 1024px) -->
-<link rel="stylesheet" href="{% static 'css/instructor_mobile.css' %}" media="(max-width: 1024px)">
+<!-- Instructor mobile CSS (apply compact header/toggle rules on small screens <= 600px to match admin/student) -->
+<link rel="stylesheet" href="{% static 'css/instructor_mobile.css' %}" media="(max-width: 600px)">
 <style>
     .topbar-brand { text-decoration: none; }
     .topbar-brand:hover .topbar-brand-text { text-decoration: underline; }
     
-    /* Mobile hamburger menu toggle */
-    .mobile-sidebar-toggle {
-        display: none;
-    }
-    
-    @media (max-width: 1024px) {
+    /* Mobile hamburger menu toggle (hidden on large screens) */
+    .mobile-sidebar-toggle { display: none; }
+
+    /* Small/mobile responsive rules to match admin/student topbar */
+    @media (max-width: 600px) {
         .mobile-sidebar-toggle {
             display: inline-flex !important;
             align-items: center;
             justify-content: center;
-            width: 44px;
-            height: 44px;
-            background: rgba(255, 255, 255, 0.1);
+            width: 2.75rem; /* 44px */
+            height: 2.75rem;
+            min-width: 2.75rem;
+            background: rgba(255, 255, 255, 0.08);
             border: none;
             cursor: pointer;
             border-radius: 0.5rem;
             transition: all 0.3s ease;
             color: white;
-            font-size: 20px;
-            margin-right: 0.5rem;
+            font-size: 1.125rem; /* 18px */
+            flex-shrink: 0;
         }
+        .mobile-sidebar-toggle:hover { background: rgba(255,255,255,0.15); }
         
-        .mobile-sidebar-toggle:hover {
-            background: rgba(255, 255, 255, 0.2);
+        /* Ensure notification container does not affect header layout on instructor mobile */
+        #notification-container,
+        #notification-container * {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+        }
+
+        /* Keep mobile toggle visually fixed and above other elements */
+        .mobile-sidebar-toggle,
+        #mobile-sidebar-toggle {
+            position: relative !important;
+            z-index: 100000 !important;
+            outline: none !important;
+            transform: none !important;
+            margin: 0 !important;
+        }
+
+        /* Prevent focus/active states from changing layout */
+        .mobile-sidebar-toggle:focus,
+        .mobile-sidebar-toggle:active,
+        #mobile-sidebar-toggle:focus,
+        #mobile-sidebar-toggle:active {
+            outline: none !important;
+            box-shadow: none !important;
+        }
+
+        /* Layout grid to mimic admin topbar spacing */
+        #teacher-top-bar .max-w-full > .flex {
+            display: grid !important;
+            grid-template-columns: 44px 1fr minmax(90px, 1fr) !important;
+            align-items: center !important;
+            gap: 0.5rem !important;
+        }
+        #teacher-top-bar .topbar-brand-text { display: none !important; }
+        #teacher-top-bar .topbar-brand span:first-child { height: 28px !important; width: 28px !important; min-width:28px !important; }
+        #teacher-top-bar .topbar-brand img { height: 24px !important; width: 24px !important; }
+        #teacher-top-bar .flex-1 { justify-self: center !important; text-align: center !important; min-width: 0 !important; max-width: calc(100% - 100px) !important; }
+        #teacher-top-bar .flex-1 { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+        #teacher-top-bar .header-right { justify-self: end !important; display: flex; align-items: center; gap: 0.4rem; min-width: 92px !important; max-width: 110px !important; }
+        #teacher-top-bar .flex.items-center.justify-between { height: 3.75rem !important; }
+        /* Force header to remain fixed and independent across pages/tabs */
+        #teacher-top-bar {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 99990 !important;
+            will-change: transform;
+            transform: none !important;
+        }
+
+        /* Ensure the hamburger stays inside the header layout (not floating) */
+        #teacher-top-bar .mobile-sidebar-toggle,
+        #teacher-top-bar #mobile-sidebar-toggle {
+            position: relative !important;
+            left: auto !important;
+            top: auto !important;
+            margin: 0 !important;
+            transform: none !important;
         }
     }
 </style>
+<!-- Global Notification System removed for instructor mobile (≤600px) to prevent sidebar position shifts - matches admin dashboard -->
 <header id="teacher-top-bar" class="fixed top-0 left-0 right-0 z-50 w-full shadow-md" style="background: linear-gradient(90deg, #3C4770 0%, #447294 100%); box-shadow: 0 2px 10px rgba(60, 71, 112, 0.3);">
     <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-16">
-            <!-- Mobile sidebar toggle button (force visible & tappable) -->
-            <button id="mobile-sidebar-toggle" class="mobile-sidebar-toggle lg:hidden" onclick="toggleSidebar()" title="Toggle Menu" aria-label="Open menu" aria-hidden="false" tabindex="0"
-                style="position:fixed !important; left:10px !important; top:10px !important; z-index:999999 !important; width:56px !important; height:56px !important; align-items:center !important; justify-content:center !important; background:rgba(190,129,153,0.95) !important; color:#fff !important; border-radius:10px !important; box-shadow:0 6px 18px rgba(0,0,0,0.35) !important; pointer-events:auto !important;">
-                <i class="fas fa-bars" style="font-size:20px; line-height:1; pointer-events:none;"></i>
+            <!-- Mobile sidebar toggle button (matches admin/student markup) -->
+            <button id="mobile-sidebar-toggle" type="button" class="mobile-sidebar-toggle lg:hidden" title="Toggle Menu" aria-label="Open menu">
+                <i class="fas fa-bars"></i>
             </button>
             
             <!-- Left Section: Attendance System Branding -->
@@ -147,41 +209,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Create a floating fallback toggle if clicks are not reaching the original toggle
-        (function ensureFallbackToggle() {
-            // Only create the floating fallback toggle on mobile devices
-            if (typeof window.matchMedia === 'function' && !window.matchMedia('(max-width: 1024px)').matches) {
-                const fb = document.getElementById('mobile-sidebar-fallback');
-                if (fb) fb.remove();
-                return;
-            }
-        // If an existing visible toggle is present and not covered, do nothing
-        const firstToggle = document.querySelector('.mobile-sidebar-toggle');
-        let visible = false;
-        if (firstToggle) {
-            const rect = firstToggle.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) visible = true;
-        }
-
-        if (!visible) {
-            if (!document.getElementById('mobile-sidebar-fallback')) {
-                const fb = document.createElement('button');
-                fb.id = 'mobile-sidebar-fallback';
-                fb.setAttribute('aria-label', 'Open menu');
-                fb.innerHTML = '<i class="fas fa-bars"></i>';
-                fb.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    try { console.debug('fallback toggle clicked'); } catch (z) {}
-                    window.toggleSidebar();
-                });
-                document.body.appendChild(fb);
-            }
-        } else {
-            // remove fallback if present
-            const fb = document.getElementById('mobile-sidebar-fallback');
-            if (fb) fb.remove();
-        }
-    })();
 
     // Clicking the overlay should close the sidebar
     const overlay = document.getElementById('sidebar-overlay');
@@ -194,6 +221,104 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+});
+</script>
+
+<style>
+/* Mobile: position main under fixed header for instructor pages */
+@media (max-width: 600px) {
+    :root { --teacher-header-offset: 64px; }
+    /* Make header independent by using body padding instead of absolutely positioning main
+       This ensures pages without a specific #main-content id still flow correctly below header */
+    body {
+        padding-top: var(--teacher-header-offset) !important;
+    }
+    aside#sidebar {
+        top: var(--teacher-header-offset) !important;
+        height: calc(100vh - var(--teacher-header-offset)) !important;
+    }
+    /* Prevent wrapper spacing from pushing content down */
+    #instructor-page-wrapper { padding-top: 0 !important; min-height: auto !important; }
+}
+</style>
+
+<script>
+function adjustTeacherHeaderOffset() {
+    try {
+        const header = document.getElementById('teacher-top-bar');
+        const notif = document.getElementById('notification-container');
+        let extra = 0;
+        if (notif) {
+            const r = notif.getBoundingClientRect(); if (r.height > 0) extra = Math.ceil(r.height) + 8;
+        }
+        const h = header ? Math.ceil(header.getBoundingClientRect().height) : 64;
+        const offset = h + extra;
+        try { document.documentElement.style.setProperty('--teacher-header-offset', offset + 'px'); } catch(e) {}
+
+        if (window.innerWidth <= 600) {
+            const main = document.getElementById('main-content');
+            if (main) {
+                main.style.position = 'absolute';
+                main.style.top = 'var(--teacher-header-offset)';
+                main.style.left = '0';
+                main.style.right = '0';
+                main.style.bottom = '0';
+                main.style.margin = '0';
+                main.style.overflow = 'auto';
+            }
+            const aside = document.getElementById('sidebar');
+            if (aside) {
+                aside.style.top = 'var(--teacher-header-offset)';
+                aside.style.height = 'calc(100vh - var(--teacher-header-offset))';
+            }
+        }
+    } catch (e) { console.error('adjustTeacherHeaderOffset', e); }
+}
+
+// Re-calculate header offset on every tab/page change to keep sidebar stable
+function observeHeaderChanges() {
+    try {
+        // Use MutationObserver to watch for DOM changes during AJAX/SPA navigation
+        const observer = new MutationObserver(function(mutations) {
+            // Only recalculate if the page structure changed
+            for (let mutation of mutations) {
+                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    setTimeout(adjustTeacherHeaderOffset, 50);
+                    break;
+                }
+            }
+        });
+
+        // Watch the entire body for structural changes
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributeFilter: ['class', 'style']
+        });
+
+        // Listen for popstate (back/forward navigation)
+        window.addEventListener('popstate', adjustTeacherHeaderOffset);
+
+        // Listen for custom SPA navigation events
+        document.addEventListener('page:changed', adjustTeacherHeaderOffset);
+        document.addEventListener('ajax:complete', adjustTeacherHeaderOffset);
+        
+        // Also watch for DOMContentLoaded on dynamically loaded content
+        document.addEventListener('turbo:load', adjustTeacherHeaderOffset);
+        
+    } catch (e) {
+        console.error('observeHeaderChanges', e);
+    }
+}
+
+window.addEventListener('load', function() {
+    adjustTeacherHeaderOffset();
+    observeHeaderChanges();
+});
+window.addEventListener('resize', adjustTeacherHeaderOffset);
+document.addEventListener('DOMContentLoaded', function() {
+    adjustTeacherHeaderOffset();
+    observeHeaderChanges();
 });
 </script>
 
@@ -666,6 +791,36 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+</script>
+
+<script>
+// Re-run header offset when tabs or content change (client-side tab switches)
+(function(){
+    // Observe main content for changes and re-adjust header offset
+    function safeAdjust(){ try{ if(typeof adjustTeacherHeaderOffset==='function') adjustTeacherHeaderOffset(); }catch(e){} }
+
+    const targets = [document.getElementById('main-content'), document.getElementById('instructor-page-wrapper'), document.body];
+    let target = targets.find(t=>!!t) || document.body;
+
+    try{
+        const obs = new MutationObserver(function(){ safeAdjust(); });
+        obs.observe(target, { childList: true, subtree: true, attributes: true });
+        // Also listen for common tab / nav clicks and re-run after short delay
+        document.addEventListener('click', function(e){
+            const el = e.target.closest('.nav-link, [data-toggle="tab"], .tab-link, .tabs a');
+            if(el) setTimeout(safeAdjust, 120);
+        }, {capture:true});
+
+        // Also listen for history navigation and common SPA events (htmx, turbolinks, pjax)
+        window.addEventListener('popstate', safeAdjust);
+        document.addEventListener('turbolinks:load', safeAdjust);
+        document.addEventListener('pjax:end', safeAdjust);
+        document.addEventListener('htmx:afterSwap', safeAdjust);
+    }catch(e){ console.error('observer bind failed', e); }
+
+    // also call once on load to ensure correct offset
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(safeAdjust, 80); });
+})();
 </script>
 
 

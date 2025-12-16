@@ -22,6 +22,7 @@ IS_PRODUCTION = os.environ.get('PRODUCTION', 'false').lower() == 'true' or IS_RE
 
 # ALLOWED_HOSTS: default to '*' in development; in production set via env var
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',') if os.environ.get('ALLOWED_HOSTS') else ['*']
+ALLOWED_HOSTS = ['192.168.1.16', '*']
 
 # CSRF trusted origins - include common local dev hosts plus any explicit origins
 CSRF_TRUSTED_ORIGINS = [

@@ -24,11 +24,11 @@
         flex-direction: column;
     }
 </style>
-<div class="max-w-4xl mx-auto">
-    <h2 class="text-2xl font-bold mb-6" style="color: #3C4770;">Enroll in Course</h2>
+<div class="max-w-4xl mx-auto px-1">
+    <h2 class="text-xl md:text-2xl font-bold mb-4 px-2" style="color: #3C4770;">Enroll in Course</h2>
     
     <!-- Enrollment Form -->
-    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+    <div class="bg-white rounded-lg shadow-sm p-3 md:p-4 mb-3 border border-gray-100">
         <h3 class="text-lg font-semibold mb-4 text-gray-800">Enter Course Code</h3>
         <form id="enrollmentForm" class="space-y-4">
             {% csrf_token %}
@@ -47,13 +47,13 @@
     </div>
     
     <!-- Course Information (Hidden until code is verified) -->
-    <div id="courseInfoSection" class="bg-white rounded-xl shadow-lg p-6 mb-6 hidden">
-        <h3 class="text-lg font-semibold mb-4 text-gray-800">Course Information</h3>
-        <div id="courseInfoContent" class="space-y-3"></div>
+    <div id="courseInfoSection" class="bg-white rounded-lg shadow-sm p-3 md:p-4 mb-3 border border-gray-100 hidden">
+        <h3 class="text-base md:text-lg font-semibold mb-3 text-gray-800">Course Information</h3>
+        <div id="courseInfoContent" class="space-y-2"></div>
     </div>
     
     <!-- Student Information Form (Hidden until code is verified) -->
-    <div id="studentInfoSection" class="bg-white rounded-xl shadow-lg p-6 mb-6 hidden">
+    <div id="studentInfoSection" class="bg-white rounded-lg shadow-sm p-3 md:p-4 mb-3 border border-gray-100 hidden">
         <h3 class="text-lg font-semibold mb-4 text-gray-800">Your Information</h3>
         <form id="studentInfoForm" class="space-y-4">
             {% csrf_token %}
@@ -104,67 +104,67 @@
     </div>
     
     <!-- Enrolled Courses -->
-    <div class="bg-white rounded-xl shadow-lg p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h3 class="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <i class="fas fa-book-open text-indigo-600"></i>
+    <div class="bg-white rounded-lg shadow-sm p-3 md:p-4 border border-gray-100">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-3 mb-4">
+            <h3 class="text-base md:text-lg font-bold text-gray-900 flex items-center gap-2">
+                <i class="fas fa-book-open text-blue-600"></i>
                 My Enrolled Courses
             </h3>
-            <div class="flex items-center gap-3">
-                <button id="openDroppedBtn" type="button" onclick="safeOpenDroppedModal()" class="px-3 py-1 bg-red-50 text-red-700 text-sm font-semibold rounded-full hover:bg-red-100 transition">Dropped</button>
-                <span class="px-3 py-1 bg-indigo-100 text-indigo-700 text-sm font-semibold rounded-full">
+            <div class="flex items-center gap-2">
+                <button id="openDroppedBtn" type="button" onclick="safeOpenDroppedModal()" class="px-2 md:px-3 py-1 bg-red-50 text-red-700 text-xs md:text-sm font-semibold rounded-full hover:bg-red-100 transition">Dropped</button>
+                <span class="px-2 md:px-3 py-1 bg-blue-100 text-blue-700 text-xs md:text-sm font-semibold rounded-full">
                     {{ enrolled_courses|length|default:0 }} course{{ enrolled_courses|length|default:0|pluralize }}
                 </span>
             </div>
         </div>
-        <div id="enrolledCoursesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div id="enrolledCoursesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
             {% if enrolled_courses %}
                 {% for enrollment in enrolled_courses %}
-                <div class="bg-gradient-to-br from-white to-gray-50 rounded-xl p-5 shadow-md hover:shadow-xl transition-all duration-300 border border-gray-200 cursor-pointer transform hover:-translate-y-1 flex flex-col h-full" 
-                     onclick="showEnrolledCourseDetails({{ enrollment.course.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}', '{{ enrollment.course.program.code|escapejs }}', '{{ enrollment.course.program.name|escapejs }}', {{ enrollment.course.year_level }}, '{{ enrollment.course.semester|escapejs }}', '{{ enrollment.course.school_year|escapejs }}', '{{ enrollment.course.instructor.full_name|default:enrollment.course.instructor.username|escapejs }}', '{{ enrollment.course.room|default:"TBA"|escapejs }}', '{{ enrollment.enrolled_at|date:"F d, Y"|escapejs }}', '{{ enrollment.section|default:"N/A"|escapejs }}', '{{ enrollment.course.color|default:"#3C4770"|escapejs }}')">
+                <div class="bg-white rounded-lg p-3 md:p-4 shadow-sm hover:shadow-md transition-all border border-gray-200 cursor-pointer flex flex-col h-full" 
+                     onclick="showEnrolledCourseDetails({{ enrollment.course.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}', '{{ enrollment.course.program.code|escapejs }}', '{{ enrollment.course.program.name|escapejs }}', {{ enrollment.course.year_level }}, '{{ enrollment.course.semester|escapejs }}', '{{ enrollment.course.school_year|escapejs }}', '{{ enrollment.course.instructor.full_name|default:enrollment.course.instructor.username|escapejs }}', '{{ enrollment.course.room|default:"TBA"|escapejs }}', '{{ enrollment.enrolled_at|date:"F d, Y"|escapejs }}', '{{ enrollment.section|default:"N/A"|escapejs }}', '{{ enrollment.course.color|default:"#3C4770"|escapejs }}', {{ enrollment.has_qr|lower }})">>
                     <!-- Course Header -->
-                    <div class="flex items-start gap-3 mb-4 flex-shrink-0">
-                        <div class="w-14 h-14 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg flex-shrink-0" 
+                    <div class="flex items-start gap-2 md:gap-3 mb-3 flex-shrink-0">
+                        <div class="w-10 md:w-12 h-10 md:h-12 rounded-lg flex items-center justify-center text-white font-bold text-sm md:text-base shadow-md flex-shrink-0" 
                              style="background: linear-gradient(135deg, {{ enrollment.course.color|default:'#3C4770' }} 0%, {{ enrollment.course.color|default:'#447294' }} 100%);">
                             {{ enrollment.course.code|first|upper }}
                         </div>
                         <div class="flex-1 min-w-0">
-                            <h4 class="font-bold text-gray-900 text-base mb-1 truncate" title="{{ enrollment.course.code }}">
+                            <h4 class="font-bold text-gray-900 text-sm md:text-base mb-1 truncate" title="{{ enrollment.course.code }}">
                                 {{ enrollment.course.code }}
                             </h4>
-                            <p class="text-xs text-gray-600 line-clamp-2 min-h-[2.5rem] course-card-title" title="{{ enrollment.course.name }}">
+                            <p class="text-xs text-gray-600 line-clamp-2 course-card-title" title="{{ enrollment.course.name }}">
                                 {{ enrollment.course.name }}
                             </p>
                         </div>
                     </div>
                     
                     <!-- Course Details -->
-                    <div class="space-y-2.5 pt-3 border-t border-gray-200 flex-1 flex flex-col course-details-section">
-                        <div class="flex items-center gap-2 text-xs text-gray-600">
-                            <i class="fas fa-graduation-cap text-indigo-500 w-4 flex-shrink-0"></i>
+                    <div class="space-y-1.5 md:space-y-2 pt-2 md:pt-3 border-t border-gray-200 flex-1 flex flex-col course-details-section text-xs md:text-sm">
+                        <div class="flex items-center gap-2 text-gray-600 min-w-0">
+                            <i class="fas fa-graduation-cap text-blue-500 w-3 md:w-4 flex-shrink-0"></i>
                             <span class="truncate" title="{{ enrollment.course.program.code }} - {{ enrollment.course.program.name }}">
                                 {{ enrollment.course.program.code }}
                             </span>
                         </div>
-                        <div class="flex items-center gap-2 text-xs text-gray-600 flex-wrap">
-                            <i class="fas fa-user text-blue-500 w-4 flex-shrink-0"></i>
+                        <div class="flex items-center gap-2 text-gray-600 flex-wrap">
+                            <i class="fas fa-user text-blue-500 w-3 md:w-4 flex-shrink-0"></i>
                             <span class="flex-shrink-0">{{ enrollment.course.year_level|ordinal_year }}</span>
                             {% if enrollment.section %}
-                            <span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-semibold text-[10px] flex-shrink-0">Sec {{ enrollment.section|upper }}</span>
+                            <span class="px-1.5 md:px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px] md:text-xs font-semibold flex-shrink-0">Sec {{ enrollment.section|upper }}</span>
                             {% endif %}
                         </div>
-                        <div class="flex items-center gap-2 text-xs text-gray-600">
-                            <i class="fas fa-calendar text-purple-500 w-4 flex-shrink-0"></i>
-                            <span class="flex-shrink-0">
+                        <div class="flex items-center gap-2 text-gray-600 min-w-0">
+                            <i class="fas fa-calendar text-purple-500 w-3 md:w-4 flex-shrink-0"></i>
+                            <span class="flex-shrink-0 text-xs md:text-sm">
                                 {% if enrollment.course.semester == '1st' %}1st{% elif enrollment.course.semester == '2nd' %}2nd{% else %}{{ enrollment.course.semester }}{% endif %} Sem
                                 {% if enrollment.course.school_year %} • {{ enrollment.course.school_year }}{% endif %}
                             </span>
                         </div>
-                        <div class="pt-2 mt-auto">
-                            <p class="text-[10px] text-gray-500 leading-relaxed">
-                                <span class="font-medium">Code:</span> <span class="font-mono">{{ enrollment.course.enrollment_code|default:'N/A' }}</span>
+                        <div class="pt-1 md:pt-2 mt-auto">
+                            <p class="text-[10px] text-gray-500 leading-tight">
+                                <span class="font-medium">Code:</span> <span class="font-mono text-[9px]">{{ enrollment.course.enrollment_code|default:'N/A' }}</span>
                             </p>
-                            <p class="text-[10px] text-gray-500 leading-relaxed mt-1">
+                            <p class="text-[10px] text-gray-500 leading-tight mt-0.5 md:mt-1">
                                 <span class="font-medium">Enrolled:</span> {{ enrollment.enrolled_at|date:"M d, Y" }}
                             </p>
                         </div>
@@ -172,10 +172,10 @@
                 
         
                     <!-- Unenroll Button -->
-                    <div class="pt-3 mt-3 border-t border-gray-200 flex-shrink-0">
+                    <div class="pt-2 md:pt-3 mt-2 md:mt-3 border-t border-gray-200 flex-shrink-0">
                         <button onclick="event.stopPropagation(); showUnenrollModal({{ enrollment.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}')" 
-                                class="w-full px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition">
-                            <i class="fas fa-times mr-1"></i> Unenroll
+                                class="w-full px-3 md:px-4 py-1.5 md:py-2 bg-red-600 text-white text-xs md:text-sm font-semibold rounded transition hover:bg-red-700">
+                            <i class="fas fa-times mr-1"></i> Drop
                         </button>
                     </div>
                 </div>
@@ -587,7 +587,7 @@ document.getElementById('enrollment_code').addEventListener('keypress', function
     }
 });
 
-function showEnrolledCourseDetails(courseId, code, name, programCode, programName, yearLevel, semester, schoolYear, instructor, room, enrolledAt, section, color) {
+function showEnrolledCourseDetails(courseId, code, name, programCode, programName, yearLevel, semester, schoolYear, instructor, room, enrolledAt, section, color, hasQR) {
     let modal = document.getElementById('enrolledCourseDetailsModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -615,6 +615,25 @@ function showEnrolledCourseDetails(courseId, code, name, programCode, programNam
     const semesterDisplay = semester === '1st' ? '1st Semester' : semester === '2nd' ? '2nd Semester' : semester || 'N/A';
     
     document.getElementById('modal-course-code').textContent = code + ' - ' + name;
+    
+    // Create button HTML based on QR registration status
+    let buttonHTML = '';
+    if (hasQR) {
+        buttonHTML = `
+            <button disabled class="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg font-semibold cursor-not-allowed transition flex items-center gap-2" title="QR code already registered">
+                <i class="fas fa-lock text-sm"></i> 
+                <span>QR Registered</span>
+            </button>
+        `;
+    } else {
+        buttonHTML = `
+            <button id="studentRegisterBtn" onclick="(function(){ window.isStudentRegisterMode = true; window.studentRegisterCourseId = ${courseId}; openQRScanner(${courseId}, '{{ user.school_id|default:''|escapejs }}'); })()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition flex items-center gap-2">
+                <i class="fas fa-qrcode"></i> 
+                <span>Register QR for this Course</span>
+            </button>
+        `;
+    }
+    
     document.getElementById('modal-course-content').innerHTML = `
         <div class="p-4 rounded-xl border-l-4" style="background: linear-gradient(90deg, ${color}15 0%, #FFFFFF 100%); border-left-color: ${color};">
             <h4 class="text-lg font-bold mb-2" style="color: ${color};">${code} - ${name}</h4>
@@ -630,9 +649,7 @@ function showEnrolledCourseDetails(courseId, code, name, programCode, programNam
             </div>
         </div>
         <div class="mt-4 flex items-center gap-3">
-            <button id="studentRegisterBtn" onclick="(function(){ window.isStudentRegisterMode = true; window.studentRegisterCourseId = ${courseId}; openQRScanner(${courseId}, '{{ user.school_id|default:''|escapejs }}'); })()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition">
-                <i class="fas fa-qrcode mr-2"></i> Register QR for this Course
-            </button>
+            ${buttonHTML}
             <button onclick="closeEnrolledCourseDetails()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition">
                 Close
             </button>
@@ -765,25 +782,25 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8">
         <div class="flex justify-between items-start mb-6">
             <h3 class="text-2xl font-bold flex items-center text-red-600">
-                <i class="fas fa-user-minus w-6 h-6 mr-2"></i> Unenroll from Course
+                <i class="fas fa-user-minus w-6 h-6 mr-2"></i> Drop this Course
             </h3>
             <button onclick="closeUnenrollModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
                 <i class="fas fa-times w-6 h-6"></i>
             </button>
         </div>
         <div class="space-y-4">
-            <p class="text-gray-700 font-semibold">Are you sure you want to unenroll from this course?</p>
+            <p class="text-gray-700 font-semibold">Are you sure you want to drop from this course?</p>
             <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded">
                 <p class="font-semibold text-red-800" id="unenroll-course-name"></p>
             </div>
-            <p class="text-sm text-gray-600">This action cannot be undone. You will need to re-enroll using the enrollment code.</p>
+            <p class="text-sm text-gray-600">This action cannot be undone.</p>
             <input type="hidden" id="unenroll-enrollment-id">
             <div class="flex justify-end space-x-3 pt-6 border-t border-gray-100">
                 <button onclick="closeUnenrollModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
                     Cancel
                 </button>
                 <button onclick="confirmUnenroll()" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm">
-                    <i class="fas fa-user-minus mr-2"></i> Unenroll
+                    <i class="fas fa-user-minus mr-2"></i> Drop
                 </button>
             </div>
         </div>

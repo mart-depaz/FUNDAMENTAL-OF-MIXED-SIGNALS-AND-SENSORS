@@ -3,18 +3,543 @@
 <style>
     .topbar-brand { text-decoration: none; }
     .topbar-brand:hover .topbar-brand-text { text-decoration: underline; }
+    /* Mobile hamburger menu toggle (visible on <=1024px) */
+/* ========================================
+   STUDENT TOPBAR - RESPONSIVE CSS
+   Percentage-based for better scaling
+   ======================================== */
+
+/* Base Styles */
+.topbar-brand {
+    text-decoration: none;
+    transition: opacity 0.15s ease;
+}
+
+.topbar-brand:hover {
+    opacity: 0.9;
+}
+
+.topbar-brand:hover .topbar-brand-text {
+    text-decoration: underline;
+}
+
+/* Mobile Sidebar Toggle Button */
+.mobile-sidebar-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem; /* 44px */
+    height: 2.75rem;
+    min-width: 2.75rem;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    cursor: pointer;
+    border-radius: 0.5rem;
+    transition: all 0.3s ease;
+    color: white;
+    font-size: 1.125rem; /* 18px */
+    flex-shrink: 0;
+}
+
+.mobile-sidebar-toggle:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.mobile-sidebar-toggle:active {
+    transform: scale(0.95);
+}
+
+/* Notification Badge */
+.notification-badge {
+    position: absolute;
+    top: -0.25rem;
+    right: -0.25rem;
+    background: #ef4444;
+    color: white;
+    border-radius: 9999px;
+    padding: 0.125rem 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+    min-width: 1.125rem;
+    text-align: center;
+    border: 2px solid #3C4770;
+}
+
+/* ========================================
+   TABLET RESPONSIVE (max-width: 1024px)
+   ======================================== */
+@media (max-width: 1024px) {
+    .mobile-sidebar-toggle {
+        display: inline-flex !important;
+    }
+    
+    #student-top-bar .max-w-full {
+        padding-left: 3% !important;
+        padding-right: 3% !important;
+    }
+    
+    /* Left Section - Brand */
+    #student-top-bar .topbar-brand {
+        font-size: 1.125rem !important; /* 18px */
+        gap: 0.75rem !important;
+    }
+    
+    #student-top-bar .topbar-brand span:first-child {
+        height: 2.5rem !important; /* 40px */
+        width: 2.5rem !important;
+        min-width: 2.5rem !important;
+    }
+    
+    #student-top-bar .topbar-brand img {
+        height: 2.25rem !important; /* 36px */
+        width: 2.25rem !important;
+    }
+    
+    /* Center Section - School Name */
+    /* Use grid layout for header so center can truly center between left and right */
+    #student-top-bar .max-w-full > .flex {
+        display: grid !important;
+        grid-template-columns: auto 1fr auto !important;
+        align-items: center !important;
+        gap: none !important;
+    }
+    #student-top-bar .flex-1 {
+        max-width: 60% !important;
+        justify-self: center !important;
+        text-align: center !important;
+        min-width: 0 !important;
+    }
+    
+    #student-top-bar .flex.items-center img#topbar-center-profile-picture {
+        height: 1.5rem !important; /* 24px */
+        width: 1.5rem !important;
+        min-width: 1.5rem !important;
+    }
+    
+    #student-top-bar .flex.items-center #topbar-center-profile-placeholder {
+        height: 1.5rem !important;
+        width: 1.5rem !important;
+        min-width: 1.5rem !important;
+        font-size: 0.75rem !important;
+    }
+    
+    #student-top-bar .flex.items-center .text-sm {
+        font-size: 0.8125rem !important; /* 13px */
+    }
+    
+    /* Right Section - Profile */
+    #student-top-bar button[onclick="toggleProfileDropdown()"] {
+        padding: 0.5rem !important;
+        gap: 0.5rem !important;
+    }
+    
+    #student-top-bar button[onclick="toggleProfileDropdown()"] .text-sm {
+        font-size: 0.8125rem !important;
+    }
+}
+
+/* ========================================
+   MOBILE RESPONSIVE (max-width: 767px)
+   ======================================== */
+@media (max-width: 767px) {
+    /* Header Container */
+    #student-top-bar {
+        box-shadow: 0 1px 8px rgba(60, 71, 112, 0.25) !important;
+    }
+    
+    #student-top-bar .max-w-full {
+        padding-left: 2% !important;
+        padding-right: 2% !important;
+    }
+    
+    #student-top-bar .flex.items-center.justify-between {
+        height: 3.75rem !important; /* 60px */
+    }
+    
+    /* Mobile Toggle Button */
+    .mobile-sidebar-toggle {
+        margin-right: 0.5rem;
+    }
+    
+    /* Left Section - Brand */
+    #student-top-bar .topbar-brand {
+        font-size: 1rem !important; /* 16px */
+        gap: 0.5rem !important;
+    }
+    
+    #student-top-bar .topbar-brand span:first-child {
+        height: 2.25rem !important; /* 36px */
+        width: 2.25rem !important;
+        min-width: 2.25rem !important;
+    }
+    
+    #student-top-bar .topbar-brand img {
+        height: 2rem !important; /* 32px */
+        width: 2rem !important;
+    }
+    
+    /* Hide brand text on mobile */
+    #student-top-bar .topbar-brand-text {
+        display: none !important;
+    }
+    
+    /* Center Section - School Name */
+    #student-top-bar .flex-1.flex.justify-center {
+        flex: 0 1 auto !important;
+        min-width: 0 !important;
+        max-width: 40% !important;
+        margin: 0 2% !important;
+    }
+    
+    #student-top-bar .flex.items-center img#topbar-center-profile-picture {
+        height: 1.25rem !important; /* 20px */
+        width: 1.25rem !important;
+        min-width: 1.25rem !important;
+    }
+    
+    #student-top-bar .flex.items-center #topbar-center-profile-placeholder {
+        height: 1.25rem !important;
+        width: 1.25rem !important;
+        min-width: 1.25rem !important;
+        font-size: 0.625rem !important; /* 10px */
+    }
+    
+    #student-top-bar .flex.items-center .text-sm {
+        font-size: 0.6875rem !important; /* 11px */
+        max-width: 100% !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+    
+    /* Right Section - Profile */
+    #student-top-bar .flex.items-center.space-x-2,
+    #student-top-bar .flex.items-center.space-x-3 {
+        gap: 0.25rem !important;
+    }
+    
+    #student-top-bar button[onclick="toggleProfileDropdown()"] {
+        padding: 0.375rem !important;
+        gap: 0.25rem !important;
+    }
+    
+    /* Hide profile name on mobile */
+    #student-top-bar button[onclick="toggleProfileDropdown()"] .text-sm {
+        display: none !important;
+    }
+    
+    /* Hide chevron icon on mobile */
+    #student-top-bar button[onclick="toggleProfileDropdown()"] .fa-chevron-down {
+        display: none !important;
+    }
+    
+    #student-top-bar button[onclick="toggleProfileDropdown()"] img#topbar-profile-picture {
+        height: 2rem !important; /* 32px */
+        width: 2rem !important;
+        min-width: 2rem !important;
+    }
+    
+    #student-top-bar button[onclick="toggleProfileDropdown()"] #topbar-profile-placeholder {
+        height: 2rem !important;
+        width: 2rem !important;
+        min-width: 2rem !important;
+        font-size: 0.875rem !important; /* 14px */
+    }
+    
+    /* Dropdown Menu */
+    #profile-dropdown {
+        right: -2% !important;
+        min-width: 11.25rem !important; /* 180px */
+    }
+    
+    /* Notification Badge */
+    .notification-badge {
+        top: -0.125rem;
+        right: -0.125rem;
+        font-size: 0.625rem; /* 10px */
+        padding: 0.125rem 0.3rem;
+        min-width: 1rem;
+    }
+}
+
+/* ========================================
+   EXTRA SMALL MOBILE (max-width: 374px)
+   ======================================== */
+@media (max-width: 374px) {
+    #student-top-bar .max-w-full {
+        padding-left: 1.5% !important;
+        padding-right: 1.5% !important;
+    }
+    
+    /* Mobile Toggle Button */
+    .mobile-sidebar-toggle {
+        width: 2.5rem !important; /* 40px */
+        height: 2.5rem !important;
+        min-width: 2.5rem !important;
+        font-size: 1rem !important; /* 16px */
+        margin-right: 0.375rem !important;
+    }
+    
+    /* Left Section - Brand */
+    #student-top-bar .topbar-brand {
+        font-size: 0.875rem !important; /* 14px */
+        gap: 0.375rem !important;
+    }
+    
+    #student-top-bar .topbar-brand span:first-child {
+        height: 2rem !important; /* 32px */
+        width: 2rem !important;
+        min-width: 2rem !important;
+    }
+    
+    #student-top-bar .topbar-brand img {
+        height: 1.75rem !important; /* 28px */
+        width: 1.75rem !important;
+    }
+    
+    /* Center Section - School Name */
+    #student-top-bar .flex-1.flex.justify-center {
+        max-width: 35% !important;
+        margin: 0 1.5% !important;
+    }
+    
+    #student-top-bar .flex.items-center img#topbar-center-profile-picture {
+        height: 1.125rem !important; /* 18px */
+        width: 1.125rem !important;
+        min-width: 1.125rem !important;
+    }
+    
+    #student-top-bar .flex.items-center #topbar-center-profile-placeholder {
+        height: 1.125rem !important;
+        width: 1.125rem !important;
+        min-width: 1.125rem !important;
+        font-size: 0.5625rem !important; /* 9px */
+    }
+    
+    #student-top-bar .flex.items-center .text-sm {
+        font-size: 0.625rem !important; /* 10px */
+    }
+    
+    /* Right Section - Profile */
+    #student-top-bar button[onclick="toggleProfileDropdown()"] {
+        padding: 0.3125rem !important;
+    }
+    
+    #student-top-bar button[onclick="toggleProfileDropdown()"] img#topbar-profile-picture {
+        height: 1.75rem !important; /* 28px */
+        width: 1.75rem !important;
+        min-width: 1.75rem !important;
+    }
+    
+    #student-top-bar button[onclick="toggleProfileDropdown()"] #topbar-profile-placeholder {
+        height: 1.75rem !important;
+        width: 1.75rem !important;
+        min-width: 1.75rem !important;
+        font-size: 0.75rem !important; /* 12px */
+    }
+}
+
+/* ========================================
+   TARGETED MOBILE (max-width: 600px)
+   Ensure topbar fits Attendance System, School name, and Profile without overlap
+   ======================================== */
+@media (max-width: 600px) {
+    /* Use a strict 3-column grid so center truly centers between left and right */
+    #student-top-bar .max-w-full > .flex {
+        display: grid !important;
+        /* left: toggle, center: school name, right: profile (auto width) */
+        grid-template-columns: 44px 1fr minmax(90px, 1fr) !important;
+        align-items: center !important;
+        gap: 0.5rem !important;
+    }
+
+    /* Make sure toggle button is visible and tappable */
+    .mobile-sidebar-toggle {
+        display: inline-flex !important;
+        width: 40px !important;
+        height: 40px !important;
+        min-width: 40px !important;
+        z-index: 99999 !important;
+    }
+
+    /* Brand: keep icon and small text */
+    #student-top-bar .topbar-brand { gap: 0.4rem !important; }
+    #student-top-bar .topbar-brand span:first-child { height: 28px !important; width: 28px !important; min-width:28px !important; }
+    #student-top-bar .topbar-brand img { height: 24px !important; width: 24px !important; }
+    #student-top-bar .topbar-brand-text {
+        font-size: 12px !important;
+        max-width: 90px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        display: inline-block !important;
+        vertical-align: middle !important;
+    }
+
+    /* Center: school name should truncate with ellipsis but remain visible */
+    #student-top-bar .flex-1 {
+        justify-self: center !important;
+        text-align: center !important;
+        min-width: 0 !important;
+        /* allow more room for center when profile is narrow */
+        max-width: calc(100% - 100px) !important;
+    }
+    /* Allow school name to use up to 2 lines and shrink font to fit */
+    #student-top-bar .flex-1 .text-sm {
+        display: block !important;
+        font-size: 11px !important;
+        line-height: 1.05 !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        white-space: normal !important; /* allow wrapping to second line */
+        display: -webkit-box !important;
+        -webkit-line-clamp: 2 !important;
+        line-clamp: 2 !important;
+        -webkit-box-orient: vertical !important;
+        max-height: 2.2em !important;
+    }
+
+    /* Right: show avatar only (hide long full name) */
+    /* Show profile name and avatar; reduce font-size so it fits on the right */
+    #student-top-bar .flex.items-center [onclick="toggleProfileDropdown()"] .text-white { display: inline-block !important; font-size: 12px !important; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #student-top-bar .flex.items-center [onclick="toggleProfileDropdown()"] img#topbar-profile-picture { height: 30px !important; width: 30px !important; }
+    #student-top-bar .flex.items-center [onclick="toggleProfileDropdown()"] #topbar-profile-placeholder { height: 30px !important; width: 30px !important; }
+
+    /* Ensure header-right reserves space and aligns content to the end */
+    #student-top-bar .header-right { justify-self: end !important; display: flex; align-items: center; gap: 0.4rem; min-width: 80px; max-width: 40%; }
+
+    /* If username is long, allow it to wrap to one more line under the avatar */
+    #student-top-bar .header-right .text-white {
+        display: block !important;
+        max-width: 120px !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+        font-size: 11px !important;
+        line-height: 1 !important;
+    }
+
+    /* Force left/center/right placement and prevent profile wrapping below */
+    #student-top-bar .max-w-full > .flex > .header-left { grid-column: 1 / 2; align-self: center; }
+    #student-top-bar .max-w-full > .flex > .flex-1 { grid-column: 2 / 3; align-self: center; }
+    #student-top-bar .max-w-full > .flex > .header-right { grid-column: 3 / 4; justify-self: end; align-self: center; min-width: 0; }
+
+    /* Ensure profile container doesn't grow and push to next line */
+    #student-top-bar .flex.items-center.space-x-2,
+    #student-top-bar .flex.items-center.space-x-3 {
+        min-width: 40px !important;
+        max-width: 40px !important;
+        overflow: visible !important;
+    }
+    #student-top-bar .relative { display: inline-block; }
+}
+
+/* ========================================
+   LANDSCAPE MOBILE (max-height: 500px)
+   ======================================== */
+@media (max-height: 500px) and (orientation: landscape) {
+    #student-top-bar .flex.items-center.justify-between {
+        height: 3rem !important; /* 48px - reduced for landscape */
+    }
+    
+    .mobile-sidebar-toggle {
+        width: 2.25rem !important;
+        height: 2.25rem !important;
+        min-width: 2.25rem !important;
+    }
+    
+    #student-top-bar .topbar-brand span:first-child {
+        height: 2rem !important;
+        width: 2rem !important;
+        min-width: 2rem !important;
+    }
+    
+    #student-top-bar .topbar-brand img {
+        height: 1.75rem !important;
+        width: 1.75rem !important;
+    }
+}
+
+/* ========================================
+   TOUCH DEVICE OPTIMIZATIONS
+   ======================================== */
+@media (hover: none) and (pointer: coarse) {
+    /* Increase touch targets */
+    .mobile-sidebar-toggle,
+    #student-top-bar button[onclick="toggleProfileDropdown()"] {
+        min-width: 2.75rem;
+        min-height: 2.75rem;
+    }
+    
+    /* Add touch feedback */
+    .mobile-sidebar-toggle:active,
+    #student-top-bar button:active,
+    #student-top-bar a:active {
+        opacity: 0.7;
+        transform: scale(0.97);
+    }
+}
+
+/* ========================================
+   ACCESSIBILITY IMPROVEMENTS
+   ======================================== */
+@media (prefers-reduced-motion: reduce) {
+    .mobile-sidebar-toggle,
+    .topbar-brand,
+    #student-top-bar button {
+        transition: none !important;
+    }
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+    .mobile-sidebar-toggle {
+        border: 2px solid white;
+    }
+    
+    #student-top-bar .topbar-brand {
+        border: 1px solid transparent;
+    }
+    
+    #student-top-bar .topbar-brand:focus {
+        border: 2px solid white;
+        outline: none;
+    }
+}
+
+/* ========================================
+   PRINT STYLES
+   ======================================== */
+@media print {
+    #student-top-bar {
+        position: relative !important;
+        box-shadow: none !important;
+    }
+    
+    .mobile-sidebar-toggle,
+    #profile-dropdown {
+        display: none !important;
+    }
+}
 </style>
 <header id="student-top-bar" class="fixed top-0 left-0 right-0 z-50 w-full shadow-md" style="background: linear-gradient(90deg, #3C4770 0%, #447294 100%); box-shadow: 0 2px 10px rgba(60, 71, 112, 0.3);">
     <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-16">
-            <!-- Left Section: Attendance System Branding -->
-            <div class="flex items-center">
-                <a href="{% url 'dashboard:student_dashboard' %}" class="topbar-brand text-xl sm:text-2xl font-bold text-white select-none flex items-center hover:opacity-90 transition duration-150 cursor-pointer space-x-3">
-                    <span class="inline-flex items-center justify-center h-11 w-11 sm:h-13 sm:w-13 rounded-full bg-white/10 border border-white/30 shadow-md overflow-hidden">
-                        <img src="{% static 'img/attendance-logo.png' %}" alt="Attendance System logo" class="h-10 w-10 sm:h-12 sm:w-12 object-contain">
-                    </span>
-                    <span class="topbar-brand-text">Attendance System</span>
-                </a>
+            <div class="header-left flex items-center">
+                <!-- Mobile sidebar toggle button -->
+                <button id="mobile-sidebar-toggle" type="button" class="mobile-sidebar-toggle lg:hidden" title="Toggle Menu" aria-label="Open menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+
+                <!-- Left Section: Attendance System Branding -->
+                <div class="flex items-center">
+                    <a href="{% url 'dashboard:student_dashboard' %}" class="topbar-brand text-xl sm:text-2xl font-bold text-white select-none flex items-center hover:opacity-90 transition duration-150 cursor-pointer space-x-3">
+                        <span class="inline-flex items-center justify-center h-11 w-11 sm:h-13 sm:w-13 rounded-full bg-white/10 border border-white/30 shadow-md overflow-hidden">
+                            <img src="{% static 'img/attendance-logo.png' %}" alt="Attendance System logo" class="h-10 w-10 sm:h-12 sm:w-12 object-contain">
+                        </span>
+                        <span class="topbar-brand-text">Attendance System</span>
+                    </a>
+                </div>
             </div>
             
             <!-- Center Section: School Name with Profile Picture on Left -->
@@ -42,7 +567,7 @@
             {% endif %}
 
             <!-- Right Section: Action Icons -->
-            <div class="flex items-center space-x-2 sm:space-x-3">
+            <div class="flex items-center space-x-2 sm:space-x-3 header-right">
                 <!-- User Profile Avatar/Dropdown -->
                 <div class="relative">
                     <button onclick="toggleProfileDropdown()" class="flex items-center justify-center space-x-2 p-1.5 bg-white/20 rounded-full transition duration-150 hover:bg-white/30 hover:shadow-md" title="User Profile">
@@ -73,6 +598,58 @@
 </header>
 
 <script>
+// Ensure toggleSidebar exists for student pages and toggles the overlay
+window.toggleSidebar = window.toggleSidebar || function() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (!sidebar) return;
+    const opened = sidebar.classList.toggle('open');
+    // Always set transform to ensure sidebar moves regardless of overlay presence
+    if (opened) {
+        sidebar.style.transform = 'translateX(0)';
+    } else {
+        sidebar.style.transform = 'translateX(-100%)';
+    }
+    if (overlay) {
+        if (opened) {
+            overlay.classList.remove('hidden'); overlay.style.display='block'; overlay.style.pointerEvents='auto';
+        } else {
+            overlay.classList.add('hidden'); overlay.style.display='none'; overlay.style.pointerEvents='none';
+        }
+    }
+};
+
+    // Attach mobile toggle behavior and ensure a fallback floating toggle exists on mobile
+    document.addEventListener('DOMContentLoaded', function() {
+        // Bind the explicit button by id
+        const mobileBtn = document.getElementById('mobile-sidebar-toggle');
+        if (mobileBtn && !mobileBtn.__bound) {
+            mobileBtn.addEventListener('click', function(e){ e.preventDefault(); window.toggleSidebar(); });
+            mobileBtn.__bound = true;
+        }
+
+        // Fallback floating toggle (only when real toggle not visible)
+        (function ensureFallbackToggle() {
+            if (typeof window.matchMedia === 'function' && !window.matchMedia('(max-width: 1024px)').matches) {
+                const fb = document.getElementById('mobile-sidebar-fallback'); if (fb) fb.remove(); return;
+            }
+            const firstToggle = document.querySelector('.mobile-sidebar-toggle');
+            let visible = false;
+            if (firstToggle) {
+                const rect = firstToggle.getBoundingClientRect(); if (rect.width > 0 && rect.height > 0) visible = true;
+            }
+            if (!visible) {
+                if (!document.getElementById('mobile-sidebar-fallback')) {
+                    const fb = document.createElement('button'); fb.id='mobile-sidebar-fallback'; fb.setAttribute('aria-label','Open menu'); fb.innerHTML = '<i class="fas fa-bars"></i>';
+                    fb.style.position='fixed'; fb.style.left='12px'; fb.style.top='12px'; fb.style.zIndex='999999'; fb.style.width='52px'; fb.style.height='52px'; fb.style.borderRadius='10px'; fb.style.background='rgba(190,129,153,0.95)'; fb.style.color='#fff'; fb.style.border='none'; fb.style.boxShadow='0 6px 18px rgba(0,0,0,0.35)';
+                    fb.addEventListener('click', function(e){ e.preventDefault(); window.toggleSidebar(); });
+                    document.body.appendChild(fb);
+                }
+            } else {
+                const fb = document.getElementById('mobile-sidebar-fallback'); if (fb) fb.remove();
+            }
+        })();
+    });
 // Toggle notifications dropdown
 function toggleNotificationsDropdown() {
     const dropdown = document.getElementById('notificationsDropdown');

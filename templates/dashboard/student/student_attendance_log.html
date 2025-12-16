@@ -4,8 +4,8 @@
 <!-- Notification System -->
 {% include 'dashboard/shared/notification_system.html' %}
 
-<div class="max-w-7xl mx-auto space-y-6">
-    <div class="bg-white rounded-2xl shadow p-4 border border-gray-100">
+<div class="max-w-7xl mx-auto space-y-3 px-1">
+    <div class="bg-white rounded-lg shadow-sm p-2 md:p-3 border border-gray-100">
         <div class="flex items-center justify-between">
             <h2 class="text-xl font-bold text-gray-900">Attendance Log</h2>
         </div>
@@ -15,43 +15,40 @@
     {% if not selected_course %}
     <!-- Course List View (First Page) -->
     {% if enrolled_courses %}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
         {% for course in enrolled_courses %}
-        <a href="?course={{ course.id }}" class="group bg-white rounded-2xl shadow-lg border-2 border-gray-200 overflow-hidden hover:shadow-2xl hover:border-indigo-300 transition-all duration-300 cursor-pointer transform hover:-translate-y-1">
-            <div class="bg-gradient-to-br px-6 py-5 relative overflow-hidden" style="background: linear-gradient(135deg, {{ course.color|default:'#3C4770' }} 0%, {{ course.color|default:'#447294' }} 100%);">
-                <!-- Decorative elements -->
-                <div class="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-16 -mt-16"></div>
-                <div class="absolute bottom-0 left-0 w-24 h-24 bg-white opacity-10 rounded-full -ml-12 -mb-12"></div>
+        <a href="?course={{ course.id }}" class="group bg-white rounded-lg shadow border border-gray-200 overflow-hidden hover:shadow-md hover:border-blue-300 transition-all duration-300 cursor-pointer">
+            <div class="bg-gradient-to-br px-3 md:px-4 py-3 md:py-4 relative overflow-hidden" style="background: linear-gradient(135deg, {{ course.color|default:'#3C4770' }} 0%, {{ course.color|default:'#447294' }} 100%);">
                 <div class="relative z-10">
                     <div class="flex items-start justify-between mb-2">
                         <div class="flex-1 min-w-0">
-                            <h3 class="text-lg font-bold text-white mb-1 truncate">{{ course.code }}</h3>
-                            <p class="text-sm text-white/90 line-clamp-2 min-h-[2.5rem]">{{ course.name }}</p>
+                            <h3 class="text-base md:text-lg font-bold text-white mb-1 truncate">{{ course.code }}</h3>
+                            <p class="text-xs md:text-sm text-white/90 line-clamp-2">{{ course.name }}</p>
                         </div>
-                        <div class="ml-3 flex-shrink-0">
-                            <div class="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30">
-                                <i class="fas fa-book text-white text-xl"></i>
+                        <div class="ml-2 flex-shrink-0">
+                            <div class="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center border border-white/30">
+                                <i class="fas fa-book text-white text-lg"></i>
                             </div>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2 flex-wrap mt-3">
+                    <div class="flex items-center gap-1 flex-wrap mt-2">
                         {% if course.enrollment_info.section %}
-                        <span class="px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold rounded-lg border border-white/30">
+                        <span class="px-2 py-0.5 bg-white/20 text-white text-xs font-semibold rounded border border-white/30">
                             Sec {{ course.enrollment_info.section|upper }}
                         </span>
                         {% endif %}
-                        <span class="px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold rounded-lg border border-white/30">
+                        <span class="px-2 py-0.5 bg-white/20 text-white text-xs font-semibold rounded border border-white/30">
                             {{ course.semester|default:'—' }}
                         </span>
                         {% if course.school_year %}
-                        <span class="px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold rounded-lg border border-white/30">
+                        <span class="px-2 py-0.5 bg-white/20 text-white text-xs font-semibold rounded border border-white/30">
                             {{ course.school_year }}
                         </span>
                         {% endif %}
                     </div>
                 </div>
             </div>
-            <div class="p-5 bg-gradient-to-br from-gray-50 to-white">
+            <div class="p-3 md:p-4 bg-white">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2 text-xs text-gray-600">
                         <i class="fas fa-calendar-check text-indigo-500"></i>
@@ -69,7 +66,7 @@
         {% endfor %}
     </div>
     {% else %}
-    <div class="bg-white rounded-2xl shadow p-12 border border-gray-200 text-center">
+    <div class="bg-white rounded-lg shadow-sm p-6 md:p-8 border border-gray-200 text-center">
         <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
             <i class="fas fa-book text-2xl text-gray-400"></i>
         </div>
@@ -99,32 +96,55 @@
     </div>
     
     <!-- Statistics Cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div class="bg-white rounded-xl shadow p-4 border border-gray-100">
-            <p class="text-xs uppercase text-gray-500 font-semibold tracking-wide mb-1">Total Records</p>
-            <p class="text-2xl font-bold text-gray-900">{{ total_records }}</p>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="bg-white rounded-lg shadow-sm p-3 border border-gray-100 flex items-center justify-between">
+            <div>
+                <p class="text-xs uppercase text-gray-500 font-semibold tracking-wide">Total Records</p>
+                <p class="text-2xl font-bold text-gray-900">{{ total_records }}</p>
+            </div>
+            <div class="ml-3 flex items-center justify-center w-10 h-10 rounded bg-gray-100 text-gray-600">
+                <i class="fas fa-list"></i>
+            </div>
         </div>
-        <div class="bg-white rounded-xl shadow p-4 border border-green-200">
-            <p class="text-xs uppercase text-gray-500 font-semibold tracking-wide mb-1">Present</p>
-            <p class="text-2xl font-bold text-green-600">{{ present_count }}</p>
+
+        <div class="bg-white rounded-lg shadow-sm p-3 border border-green-100 flex items-center justify-between">
+            <div>
+                <p class="text-xs uppercase text-gray-500 font-semibold tracking-wide">Present</p>
+                <p class="text-2xl font-bold text-green-600">{{ present_count }}</p>
+            </div>
+            <div class="ml-3 flex items-center justify-center w-10 h-10 rounded bg-green-50 text-green-600">
+                <i class="fas fa-check-circle"></i>
+            </div>
         </div>
-        <div class="bg-white rounded-xl shadow p-4 border border-yellow-200">
-            <p class="text-xs uppercase text-gray-500 font-semibold tracking-wide mb-1">Late</p>
-            <p class="text-2xl font-bold text-yellow-600">{{ late_count }}</p>
+
+        <div class="bg-white rounded-lg shadow-sm p-3 border border-yellow-100 flex items-center justify-between">
+            <div>
+                <p class="text-xs uppercase text-gray-500 font-semibold tracking-wide">Late</p>
+                <p class="text-2xl font-bold text-yellow-600">{{ late_count }}</p>
+            </div>
+            <div class="ml-3 flex items-center justify-center w-10 h-10 rounded bg-yellow-50 text-yellow-600">
+                <i class="fas fa-clock"></i>
+            </div>
         </div>
-        <div class="bg-white rounded-xl shadow p-4 border border-red-200">
-            <p class="text-xs uppercase text-gray-500 font-semibold tracking-wide mb-1">Absent</p>
-            <p class="text-2xl font-bold text-red-600">{{ absent_count }}</p>
+
+        <div class="bg-white rounded-lg shadow-sm p-3 border border-red-100 flex items-center justify-between">
+            <div>
+                <p class="text-xs uppercase text-gray-500 font-semibold tracking-wide">Absent</p>
+                <p class="text-2xl font-bold text-red-600">{{ absent_count }}</p>
+            </div>
+            <div class="ml-3 flex items-center justify-center w-10 h-10 rounded bg-red-50 text-red-600">
+                <i class="fas fa-times-circle"></i>
+            </div>
         </div>
     </div>
     
     <!-- Course Header -->
-    <div class="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-        <div class="bg-gradient-to-r px-6 py-4" style="background: linear-gradient(135deg, {{ selected_course.color|default:'#3C4770' }} 0%, {{ selected_course.color|default:'#447294' }} 100%);">
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div class="bg-gradient-to-r px-3 md:px-4 py-3 md:py-4" style="background: linear-gradient(135deg, {{ selected_course.color|default:'#3C4770' }} 0%, {{ selected_course.color|default:'#447294' }} 100%);">
             <div class="flex items-center justify-between">
                 <div>
-                    <h3 class="text-lg font-bold text-white">{{ selected_course.code }} - {{ selected_course.name }}</h3>
-                    <p class="text-sm text-white/90 mt-1">
+                    <h3 class="text-base md:text-lg font-bold text-white">{{ selected_course.code }} - {{ selected_course.name }}</h3>
+                    <p class="text-xs md:text-sm text-white/90 mt-1">
                         Section {{ selected_course.section|default:'—' }} • 
                         {{ selected_course.semester|default:'—' }} • 
                         {{ selected_course.school_year|default:'—' }}
@@ -132,7 +152,7 @@
                 </div>
             </div>
         </div>
-        <div class="p-6">
+        <div class="p-3 md:p-4">
             {% if attendance_records %}
             <div class="overflow-x-auto">
                 <table class="w-full">

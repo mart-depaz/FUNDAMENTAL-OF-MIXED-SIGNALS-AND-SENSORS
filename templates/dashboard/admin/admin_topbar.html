@@ -3,6 +3,50 @@
 <style>
     .topbar-brand { text-decoration: none; }
     .topbar-brand:hover .topbar-brand-text { text-decoration: underline; }
+
+    /* Mobile sidebar toggle button (shared with student topbar) */
+    .mobile-sidebar-toggle {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        width: 2.75rem; /* 44px */
+        height: 2.75rem;
+        min-width: 2.75rem;
+        background: rgba(255, 255, 255, 0.08);
+        border: none;
+        cursor: pointer;
+        border-radius: 0.5rem;
+        transition: all 0.3s ease;
+        color: white;
+        font-size: 1.125rem; /* 18px */
+        flex-shrink: 0;
+    }
+
+    .mobile-sidebar-toggle:hover { background: rgba(255,255,255,0.15); }
+
+    /* Small/mobile responsive rules to match student topbar */
+    @media (max-width: 600px) {
+        #admin-top-bar .max-w-full > .flex {
+            display: grid !important;
+            grid-template-columns: 44px 1fr minmax(90px, 1fr) !important;
+            align-items: center !important;
+            gap: 0.5rem !important;
+        }
+        .mobile-sidebar-toggle {
+            display: inline-flex !important;
+            width: 40px !important;
+            height: 40px !important;
+            min-width: 40px !important;
+            z-index: 99999 !important;
+        }
+        #admin-top-bar .topbar-brand-text { display: none !important; }
+        #admin-top-bar .topbar-brand span:first-child { height: 28px !important; width: 28px !important; min-width:28px !important; }
+        #admin-top-bar .topbar-brand img { height: 24px !important; width: 24px !important; }
+        #admin-top-bar .flex-1 { justify-self: center !important; text-align: center !important; min-width: 0 !important; max-width: calc(100% - 100px) !important; }
+        #admin-top-bar .header-right { justify-self: end !important; display: flex; align-items: center; gap: 0.4rem; min-width: 80px; }
+        /* Ensure header height is consistent */
+        #admin-top-bar .flex.items-center.justify-between { height: 3.75rem !important; }
+    }
 </style>
 <!-- Global Notification System -->
 {% include 'dashboard/shared/notification_system.html' %}
@@ -10,14 +54,19 @@
 <header id="admin-top-bar" class="fixed top-0 left-0 right-0 z-50 w-full shadow-md" style="background: linear-gradient(90deg, #3C4770 0%, #447294 100%); box-shadow: 0 2px 10px rgba(60, 71, 112, 0.3);">
     <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-16">
-            <!-- Left Section: Attendance System Branding -->
-            <div class="flex items-center">
-                <a href="{% url 'dashboard:admin_dashboard' %}" class="topbar-brand text-xl sm:text-2xl font-bold text-white select-none flex items-center hover:opacity-90 transition duration-150 cursor-pointer space-x-3">
-                    <span class="inline-flex items-center justify-center h-11 w-11 sm:h-13 sm:w-13 rounded-full bg-white/10 border border-white/30 shadow-md overflow-hidden">
-                        <img src="{% static 'img/attendance-logo.png' %}" alt="Attendance System logo" class="h-10 w-10 sm:h-12 sm:w-12 object-contain">
-                    </span>
-                    <span class="topbar-brand-text">Attendance System</span>
-                </a>
+            <!-- Left Section: Mobile Toggle + Attendance System Branding -->
+            <div class="header-left flex items-center">
+                <button id="mobile-sidebar-toggle" type="button" class="mobile-sidebar-toggle lg:hidden" title="Toggle Menu" aria-label="Open menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="flex items-center">
+                    <a href="{% url 'dashboard:admin_dashboard' %}" class="topbar-brand text-xl sm:text-2xl font-bold text-white select-none flex items-center hover:opacity-90 transition duration-150 cursor-pointer space-x-3">
+                        <span class="inline-flex items-center justify-center h-11 w-11 sm:h-13 sm:w-13 rounded-full bg-white/10 border border-white/30 shadow-md overflow-hidden">
+                            <img src="{% static 'img/attendance-logo.png' %}" alt="Attendance System logo" class="h-10 w-10 sm:h-12 sm:w-12 object-contain">
+                        </span>
+                        <span class="topbar-brand-text">Attendance System</span>
+                    </a>
+                </div>
             </div>
             
             <!-- Center Section: School Name with Profile Picture on Left -->
@@ -227,6 +276,36 @@ function markAsRead(notificationId) {
         setTimeout(() => location.reload(), 500);
     });
 }
+</script>
+
+<script>
+// Provide toggleSidebar for admin pages (same behavior as student topbar)
+window.toggleSidebar = window.toggleSidebar || function() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (!sidebar) return;
+    const opened = sidebar.classList.toggle('open');
+    if (opened) {
+        sidebar.style.transform = 'translateX(0)';
+    } else {
+        sidebar.style.transform = 'translateX(-100%)';
+    }
+    if (overlay) {
+        if (opened) {
+            overlay.classList.remove('hidden'); overlay.style.display='block'; overlay.style.pointerEvents='auto';
+        } else {
+            overlay.classList.add('hidden'); overlay.style.display='none'; overlay.style.pointerEvents='none';
+        }
+    }
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    const mobileBtn = document.getElementById('mobile-sidebar-toggle');
+    if (mobileBtn && !mobileBtn.__bound) {
+        mobileBtn.addEventListener('click', function(e){ e.preventDefault(); window.toggleSidebar(); });
+        mobileBtn.__bound = true;
+    }
+});
 </script>
 
 <!-- Close dropdown when clicking outside -->

@@ -224,3 +224,60 @@
     border: 1px solid rgba(255,255,255,0.12) !important;
   }
 }
+
+/* === Admin-like compact header & toggle for very small screens (<=600px) ===
+   Override earlier instructor-specific floating/fixed toggle rules so the
+   hamburger sits inline in the header and uses the same sizing/spacing as
+   the admin dashboard's mobile topbar. This block is intentionally placed
+   at the end to win against previous declarations. */
+@media (max-width: 600px) {
+  /* Use grid layout for compact header (left: toggle, center: title, right: actions) */
+  #teacher-top-bar .max-w-full > .flex {
+    display: grid !important;
+    grid-template-columns: 44px 1fr minmax(90px, 1fr) !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+  }
+
+  /* Make hamburger match admin: inline, 40x40, subtle white background */
+  .mobile-sidebar-toggle {
+    display: inline-flex !important;
+    /* keep the toggle inline within the header grid so it aligns like admin */
+    position: static !important;
+    transform: none !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: rgba(255,255,255,0.08) !important;
+    border: none !important;
+    border-radius: 8px !important;
+    color: #fff !important;
+    font-size: 1.125rem !important;
+    z-index: 99999 !important;
+    box-shadow: none !important;
+  }
+
+  .mobile-sidebar-toggle:hover { background: rgba(255,255,255,0.15) !important; }
+
+  /* Hide brand text and slightly reduce logo size to match admin compact layout */
+  #teacher-top-bar .topbar-brand-text { display: none !important; }
+  #teacher-top-bar .topbar-brand span:first-child { height: 28px !important; width: 28px !important; min-width: 28px !important; }
+  #teacher-top-bar .topbar-brand img { height: 24px !important; width: 24px !important; }
+
+  /* Ensure header height is consistent with admin */
+  #teacher-top-bar .flex.items-center.justify-between { height: 3.75rem !important; }
+
+  /* Undo extremely large toggle adjustments applied for <=1024px */
+  #mobile-sidebar-fallback, .mobile-sidebar-toggle, #mobile-sidebar-fallback i {
+    width: 40px !important; height: 40px !important; left: auto !important; top: auto !important;
+  }
+
+  /* Adjust main and sidebar offsets to match admin mobile behavior */
+  :root { --teacher-header-offset: 64px; }
+  /* remove extra left padding from header inner container so grid aligns correctly */
+  #teacher-top-bar .max-w-full { padding-left: 0 !important; padding-right: 0 !important; }
+  main#main-content { position: absolute !important; top: var(--teacher-header-offset) !important; left: 0 !important; right: 0 !important; bottom: 0 !important; margin: 0 !important; overflow: auto !important; }
+  aside#sidebar { top: var(--teacher-header-offset) !important; height: calc(100vh - var(--teacher-header-offset)) !important; }
+}

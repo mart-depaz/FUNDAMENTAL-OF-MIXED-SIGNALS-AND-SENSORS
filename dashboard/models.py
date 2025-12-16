@@ -394,6 +394,7 @@ class AttendanceRecord(models.Model):
         ('present', 'Present'),
         ('late', 'Late'),
         ('absent', 'Absent'),
+        ('postponed', 'Postponed'),
     ]
     
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='attendance_records', help_text="Course for this attendance record")

@@ -19,11 +19,11 @@
 <!-- Admin Top Bar -->
 {% include 'dashboard/admin/admin_topbar.html' %}
 
-<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+<div id="admin-page-wrapper" class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
     <!-- Sidebar -->
     {% include 'dashboard/admin/admin_sidebar.html' %}
 
-    <main id="main-content" class="flex-grow p-2 lg:p-3 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+    <main id="main-content" class="flex-grow p-2 lg:p-3 lg:ml-64 mt-0 lg:mt-16 overflow-y-auto" style="overscroll-behavior: contain;">
         <div class="p-2 md:p-3 bg-white lg:bg-gray-50 flex-grow rounded-lg shadow-inner min-h-full">
             <!-- Back Button - Top Left Corner -->
             <div class="mb-3">
@@ -121,6 +121,55 @@
         </div>
     </main>
 </div>
+
+<script>
+    (function() {
+        function adjustAdminMainForHeader() {
+            try {
+                if (window.innerWidth > 600) {
+                    document.getElementById('main-content')?.style.removeProperty('position');
+                    document.getElementById('main-content')?.style.removeProperty('top');
+                    document.getElementById('main-content')?.style.removeProperty('left');
+                    document.getElementById('main-content')?.style.removeProperty('right');
+                    document.getElementById('main-content')?.style.removeProperty('bottom');
+                    document.documentElement.style.setProperty('--header-offset', '64px');
+                    return;
+                }
+                const header = document.getElementById('admin-top-bar');
+                const main = document.getElementById('main-content');
+                const notif = document.getElementById('notification-container');
+                if (!main) return;
+                let extra = 0;
+                if (notif) {
+                    const r = notif.getBoundingClientRect();
+                    if (r.height > 0) extra = Math.ceil(r.height) + 8;
+                }
+                const h = header ? Math.ceil(header.getBoundingClientRect().height) : 64;
+                const offset = (h + extra);
+                try { document.documentElement.style.setProperty('--header-offset', offset + 'px'); } catch (e) {}
+                main.style.position = 'absolute';
+                main.style.top = 'var(--header-offset)';
+                main.style.left = '0';
+                main.style.right = '0';
+                main.style.bottom = '0';
+                main.style.margin = '0';
+                main.style.overflow = 'auto';
+                const aside = document.querySelector('aside#sidebar, aside');
+                if (aside) {
+                    try { aside.style.top = 'var(--header-offset)'; aside.style.height = 'calc(100vh - var(--header-offset))'; } catch(e){}
+                }
+                const wrapper = document.getElementById('admin-page-wrapper');
+                if (wrapper) wrapper.style.minHeight = 'auto';
+                try { window.scrollTo(0,0); } catch(e){}
+            } catch (e) {
+                console.error('adjustAdminMainForHeader error', e);
+            }
+        }
+        window.addEventListener('load', adjustAdminMainForHeader);
+        window.addEventListener('resize', adjustAdminMainForHeader);
+        document.addEventListener('DOMContentLoaded', adjustAdminMainForHeader);
+    })();
+</script>
 
 <script>
     function viewProgramCourses(programId) {

@@ -8,7 +8,7 @@ from django.views.decorators.http import require_http_methods
 from django.http import JsonResponse
 from django.db.models import Q, Count
 from accounts.models import CustomUser
-from .models import Course, Program, Department, CourseSchedule, UserNotification, CourseEnrollment, AttendanceRecord
+from .models import Course, Program, Department, CourseSchedule, UserNotification, CourseEnrollment, AttendanceRecord, QRCodeRegistration
 from datetime import datetime
 import json
 import logging
@@ -593,6 +593,30 @@ def student_dashboard_view(request):
         'upcoming_classes': upcoming_classes,
         'total_enrolled': enrollments.count(),
     }
+    # Ensure today's attendance is finalized for enrolled courses so counts match the Attendance Log page
+    try:
+        # Finalize attendance for each enrolled course (idempotent)
+        processed_courses = set()
+        for enrollment in enrollments:
+            course_obj = getattr(enrollment, 'course', None)
+            if not course_obj or course_obj.id in processed_courses:
+                continue
+            processed_courses.add(course_obj.id)
+            try:
+                finalize_all_course_attendance(course_obj, getattr(course_obj, 'instructor', None))
+            except Exception:
+                # Ignore finalization errors; proceed to counting
+                logger.exception('Error finalizing attendance for course %s', getattr(course_obj, 'id', None))
+    except Exception:
+        # If anything unexpected happens, continue without finalization
+        logger.exception('Error during attendance finalization loop for student dashboard')
+
+    # Compute student's attendance log count (after finalization)
+    try:
+        attendance_log_count = AttendanceRecord.objects.filter(student=user, course__is_active=True, course__deleted_at__isnull=True, course__is_archived=False).count()
+    except Exception:
+        attendance_log_count = 0
+    context['attendance_log_count'] = attendance_log_count
     return render(request, 'dashboard/student/student.html', context)
 
 @login_required
@@ -2220,6 +2244,13 @@ def instructor_update_attendance_status_view(request, course_id):
                             day_schedule.qr_code_date = timezone.localtime(timezone.now()).date()
                         except Exception:
                             pass
+                    elif pd_val == 0:
+                        # When resetting (present_duration = 0), clear the opened timestamp
+                        try:
+                            day_schedule.qr_code_opened_at = None
+                            day_schedule.attendance_present_duration = 0
+                        except Exception:
+                            pass
                 except Exception:
                     pass
 
@@ -2320,6 +2351,13 @@ def instructor_update_attendance_status_view(request, course_id):
             if status == 'open' and pd_val and pd_val > 0:
                 try:
                     course.qr_code_opened_at = timezone.now()
+                except Exception:
+                    pass
+            elif pd_val == 0:
+                # When resetting (present_duration = 0), clear the opened timestamp
+                try:
+                    course.qr_code_opened_at = None
+                    course.attendance_present_duration = 0
                 except Exception:
                     pass
         except Exception:
@@ -4926,6 +4964,15 @@ def enroll_course_view(request):
         is_active=True
     ).select_related('course', 'course__program', 'course__instructor').order_by('-enrolled_at')
     
+    # Add QR registration status to enrolled courses
+    for enrollment in enrolled_courses:
+        qr_reg = QRCodeRegistration.objects.filter(
+            student=user,
+            course=enrollment.course,
+            is_active=True
+        ).exists()
+        enrollment.has_qr = qr_reg
+    
     # Get school admin for topbar
     school_admin = None
     if user.school_name:
@@ -5160,6 +5207,31 @@ def unenroll_course_view(request, enrollment_id):
         enrollment.is_active = False
         enrollment.deleted_at = timezone.now()
         enrollment.save()
+        
+        # Clean up QR registration for this student in this course
+        # So they need to re-register if they enroll again
+        try:
+            qr_registrations = QRCodeRegistration.objects.filter(
+                student=enrollment.student,
+                course=enrollment.course,
+                is_active=True
+            )
+            qr_registrations.delete()  # Permanently delete QR registrations
+            logger.info(f"Deleted QR registrations for {enrollment.student.full_name} in {enrollment.course.code}")
+        except Exception as e:
+            logger.error(f"Error deleting QR registrations: {str(e)}")
+        
+        # Delete attendance records for this student in this course
+        # So their attendance log is cleared from student dashboard
+        try:
+            attendance_records = AttendanceRecord.objects.filter(
+                student=enrollment.student,
+                course=enrollment.course
+            )
+            deleted_count = attendance_records.delete()[0]  # delete() returns (count, {model: count})
+            logger.info(f"Deleted {deleted_count} attendance records for {enrollment.student.full_name} in {enrollment.course.code}")
+        except Exception as e:
+            logger.error(f"Error deleting attendance records: {str(e)}")
         
         # Create notification for student when dropped by instructor
         if user.is_teacher and enrollment.student:
@@ -6392,6 +6464,21 @@ def student_scan_qr_attendance_view(request):
         except CourseEnrollment.DoesNotExist:
             return JsonResponse({'success': False, 'message': 'You are not enrolled in this course.'})
         
+        # CHECK: Verify student has registered their QR code for this course
+        # This ensures only students who have registered their QR code can mark attendance
+        qr_registration = QRCodeRegistration.objects.filter(
+            student=user,
+            course=course,
+            is_active=True
+        ).first()
+        
+        if not qr_registration:
+            return JsonResponse({
+                'success': False,
+                'message': f'Your QR code is NOT registered in {course.code}. Please register your QR code first before marking attendance.',
+                'error_type': 'qr_not_registered'
+            })
+        
         # Check attendance status
         # datetime is already imported at module level, no need to re-import
         # PH_TZ was already defined earlier in the function
@@ -6543,11 +6630,18 @@ def student_scan_qr_attendance_view(request):
         
         # Determine status (present, late, etc.)
         # Rules:
-        # - Present: Scan time is within attendance window (start <= scan <= end)
-        # - Late: Scan time is AFTER attendance end time but BEFORE course end time
+        # - Present: Scan time is within attendance window (start <= scan <= end) OR within present duration window
+        # - Late: Scan time is AFTER present/attendance end time but BEFORE course end time
         # - Absent: No scan at all (handled in attendance reports, not here)
         status = 'present'
         current_time = now_ph.time()
+        
+        # Get course end time for today
+        course_end_time = None
+        if today_schedule:
+            course_end_time = today_schedule.end_time
+        else:
+            course_end_time = course.end_time
         
         if attendance_allowed:
             # Allow instructor-configurable 'present' window based on when QR/session was opened
@@ -6576,15 +6670,13 @@ def student_scan_qr_attendance_view(request):
                     if now_ph <= present_cutoff:
                         status = 'present'
                     else:
-                        # After present-window, consider late if still within course duration
-                        if course_end and current_time <= course_end:
+                        # After present-window has expired, mark as late
+                        # Check if we're still within course end time
+                        if course_end_time and current_time <= course_end_time:
                             status = 'late'
                         else:
-                            # If instructor opened attendance and session extended beyond course end, mark present
-                            if attendance_status == 'open':
-                                status = 'present'
-                            else:
-                                status = 'late'
+                            # After course end time, still mark as late (not absent)
+                            status = 'late'
                 except Exception:
                     # Fallback to default rules if computation fails
                     pass
@@ -6594,14 +6686,14 @@ def student_scan_qr_attendance_view(request):
                     if attendance_start <= current_time <= attendance_end:
                         status = 'present'
                     elif current_time > attendance_end:
-                        if course_end and current_time <= course_end:
+                        # After attendance end window
+                        if course_end_time and current_time <= course_end_time:
                             status = 'late'
                         else:
-                            if attendance_status == 'open':
-                                status = 'present'
-                            else:
-                                status = 'late'
+                            # After course end time, mark as late if attendance is still open
+                            status = 'late'
                     else:
+                        # Before attendance start time
                         if attendance_status == 'open':
                             status = 'present'
                         else:
@@ -6652,11 +6744,12 @@ def student_scan_qr_attendance_view(request):
         if course.instructor:
             try:
                 student_name = user.full_name or user.username
+                status_text = 'marked as late' if status == 'late' else 'marked as present'
                 create_notification(
                     user=course.instructor,
                     notification_type='attendance_marked',
                     title='Student Marked Attendance',
-                    message=f'{student_name} marked attendance for {course.code} - {course.name}',
+                    message=f'{student_name} {status_text} for {course.code} - {course.name}',
                     category='course',
                     related_course=course,
                     related_user=user
@@ -6671,6 +6764,7 @@ def student_scan_qr_attendance_view(request):
             'attendance_time': attendance_record.attendance_time.strftime('%I:%M %p') if getattr(attendance_record, 'attendance_time', None) else None,
             'course_id': course.id,
             'schedule_day': schedule_day,
+            'is_late': status == 'late'
         })
         
     except json.JSONDecodeError:
@@ -9004,6 +9098,33 @@ def instructor_attendance_reports_download_view(request):
             # On error, fall back to existing attendance_records (only those with records)
             logger.exception('Error building full attendance export for date: %s', e)
     
+    # Check if the requested date is marked as postponed
+    # If yes, mark ALL attendance records with 'postponed' status for that date
+    date_param = request.GET.get('date', None)
+    if date_param:
+        try:
+            from datetime import datetime
+            date_obj = datetime.strptime(date_param, '%Y-%m-%d').date()
+            weekday_map = {0: 'Mon', 1: 'Tue', 2: 'Wed', 3: 'Thu', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
+            day_name = weekday_map.get(date_obj.weekday(), '')
+            
+            # Check if this date's day schedule is marked as postponed
+            is_postponed = False
+            for course in courses_to_include:
+                if day_name:
+                    day_schedule = course.course_schedules.filter(day__iexact=day_name).first()
+                    if day_schedule and getattr(day_schedule, 'attendance_status', '') == 'postponed':
+                        is_postponed = True
+                        break
+            
+            # If postponed, mark all records for this date as 'postponed'
+            if is_postponed:
+                for record in attendance_records:
+                    if record.attendance_date == date_obj:
+                        record.status = 'postponed'
+        except Exception:
+            pass
+    
     # Deduplicate records when viewing all sections
     # If a student has multiple records on the same date (from different sections),
     # keep the record with the best attendance status (present > late > absent).
@@ -9150,15 +9271,18 @@ def instructor_attendance_reports_download_view(request):
     present_count = sum(1 for r in attendance_records if r.status == 'present')
     late_count = sum(1 for r in attendance_records if r.status == 'late')
     absent_count = sum(1 for r in attendance_records if r.status == 'absent')
+    postponed_count = sum(1 for r in attendance_records if r.status == 'postponed')
     
     stats_data = [
         ['Total Records', total_records],
         ['Present', present_count],
         ['Late', late_count],
         ['Absent', absent_count],
+        ['Postponed', postponed_count],
         ['Present %', round((present_count / total_records * 100) if total_records > 0 else 0, 2)],
         ['Late %', round((late_count / total_records * 100) if total_records > 0 else 0, 2)],
         ['Absent %', round((absent_count / total_records * 100) if total_records > 0 else 0, 2)],
+        ['Postponed %', round((postponed_count / total_records * 100) if total_records > 0 else 0, 2)],
     ]
     
     for stat_row in stats_data:
@@ -9713,6 +9837,21 @@ def instructor_scan_student_school_id_view(request):
         
         if not enrollment:
             return JsonResponse({'success': False, 'message': f'{student.full_name} is not enrolled in {course.code}.'})
+        
+        # 🔴 CRITICAL CHECK: Verify student has registered their QR code for this course
+        # This ensures only students who have registered their QR code can mark attendance
+        qr_registration = QRCodeRegistration.objects.filter(
+            student=student,
+            course=course,
+            is_active=True
+        ).first()
+        
+        if not qr_registration:
+            return JsonResponse({
+                'success': False, 
+                'message': f'{student.full_name}\'s QR code is NOT registered for {course.code}. Please register it first before marking attendance.',
+                'error_type': 'qr_not_registered'
+            })
         
         # Verify this is the correct schedule/section and map to the
         # CourseSchedule short day code (e.g. 'Mon', 'Tue'). CourseSchedule

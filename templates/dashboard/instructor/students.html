@@ -231,10 +231,7 @@
                                 {% endif %}
                                 <span class="px-3 py-1 text-xs font-semibold rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">{{ enrollment.year_level|ordinal_year }}</span>
                             </div>
-                            <div class="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-gray-600 mt-1">
-                                <span class="flex items-center gap-1"><i class="fas fa-envelope text-xs"></i><span class="truncate max-w-[8rem]" title="{{ enrollment.email }}">{{ enrollment.email }}</span></span>
-                                <span class="flex items-center gap-1"><i class="fas fa-id-card text-xs"></i>{{ enrollment.student_id_number }}</span>
-                            </div>
+                            
                                 <p class="text-xs text-gray-500 mt-1 flex items-center gap-1"><i class="fas fa-clock"></i>Enrolled: {{ enrollment.enrolled_at|date:"F d, Y g:i A" }}</p>
                         </div>
                         <div class="flex items-center gap-2">

@@ -398,11 +398,7 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                if (typeof showNotification === 'function') {
-                    showNotification(data.message || 'Program deleted successfully!', 'success');
-                } else {
-                    alert(data.message || 'Program deleted successfully!');
-                }
+                showNotification(data.message || 'Program deleted successfully!', 'success');
                 closeDeleteModal();
                 setTimeout(() => location.reload(), 1000);
             } else {

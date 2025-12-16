@@ -216,9 +216,7 @@
                                                             </div>
                                                         </div>
                                                         <div class="flex gap-1">
-                                                            <button onclick="viewArchivedCourseStudents({{ course.id }})" class="flex-1 px-2 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition">
-                                                                <i class="fas fa-users"></i> Students
-                                                            </button>
+                                                            
                                                             <button onclick="restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
                                                                 <i class="fas fa-undo"></i> Restore
                                                             </button>

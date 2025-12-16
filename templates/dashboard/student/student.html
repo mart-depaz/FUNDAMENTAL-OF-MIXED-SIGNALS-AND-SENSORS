@@ -18,6 +18,25 @@ templates folder: library_system/templates/dashboard/student.html
         background: #f4f5fb;
     }
 </style>
+<style>
+    /* Small-screen container fixes to prevent decorative overflow and align content with other pages */
+    @media (max-width: 600px) {
+        .max-w-7xl.mx-auto, .max-w-4xl.mx-auto { padding-left: 8px; padding-right: 8px; }
+        /* Hide large absolute decorative elements that may cause horizontal overflow on small screens */
+        .bg-gradient-to-br .absolute, .bg-gradient-to-br .-mr-16, .bg-gradient-to-br .-ml-12 { display: none !important; }
+        /* Ensure main content doesn't overflow horizontally */
+        #main-content { overflow-x: hidden; }
+        /* Prevent inner wrapper from forcing extra height on mobile so content appears at top */
+        #main-content { margin-top: 0 !important; padding-top: 0 !important; }
+        #main-content > div { min-height: 0 !important; margin-top: 0 !important; }
+        /* If an mt-16 class is accidentally present, override it on small screens */
+        main#main-content[class*="mt-"] { margin-top: 0 !important; }
+          /* Ensure main is positioned below header and fills remaining viewport.
+              Use fixed positioning on small screens to avoid layout shifts and ensure
+              the main content starts immediately under the header. */
+          main#main-content { position: fixed !important; top: calc(var(--header-offset, 64px)) !important; left: 0 !important; right: 0 !important; bottom: 0 !important; height: calc(100vh - var(--header-offset, 64px)) !important; overflow: auto !important; z-index: 10 !important; }
+    }
+</style>
 
 <!-- Notification System -->
 {% include 'dashboard/shared/notification_system.html' %}
@@ -25,17 +44,77 @@ templates folder: library_system/templates/dashboard/student.html
 <!-- Student Top Bar -->
 {% include 'dashboard/student/student_topbar.html' %}
 
-<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+<div id="student-page-wrapper" class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
     <!-- Sidebar -->
     {% include 'dashboard/student/student_sidebar.html' %}
 
     <!-- Main Content -->
-    <main id="main-content" class="flex-grow p-4 lg:p-6 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
-        <div class="p-4 md:p-8 bg-white lg:bg-gray-50 flex-grow rounded-2xl shadow-inner min-h-full">
+    <!-- No top margin on mobile; keep lg offset on large screens -->
+    <main id="main-content" class="flex-grow p-2 lg:p-3 lg:ml-64 mt-0 lg:mt-16 overflow-y-auto" style="overscroll-behavior: contain;">
+        <div class="p-2 md:p-3 bg-white lg:bg-gray-50 flex-grow rounded-lg shadow-inner min-h-full">
             {% block dashboard_content %}
             {% include 'dashboard/student/student_home.html' %}
             {% endblock %}
         </div>
     </main>
 </div>
+<script>
+    /* Mobile header adjustment: position main under fixed header on small screens (<=600px) */
+    (function() {
+        function adjustStudentMainForHeader() {
+            try {
+                if (window.innerWidth > 600) {
+                    // remove mobile inline styles
+                    document.getElementById('main-content')?.style.removeProperty('position');
+                    document.getElementById('main-content')?.style.removeProperty('top');
+                    document.getElementById('main-content')?.style.removeProperty('left');
+                    document.getElementById('main-content')?.style.removeProperty('right');
+                    document.getElementById('main-content')?.style.removeProperty('bottom');
+                    document.documentElement.style.setProperty('--header-offset', '64px');
+                    return;
+                }
+                const header = document.getElementById('student-top-bar');
+                const main = document.getElementById('main-content');
+                const notif = document.getElementById('notification-container');
+                if (!main) return;
+                let extra = 0;
+                if (notif) {
+                    const r = notif.getBoundingClientRect();
+                    if (r.height > 0) extra = Math.ceil(r.height) + 8;
+                }
+                const h = header ? Math.ceil(header.getBoundingClientRect().height) : 64;
+                const offset = (h + extra);
+                try { document.documentElement.style.setProperty('--header-offset', offset + 'px'); } catch (e) {}
+
+                // Position main absolutely under header so content appears immediately below it
+                main.style.position = 'absolute';
+                main.style.top = 'var(--header-offset)';
+                main.style.left = '0';
+                main.style.right = '0';
+                main.style.bottom = 'auto';
+                // Force-remove any top margin classes and inline spacing that may push content down
+                try { main.classList.remove('mt-16'); } catch(e){}
+                try { main.style.marginTop = '0px'; main.style.margin = '0'; main.style.paddingTop = '0px'; } catch(e){}
+                // ensure main height matches the viewport minus header offset
+                try { main.style.height = 'calc(100vh - ' + offset + 'px)'; } catch(e) { main.style.height = 'auto'; }
+                main.style.overflow = 'auto';
+
+                // Align sidebar under header
+                const aside = document.querySelector('aside#sidebar, aside');
+                if (aside) {
+                    try { aside.style.top = 'var(--header-offset)'; aside.style.height = 'calc(100vh - var(--header-offset))'; } catch(e){}
+                }
+                // ensure wrapper doesn't add extra spacing
+                const wrapper = document.getElementById('student-page-wrapper');
+                if (wrapper) wrapper.style.minHeight = 'auto';
+                try { window.scrollTo(0,0); } catch(e){}
+            } catch (e) {
+                console.error('adjustStudentMainForHeader error', e);
+            }
+        }
+        window.addEventListener('load', adjustStudentMainForHeader);
+        window.addEventListener('resize', adjustStudentMainForHeader);
+        document.addEventListener('DOMContentLoaded', adjustStudentMainForHeader);
+    })();
+</script>
 {% endblock %}

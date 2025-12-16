@@ -235,19 +235,19 @@
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {% regroup attendance_data|dictsortreversed:"attendance_date" by attendance_date as records_by_date %}
                 {% for date, records in records_by_date %}
-                 {% comment %} If this date was postponed, mark it and disable opening {% endcomment %}
+                 {% comment %} If this date was postponed, mark it but still make it clickable {% endcomment %}
                  {% with dstr=date|date:'Y-m-d' %}
-                 <div class="date-folder-card group rounded-xl shadow-md hover:shadow-xl transition-all duration-300 {% if dstr in postponed_dates %}opacity-80{% else %}cursor-pointer folder-clickable{% endif %}" 
+                 <div class="date-folder-card group rounded-xl shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer folder-clickable {% if dstr in postponed_dates %}opacity-85{% endif %}" 
                      data-folder-date="{{ dstr }}"
                      data-course-id="{{ selected_course.id }}"
                      {% if dstr in postponed_dates %}data-postponed="1"{% endif %}>
                  {% endwith %}
                     <!-- Folder Header -->
-                    <div class="bg-gradient-to-br from-amber-50 to-orange-50 border-t-4 border-amber-400 rounded-t-xl p-5 hover:bg-amber-100/50 transition-colors group-hover:shadow-lg">
+                    <div class="bg-gradient-to-br {% if dstr in postponed_dates %}from-red-50 to-orange-50 border-t-4 border-red-400{% else %}from-amber-50 to-orange-50 border-t-4 border-amber-400{% endif %} rounded-t-xl p-5 hover:bg-amber-100/50 transition-colors group-hover:shadow-lg">
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-4">
-                                <div class="w-14 h-14 bg-gradient-to-br from-amber-400 to-orange-500 rounded-lg flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                    <i class="fas fa-folder text-white text-2xl"></i>
+                                <div class="w-14 h-14 bg-gradient-to-br {% if dstr in postponed_dates %}from-red-400 to-red-500{% else %}from-amber-400 to-orange-500{% endif %} rounded-lg flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                    <i class="fas {% if dstr in postponed_dates %}fa-calendar-times{% else %}fa-folder{% endif %} text-white text-2xl"></i>
                                 </div>
                                 <div>
                                     <p class="text-sm font-medium text-gray-600 uppercase tracking-wide">{{ date|date:"l" }}</p>
@@ -255,30 +255,30 @@
                                 </div>
                             </div>
                             <div class="text-center">
-                                <p class="text-3xl font-bold text-amber-600">{{ records|length }}</p>
+                                <p class="text-3xl font-bold {% if dstr in postponed_dates %}text-red-600{% else %}text-amber-600{% endif %}">{{ records|length }}</p>
                                 <p class="text-xs text-gray-600 font-medium">Records</p>
                             </div>
                             {% if dstr in postponed_dates %}
-                            <div class="ml-4 text-right">
-                                <span class="status-badge" style="background:#FEF3C7;color:#92400E;">Postponed</span>
+                            <div class="ml-4 px-3 py-2 bg-red-100 border-2 border-red-400 rounded-lg">
+                                <span class="font-bold text-red-700 text-sm">POSTPONED</span>
                             </div>
                             {% endif %}
                         </div>
                     </div>
                     
                     <!-- Folder Footer - Click Hint -->
+                    <div class="bg-white border border-t-0 border-gray-200 rounded-b-xl p-4 flex items-center justify-between">
                         {% if dstr in postponed_dates %}
-                        <div class="bg-white border border-t-0 border-gray-200 rounded-b-xl p-6 flex items-center justify-center">
-                            <span class="status-badge" style="background:#FEF3C7;color:#92400E;font-weight:700;padding:10px 16px;font-size:14px;">Postponed</span>
+                        <div class="flex items-center gap-2 text-amber-600 font-semibold">
+                            <i class="fas fa-calendar-times"></i>
+                            <span>Class Postponed - Click to view enrolled students</span>
                         </div>
                         {% else %}
-                        <div class="bg-white border border-t-0 border-gray-200 rounded-b-xl p-4 flex items-center justify-between">
-                            <p class="text-sm text-gray-600 flex items-center justify-center gap-2">
-                                <i class="fas fa-arrow-right text-indigo-600"></i>Click to view details
-                            </p>
-                            {# Download handled in attendance detail view; folder-level download removed to avoid duplicate buttons #}
-                        </div>
+                        <p class="text-sm text-gray-600 flex items-center justify-center gap-2">
+                            <i class="fas fa-arrow-right text-indigo-600"></i>Click to view details
+                        </p>
                         {% endif %}
+                    </div>
                 </div>
                 {% endfor %}
             </div>
@@ -301,17 +301,11 @@
                 <div class="mb-6 flex items-center justify-between">
                 <h2 class="text-xl font-bold text-gray-800 flex items-center gap-3">
                     <div class="w-1 h-8 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></div>
-                    Attendance Details
+                    {% if request.GET.date in postponed_dates %}<span class="text-red-600">[POSTPONED]</span>{% endif %} Attendance Details
                 </h2>
-                {% if request.GET.date and request.GET.date in postponed_dates %}
-                <button onclick="alert('This scheduled class is postponed. Download is disabled.');" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg text-sm font-semibold transition flex items-center gap-2 cursor-not-allowed" title="Download disabled for postponed schedule">
-                    <i class="fas fa-download text-xs"></i>Download Excel
-                </button>
-                {% else %}
                 <a href="{% url 'dashboard:instructor_attendance_reports_download' %}?course={{ selected_course.id }}&date={{ request.GET.date }}&section={{ section_filter|default:'all'|urlencode }}" class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-semibold transition flex items-center gap-2">
                     <i class="fas fa-download text-xs"></i>Download Excel
                 </a>
-                {% endif %}
             </div>
             {# Date display removed here to avoid duplication with header. The header shows the formatted date already. #}
             
@@ -327,7 +321,6 @@
                             {% endif %}
                             <div class="flex-1">
                                 <span class="font-semibold text-gray-900 block">{{ record.student_name }}</span>
-                                <span class="text-sm text-gray-600">ID: {{ record.student_id_number }}</span>
                             </div>
                         </div>
                     </div>
@@ -518,12 +511,6 @@
                 event.stopPropagation();
                 const date = this.getAttribute('data-folder-date');
                 const courseId = this.getAttribute('data-course-id');
-                // If this folder is marked postponed, show message and do not open
-                if (this.getAttribute('data-postponed') === '1') {
-                    event.preventDefault();
-                    alert('This scheduled class for ' + (date || '') + ' is postponed. Attendance folder is disabled.');
-                    return;
-                }
                 if (date && courseId) {
                     // Preserve section filter if present in current URL or selected dropdown
                     const params = new URLSearchParams(window.location.search);

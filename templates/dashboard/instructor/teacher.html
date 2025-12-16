@@ -192,20 +192,49 @@ templates folder: library_system/templates/dashboard/teacher.html
     .system-status-down { background:#EF4444; }
 </style>
 
+<!-- Winter theme helpers: variables and glow effect -->
+<style>
+    :root {
+        --winter-50: #EAF8FF;
+        --winter-100: #DFF3FF;
+        --winter-200: #CFEFFA;
+        --winter-accent: 59,130,246; /* rgb for glow */
+        --glow-opacity: 0.09;
+    }
+
+    /* Reusable subtle glow for rounded cards */
+    .glow {
+        position: relative !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border: 1px solid rgba(0,0,0,0.08) !important;
+        transition: box-shadow 240ms ease, transform 160ms ease !important;
+    }
+    .glow:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+
+    /* Apply rounded clipping so glow follows border radius */
+    .rounded-3xl.glow, .rounded-2xl.glow, .rounded-xl.glow {
+        overflow: visible !important;
+    }
+</style>
+
 <!-- Teacher Top Bar -->
 {% include 'dashboard/instructor/teacher_topbar.html' %}
 
-<div class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+<div id="instructor-page-wrapper" class="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
     <!-- Sidebar -->
     {% include 'dashboard/instructor/teacher_sidebar.html' %}
 
     <!-- Main Content -->
-    <main id="main-content" class="flex-grow p-4 lg:p-6 lg:ml-64 mt-16 overflow-y-auto" style="height: calc(100vh - 64px); overscroll-behavior: contain;">
+    <!-- No top margin on mobile; keep lg offset on large screens -->
+    <main id="main-content" class="flex-grow p-4 lg:p-6 lg:ml-64 mt-0 lg:mt-16 overflow-y-auto" style="overscroll-behavior: contain;">
         <div class="p-4 md:p-8 bg-white lg:bg-gray-50 flex-grow rounded-2xl shadow-inner min-h-full">
             {% block dashboard_content %}
             <div class="space-y-6">
-                <!-- Hero -->
-                <section class="bg-gradient-to-r from-rose-400 via-orange-300 to-sky-400 rounded-3xl text-white p-6 md:p-8 shadow-2xl relative overflow-hidden">
+                <!-- Hero section -->
+                <section class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-3xl glow text-white p-6 md:p-8 shadow-lg relative overflow-hidden">
                     <div class="absolute inset-0 bg-white/10 blur-3xl"></div>
                     <div class="relative z-10 flex flex-col gap-6">
                         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
@@ -227,8 +256,8 @@ templates folder: library_system/templates/dashboard/teacher.html
                                 </p>
                                 </div>
                             </div>
-                            <div class="rounded-2xl px-6 py-4 backdrop-blur-md border border-white/10 shadow-lg text-sm text-white" style="background: linear-gradient(135deg, #1a1b1f 0%, #341428 35%, #55104b 65%, #7a2d68 100%);">
-                                <p class="font-semibold text-white/80 uppercase tracking-wide text-xs">Daily Outlook</p>
+                                <div class="rounded-2xl px-6 py-4 border border-white/20 shadow-lg text-sm text-white" style="background: rgba(255,255,255,0.15);">
+                                <p class="font-semibold text-white/90 uppercase tracking-wide text-xs">Daily Outlook</p>
                                 <div class="flex items-center gap-6 mt-2 text-white">
                                     <div>
                                         <p class="text-3xl font-bold">{{ total_courses|default:0 }}</p>
@@ -261,41 +290,41 @@ templates folder: library_system/templates/dashboard/teacher.html
 
                 <!-- Stat Cards -->
                 <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                    <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #6281DC 0%, #9F80E8 100%);">
-                        <div class="w-12 h-12 rounded-full bg-white/30 text-white flex items-center justify-center text-xl shadow inner-shadow">
+                    <div class="rounded-2xl p-5 flex items-center gap-4 border border-gray-200 shadow glow" style="background: #E3F2FD;">
+                        <div class="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl shadow">
                             <i class="fas fa-book"></i>
                         </div>
-                        <div class="text-white">
+                        <div class="text-gray-800">
                             <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Courses</p>
                             <p class="text-2xl font-bold">{{ total_courses|default:0 }}</p>
                             <p class="text-xs opacity-80">Active & published</p>
                         </div>
                     </div>
-                    <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #42B2CB 0%, #7DC9DD 100%);">
-                        <div class="w-12 h-12 rounded-full bg-white/30 text-white flex items-center justify-center text-xl shadow inner-shadow">
+                    <div class="rounded-2xl p-5 flex items-center gap-4 border border-gray-200 shadow glow" style="background: #F0F4FF;">
+                        <div class="w-12 h-12 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-xl shadow">
                             <i class="fas fa-users"></i>
                         </div>
-                        <div class="text-white">
+                        <div class="text-gray-800">
                             <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Students</p>
                             <p class="text-2xl font-bold">{{ active_students|default:0 }}</p>
                             <p class="text-xs opacity-80">Currently enrolled</p>
                         </div>
                     </div>
-                    <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #FDE68A 0%, #F3C7A6 100%);">
-                        <div class="w-12 h-12 rounded-full bg-white/50 text-amber-700 flex items-center justify-center text-xl shadow inner-shadow">
+                    <div class="rounded-2xl p-5 flex items-center gap-4 border border-gray-200 shadow glow" style="background: #FFF8E1;">
+                        <div class="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xl shadow">
                             <i class="fas fa-file-alt"></i>
                         </div>
-                        <div class="text-amber-900">
+                        <div class="text-gray-800">
                             <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Attendance Reports</p>
                             <p class="text-3xl font-bold">{% if attendance_reports_count %}{{ attendance_reports_count }}{% elif reports_count %}{{ reports_count }}{% elif attendance_count %}{{ attendance_count }}{% else %}—{% endif %}</p>
                             <p class="text-xs opacity-70">View & download attendance files</p>
                         </div>
                     </div>
-                    <div class="rounded-2xl p-5 flex items-center gap-4 border border-transparent shadow" style="background: linear-gradient(135deg, #1B2D52 0%, #4D608E 100%);">
-                        <div class="w-12 h-12 rounded-full bg-white/30 text-white flex items-center justify-center text-xl shadow inner-shadow">
+                    <div class="rounded-2xl p-5 flex items-center gap-4 border border-gray-200 shadow glow" style="background: #F3E5F5;">
+                        <div class="w-12 h-12 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center text-xl shadow">
                             <i class="fas fa-chart-line"></i>
                         </div>
-                        <div class="text-white">
+                        <div class="text-gray-800">
                             <p class="text-xs uppercase tracking-wide font-semibold opacity-80">Performance</p>
                             <p class="text-2xl font-bold">{{ avg_students_per_course|default:0 }}</p>
                             <p class="text-xs opacity-80">Avg. students per course</p>
@@ -305,7 +334,7 @@ templates folder: library_system/templates/dashboard/teacher.html
 
                 <!-- Detailed Columns -->
                 <section class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                    <div class="rounded-3xl border border-transparent shadow p-6 space-y-4" style="background: linear-gradient(135deg, #A4DCF2 0%, #FEFAF7 100%);">
+                    <div class="rounded-3xl border border-gray-200 shadow p-6 space-y-4 glow" style="background: #FAFAFA;">
                         <div class="flex items-center justify-between">
                             <h3 class="text-lg font-bold text-gray-900">Upcoming Classes</h3>
                             <span class="text-xs text-gray-500 uppercase tracking-wide">Today & Next</span>
@@ -357,10 +386,10 @@ templates folder: library_system/templates/dashboard/teacher.html
                         </div>
                     </div>
 
-                    <div class="rounded-3xl border border-transparent shadow p-6 space-y-4" style="background: linear-gradient(135deg, #9DBCE9 0%, #E0BACF 100%);">
+                    <div class="rounded-3xl border border-gray-200 shadow p-6 space-y-4 glow" style="background: #FAFAFA;">
                         <div class="flex items-center justify-between">
                             <h3 class="text-lg font-bold text-gray-900">Recent Courses</h3>
-                            <a href="{% url 'dashboard:instructor_courses' %}" class="text-xs text-indigo-600 font-semibold">View all</a>
+                            <a href="{% url 'dashboard:instructor_courses' %}" class="text-xs text-blue-600 font-semibold">View all</a>
                         </div>
                         <div class="space-y-4">
                             {% if recent_courses %}
@@ -379,13 +408,13 @@ templates folder: library_system/templates/dashboard/teacher.html
                         </div>
                     </div>
 
-                    <div class="rounded-3xl border border-transparent shadow-xl p-6 space-y-4" style="background: linear-gradient(135deg, #FFE5C4 0%, #E8C0C2 50%, #C48AA2 100%);">
+                    <div class="rounded-3xl border border-gray-200 shadow-lg p-6 space-y-4 glow" style="background: #FAFAFA;">
                         <div class="flex items-center justify-between">
                                 <h3 class="text-lg font-bold text-gray-900 flex items-center gap-2">
-                                <i class="fas fa-chart-pie text-indigo-600"></i>
+                                <i class="fas fa-chart-pie text-blue-600"></i>
                                 Attendance Reports
                             </h3>
-                            <a href="{% url 'dashboard:instructor_attendance_reports' %}" class="text-xs bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold px-3 py-1.5 rounded-full shadow hover:opacity-90 transition">
+                            <a href="{% url 'dashboard:instructor_attendance_reports' %}" class="text-xs bg-blue-600 text-white font-semibold px-3 py-1.5 rounded-full shadow hover:opacity-90 transition">
                                 View Reports
                             </a>
                         </div>
@@ -410,7 +439,7 @@ templates folder: library_system/templates/dashboard/teacher.html
                 </section>
 
                 <!-- Quick Actions -->
-                <section class="rounded-3xl border border-transparent shadow p-6" style="background: linear-gradient(135deg, #42B2CB 0%, #9DBCE9 100%);">
+                <section class="rounded-3xl border border-gray-200 shadow p-6 glow" style="background: #FAFAFA;">
                     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
                         <div>
                             <h3 class="text-lg font-bold text-gray-900">Quick Actions</h3>

@@ -45,16 +45,18 @@ def format_year_label(year_level):
 # This is an optional dependency - the system will work without it
 DOCX_AVAILABLE = False
 try:
-    import docx
     from docx import Document
     from docx.shared import Inches, Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.enum.section import WD_SECTION
     from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
     DOCX_AVAILABLE = True
-except (ImportError, ModuleNotFoundError):
+except (ImportError, ModuleNotFoundError) as e:
     # Silently handle missing python-docx - it's optional
     # The system will work without it, just Word document generation won't be available
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"python-docx not available for Word export: {e}")
     pass
 
 def generate_user_document(user, temp_password, user_type='instructor', login_url=None):
@@ -769,141 +771,161 @@ def admin_download_users_csv_view(request):
         return row
     
     if file_format == 'docx':
-        if not DOCX_AVAILABLE:
-            return HttpResponse('Word export not available. Please install python-docx.', status=500)
-        doc = Document()
-        header_table = doc.add_table(rows=1, cols=2)
-        header_table.alignment = WD_TABLE_ALIGNMENT.LEFT
-        header_table.autofit = False
-        header_table.columns[0].width = Inches(1.0)
-        header_table.columns[1].width = Inches(5.5)
-        school_image = getattr(user, 'profile_picture', None)
-        left_cell = header_table.cell(0, 0)
-        left_cell.text = ''
-        left_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-        if school_image and hasattr(school_image, 'path'):
-            try:
-                left_cell.paragraphs[0].add_run().add_picture(school_image.path, width=Inches(0.9))
-            except Exception:
-                pass
-        right_cell = header_table.cell(0, 1)
-        right_cell.text = ''
-        right_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-        name_para = right_cell.paragraphs[0]
-        name_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        name_run = name_para.add_run(user.school_name or 'School')
-        name_run.font.bold = True
-        name_run.font.size = Pt(12)
-        doc.add_paragraph()
-        if program_id and 'program' in locals():
-            program_table = doc.add_table(rows=1, cols=2)
-            program_table.alignment = WD_TABLE_ALIGNMENT.LEFT
-            program_table.autofit = False
-            program_table.columns[0].width = Inches(1.0)
-            program_table.columns[1].width = Inches(5.5)
-            program_image = getattr(program, 'icon', None)
-            p_left = program_table.cell(0, 0)
-            p_left.text = ''
-            p_left.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-            if program_image and hasattr(program_image, 'path'):
+        # Try to import docx modules - attempt lazy import in case global import failed
+        try:
+            from docx import Document
+            from docx.shared import Inches, Pt, RGBColor
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            from docx.enum.section import WD_SECTION
+            from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
+            from io import BytesIO
+        except ImportError as e:
+            logger.error(f"python-docx import failed: {e}")
+            return HttpResponse(
+                'Word export not available. Please install python-docx by running: pip install python-docx',
+                status=500
+            )
+        
+        try:
+            doc = Document()
+            header_table = doc.add_table(rows=1, cols=2)
+            header_table.alignment = WD_TABLE_ALIGNMENT.LEFT
+            header_table.autofit = False
+            header_table.columns[0].width = Inches(1.0)
+            header_table.columns[1].width = Inches(5.5)
+            school_image = getattr(user, 'profile_picture', None)
+            left_cell = header_table.cell(0, 0)
+            left_cell.text = ''
+            left_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            if school_image and hasattr(school_image, 'path'):
                 try:
-                    p_left.paragraphs[0].add_run().add_picture(program_image.path, width=Inches(0.9))
+                    left_cell.paragraphs[0].add_run().add_picture(school_image.path, width=Inches(0.9))
                 except Exception:
                     pass
-            p_right = program_table.cell(0, 1)
-            p_right.text = ''
-            p_right.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-            p_para = p_right.paragraphs[0]
-            p_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            p_run = p_para.add_run(f"{program.code} - {program.name} ({program.department})")
-            p_run.font.bold = True
-            p_run.font.size = Pt(10)
-            underline_para = doc.add_paragraph()
-            underline_run = underline_para.add_run('_' * 90)
-            underline_run.font.size = Pt(6)
-        doc.add_paragraph(f'Generated: {datetime.now(PH_TIMEZONE).strftime("%B %d, %Y %I:%M %p")} (Philippine Time)')
-        doc.add_paragraph()
-        
-        def add_doc_table(title, entries):
-            if not entries:
-                return False
-            doc.add_heading(title, level=1)
-            include_student_fields = (title != 'Instructors')
-            headers = get_headers(include_student_fields)
-            table = doc.add_table(rows=1, cols=len(headers))
-            table.style = 'Table Grid'
-            table.alignment = WD_TABLE_ALIGNMENT.LEFT
-            table.autofit = False
+            right_cell = header_table.cell(0, 1)
+            right_cell.text = ''
+            right_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            name_para = right_cell.paragraphs[0]
+            name_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            name_run = name_para.add_run(user.school_name or 'School')
+            name_run.font.bold = True
+            name_run.font.size = Pt(12)
+            doc.add_paragraph()
+            if program_id and 'program' in locals():
+                program_table = doc.add_table(rows=1, cols=2)
+                program_table.alignment = WD_TABLE_ALIGNMENT.LEFT
+                program_table.autofit = False
+                program_table.columns[0].width = Inches(1.0)
+                program_table.columns[1].width = Inches(5.5)
+                program_image = getattr(program, 'icon', None)
+                p_left = program_table.cell(0, 0)
+                p_left.text = ''
+                p_left.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                if program_image and hasattr(program_image, 'path'):
+                    try:
+                        p_left.paragraphs[0].add_run().add_picture(program_image.path, width=Inches(0.9))
+                    except Exception:
+                        pass
+                p_right = program_table.cell(0, 1)
+                p_right.text = ''
+                p_right.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                p_para = p_right.paragraphs[0]
+                p_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                p_run = p_para.add_run(f"{program.code} - {program.name} ({program.department})")
+                p_run.font.bold = True
+                p_run.font.size = Pt(10)
+                underline_para = doc.add_paragraph()
+                underline_run = underline_para.add_run('_' * 90)
+                underline_run.font.size = Pt(6)
+            doc.add_paragraph(f'Generated: {datetime.now(PH_TIMEZONE).strftime("%B %d, %Y %I:%M %p")} (Philippine Time)')
+            doc.add_paragraph()
+            
+            def add_doc_table(title, entries):
+                if not entries:
+                    return False
+                doc.add_heading(title, level=1)
+                include_student_fields = (title != 'Instructors')
+                headers = get_headers(include_student_fields)
+                table = doc.add_table(rows=1, cols=len(headers))
+                table.style = 'Table Grid'
+                table.alignment = WD_TABLE_ALIGNMENT.LEFT
+                table.autofit = False
 
-            width_presets = {
-                'User ID': 1.2,
-                'Full Name': 3.8,
-                'Email': 4.2,
-                'School ID': 1.5,
-                'User Type': 1.1,
-                'Program': 1.8,
-                'Department': 3.8,
-                'Year Level': 1.3,
-                'Section': 1.3,
-                'Status': 1.2,
-                'Date Joined': 2.0
-            }
-            default_width = 1.4
+                width_presets = {
+                    'User ID': 1.2,
+                    'Full Name': 3.8,
+                    'Email': 4.2,
+                    'School ID': 1.5,
+                    'User Type': 1.1,
+                    'Program': 1.8,
+                    'Department': 3.8,
+                    'Year Level': 1.3,
+                    'Section': 1.3,
+                    'Status': 1.2,
+                    'Date Joined': 2.0
+                }
+                default_width = 1.4
 
-            hdr_cells = table.rows[0].cells
-            for idx, header in enumerate(headers):
-                cell = hdr_cells[idx]
-                cell.text = ''
-                paragraph = cell.paragraphs[0]
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                run = paragraph.add_run(header)
-                run.bold = True
-                run.font.size = Pt(7.5)
-                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-                cell.width = Inches(width_presets.get(header, default_width))
-
-            for entry in entries:
-                row_cells = table.add_row().cells
-                row_values = format_row(entry, include_student_fields)
-                for idx, value in enumerate(row_values):
-                    cell = row_cells[idx]
+                hdr_cells = table.rows[0].cells
+                for idx, header in enumerate(headers):
+                    cell = hdr_cells[idx]
                     cell.text = ''
                     paragraph = cell.paragraphs[0]
-                    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                    run = paragraph.add_run(str(value))
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = paragraph.add_run(header)
+                    run.bold = True
                     run.font.size = Pt(7.5)
                     cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-                    cell.width = Inches(width_presets.get(headers[idx], default_width))
+                    cell.width = Inches(width_presets.get(header, default_width))
 
-            doc.add_paragraph()
-            return True
-        
-        if user_type == 'all':
-            instructors = list(queryset.filter(is_teacher=True).order_by('full_name', 'username'))
-            students = list(queryset.filter(is_student=True).order_by('full_name', 'username'))
-            if instructors:
-                add_doc_table('Instructors', instructors)
-            if students:
-                add_doc_table('Students', students)
-        elif user_type == 'instructors':
-            add_doc_table('Instructors', list(queryset.order_by('full_name', 'username')))
-        else:
-            add_doc_table('Students', list(queryset.order_by('full_name', 'username')))
-        
-        buffer = BytesIO()
-        doc.save(buffer)
-        buffer.seek(0)
-        filename_prefix = 'users'
-        if user_type == 'instructors':
-            filename_prefix = 'instructors'
-        elif user_type == 'students':
-            filename_prefix = 'students'
-        response = HttpResponse(
-            buffer.getvalue(),
-            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        )
-        response['Content-Disposition'] = f'attachment; filename="{filename_prefix}-{timestamp}.docx"'
-        return response
+                for entry in entries:
+                    row_cells = table.add_row().cells
+                    row_values = format_row(entry, include_student_fields)
+                    for idx, value in enumerate(row_values):
+                        cell = row_cells[idx]
+                        cell.text = ''
+                        paragraph = cell.paragraphs[0]
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        run = paragraph.add_run(str(value))
+                        run.font.size = Pt(7.5)
+                        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                        cell.width = Inches(width_presets.get(headers[idx], default_width))
+
+                doc.add_paragraph()
+                return True
+            
+            if user_type == 'all':
+                instructors = list(queryset.filter(is_teacher=True).order_by('full_name', 'username'))
+                students = list(queryset.filter(is_student=True).order_by('full_name', 'username'))
+                if instructors:
+                    add_doc_table('Instructors', instructors)
+                if students:
+                    add_doc_table('Students', students)
+            elif user_type == 'instructors':
+                add_doc_table('Instructors', list(queryset.order_by('full_name', 'username')))
+            else:
+                add_doc_table('Students', list(queryset.order_by('full_name', 'username')))
+            
+            buffer = BytesIO()
+            doc.save(buffer)
+            buffer.seek(0)
+            filename_prefix = 'users'
+            if user_type == 'instructors':
+                filename_prefix = 'instructors'
+            elif user_type == 'students':
+                filename_prefix = 'students'
+            response = HttpResponse(
+                buffer.getvalue(),
+                content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{filename_prefix}-{timestamp}.docx"'
+            return response
+        except Exception as e:
+            logger.error(f"Error generating DOCX document: {e}")
+            return HttpResponse(
+                f'Error generating Word document: {str(e)}',
+                status=500
+            )
     
     writer = csv.writer(response)
     if user_type == 'all':

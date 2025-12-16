@@ -56,7 +56,7 @@ def login_signup_view(request):
                     list(storage)  # Consume all existing messages
                     login(request, authenticated_user)
                     logger.info(f"Successful student login: {user.username}")
-                    messages.success(request, f'Welcome back, {user.full_name or user.username}!')
+                    messages.success(request, f'Welcome to Attendance system, {user.full_name or user.username}!')
                     redirect_url = '/dashboard/student-dashboard/'
                     if user.education_level == 'high_senior':
                         redirect_url = '/dashboard/high-school-dashboard/'
@@ -70,7 +70,7 @@ def login_signup_view(request):
                         list(storage)  # Consume all existing messages
                         login(request, authenticated_user)
                         logger.info(f"Successful teacher login: {user.username}")
-                        messages.success(request, f'Welcome back, {user.full_name or user.username}!')
+                        messages.success(request, f'Welcome to Attendance system, {user.full_name or user.username}!')
                         redirect_url = '/dashboard/teacher-dashboard/'
                         if user.education_level == 'high_senior':
                             redirect_url = '/dashboard/high-school-teacher-dashboard/'
@@ -509,7 +509,7 @@ def logout_view(request):
     list(storage)  # Consume all existing messages
     logout(request)
     # Set logout message after logout
-    messages.success(request, f'Goodbye, {username}! You have been successfully logged out.')
+    messages.success(request, f'Come again, {username}! You have been successfully logged out.')
     
     # Redirect admin to admin login, others to regular login
     if is_admin:
