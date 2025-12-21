@@ -157,6 +157,12 @@
         color: #92400e;
     }
     
+    .status-postponed {
+        background-color: #e5e7eb;
+        color: #374151;
+        border: 1px solid #d1d5db;
+    }
+    
     .student-avatar {
         width: 32px;
         height: 32px;
@@ -303,7 +309,7 @@
                     <div class="w-1 h-8 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></div>
                     {% if request.GET.date in postponed_dates %}<span class="text-red-600">[POSTPONED]</span>{% endif %} Attendance Details
                 </h2>
-                <a href="{% url 'dashboard:instructor_attendance_reports_download' %}?course={{ selected_course.id }}&date={{ request.GET.date }}&section={{ section_filter|default:'all'|urlencode }}" class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-semibold transition flex items-center gap-2">
+                <a href="javascript:void(0)" onclick="downloadExcelWithLoading('{% url 'dashboard:instructor_attendance_reports_download' %}?course={{ selected_course.id }}&date={{ request.GET.date }}&section={{ section_filter|default:'all'|urlencode }}')" class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-semibold transition flex items-center gap-2 cursor-pointer">
                     <i class="fas fa-download text-xs"></i>Download Excel
                 </a>
             </div>
@@ -338,6 +344,8 @@
                             <span class="status-badge status-present text-sm px-4 py-2">✓ Present</span>
                         {% elif record.status == 'absent' %}
                             <span class="status-badge status-absent text-sm px-4 py-2">✗ Absent</span>
+                        {% elif record.status == 'postponed' %}
+                            <span class="status-badge status-postponed text-sm px-4 py-2" style="background-color: #e5e7eb; color: #374151; border: 1px solid #d1d5db;">⏸ Postponed</span>
                         {% elif record.status == 'late' %}
                             <span class="status-badge status-late text-sm px-4 py-2">⏱ Late</span>
                         {% else %}
@@ -435,7 +443,7 @@
                 const courseId = this.getAttribute('data-course-id');
                 console.log('Card clicked, courseId:', courseId);
                 if (courseId) {
-                    window.location.href = "?course=" + courseId;
+                    showReportsLoadingModal("?course=" + courseId);
                 }
             });
         });
@@ -469,7 +477,7 @@
         }
         // Reset date when changing section to avoid stale filters
         params.delete('date');
-        window.location.search = params.toString();
+        showReportsLoadingModal(window.location.pathname + '?' + params.toString());
     }
 
     function clearCourse() {
@@ -486,10 +494,10 @@
         if (params.has('date')) {
             // If date is selected, go back to folder list
             const courseId = params.get('course');
-            window.location.href = "?course=" + courseId;
+            showReportsLoadingModal("?course=" + courseId);
         } else {
             // Otherwise go back to subject list
-            clearCourse();
+            showReportsLoadingModal(window.location.pathname);
         }
     }
 
@@ -524,7 +532,7 @@
                     if (section) {
                         href += "&section=" + encodeURIComponent(section);
                     }
-                    window.location.href = href;
+                    showReportsLoadingModal(href);
                 }
             });
         });
@@ -748,6 +756,55 @@
     } else {
         attachAllListeners();
     }
+
+    // Add loading effect for attendance reports navigation
+    function showReportsLoadingModal(url) {
+        console.log('[REPORTS] Loading modal shown for:', url);
+        
+        // Show loading overlay
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.id = 'reports-loading-overlay';
+        loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+        loadingOverlay.innerHTML = `
+            <div class="rainbow-spinner">
+                <img src="/static/img/attendance-logo.png" alt="Loading">
+            </div>
+        `;
+        document.body.appendChild(loadingOverlay);
+        
+        // Navigate after short delay
+        setTimeout(() => {
+            window.location.href = url;
+        }, 300);
+    }
+
+    // Download Excel with loading animation
+    function downloadExcelWithLoading(url) {
+        // Show loading overlay
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+        loadingOverlay.innerHTML = `
+            <div class="rainbow-spinner">
+                <img src="/static/img/attendance-logo.png" alt="Loading">
+            </div>
+        `;
+        document.body.appendChild(loadingOverlay);
+        
+        // Create a temporary link and trigger download
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = '';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Remove loading overlay after 500ms
+        setTimeout(() => {
+            loadingOverlay.remove();
+        }, 500);
+    }
+
+    window.downloadExcelWithLoading = downloadExcelWithLoading;
 </script>
 
 {% endblock %}

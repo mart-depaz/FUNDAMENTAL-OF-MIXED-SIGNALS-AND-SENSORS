@@ -76,12 +76,14 @@ else:
 
 # Application definition
 INSTALLED_APPS = [
+    'daphne',  # Channels ASGI server - must be first
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',  # Channels support
     'dashboard',
     'accounts',
 ]
@@ -257,3 +259,12 @@ if DEBUG:
             'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
         }
     }
+
+# Channels configuration for WebSocket support
+ASGI_APPLICATION = 'library_root.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer'
+    }
+}

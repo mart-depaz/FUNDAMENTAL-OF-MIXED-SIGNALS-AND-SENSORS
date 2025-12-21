@@ -115,7 +115,7 @@
             border: 2px solid #3C4770;
             border-radius: 8px;
             padding: 10px 20px;
-            box-shadow: 0 4px 8px rgba(60, 71, 112, 0.2);
+            box-shadow: 0 0 20px rgba(60, 71, 112, 0.4), 0 0 40px rgba(68, 114, 148, 0.2), 0 4px 8px rgba(60, 71, 112, 0.2);
         }
         h1, h2 {
             color: #3C4770;
@@ -334,6 +334,14 @@
 
     <div class="container">
         <div class="form-card">
+            <div style="background-color: #fff3cd; border: 2px solid #ffc107; border-radius: 5px; padding: 15px; margin-bottom: 15px; text-align: center;">
+                <p style="margin: 0; color: #856404; font-weight: bold;">
+                    <i class="fas fa-exclamation-triangle"></i> ADMIN DASHBOARD - ABANDONED
+                </p>
+                <p style="margin: 5px 0 0 0; color: #856404; font-size: 0.9em;">
+                    This admin panel is no longer actively maintained. Teachers and Students now have independent signup and login.
+                </p>
+            </div>
             <div style="text-align: center; margin-bottom: 20px;">
                 <div style="width: 70px; height: 70px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px; background-color: rgba(60,71,112,0.1); border: 2px solid rgba(60,71,112,0.2); overflow: hidden;">
                     <img src="{% static 'img/attendance-logo.png' %}" alt="Attendance System logo" style="width: 64px; height: 64px; object-fit: contain;">

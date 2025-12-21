@@ -17,6 +17,51 @@ templates folder: library_system/templates/dashboard/student.html
         font-family: 'Inter', sans-serif; 
         background: #f4f5fb;
     }
+    
+    /* Ultra-small mobile portrait (320px - 479px) */
+    @media (max-width: 479px) {
+        .text-3xl {
+            font-size: 1.5rem !important;
+        }
+        
+        .text-2xl {
+            font-size: 1.25rem !important;
+        }
+        
+        .px-4 {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        
+        .py-2 {
+            padding-top: 0.375rem !important;
+            padding-bottom: 0.375rem !important;
+        }
+        
+        .gap-6 {
+            gap: 1rem !important;
+        }
+        
+        .gap-4 {
+            gap: 0.75rem !important;
+        }
+        
+        .p-5 {
+            padding: 0.75rem !important;
+        }
+        
+        .w-12 {
+            width: 2rem !important;
+        }
+        
+        .h-12 {
+            height: 2rem !important;
+        }
+        
+        .text-xl {
+            font-size: 0.875rem !important;
+        }
+    }
 </style>
 <style>
     /* Small-screen container fixes to prevent decorative overflow and align content with other pages */
@@ -50,8 +95,8 @@ templates folder: library_system/templates/dashboard/student.html
 
     <!-- Main Content -->
     <!-- No top margin on mobile; keep lg offset on large screens -->
-    <main id="main-content" class="flex-grow p-2 lg:p-3 lg:ml-64 mt-0 lg:mt-16 overflow-y-auto" style="overscroll-behavior: contain;">
-        <div class="p-2 md:p-3 bg-white lg:bg-gray-50 flex-grow rounded-lg shadow-inner min-h-full">
+    <main id="main-content" class="flex-grow p-0 lg:p-3 lg:ml-64 mt-0 lg:mt-16 overflow-y-auto" style="overscroll-behavior: contain;">
+        <div class="p-2 md:p-3 bg-white lg:bg-gray-50 flex-grow rounded-lg shadow-inner min-h-full" style="margin-top: 0; padding: 0.25rem 0.35rem;">
             {% block dashboard_content %}
             {% include 'dashboard/student/student_home.html' %}
             {% endblock %}
@@ -73,6 +118,10 @@ templates folder: library_system/templates/dashboard/student.html
                     document.documentElement.style.setProperty('--header-offset', '64px');
                     return;
                 }
+
+                // Check if we're on schedule page - use relative positioning instead
+                const isSchedulePage = window.location.pathname.includes('/schedule/');
+                
                 const header = document.getElementById('student-top-bar');
                 const main = document.getElementById('main-content');
                 const notif = document.getElementById('notification-container');
@@ -86,17 +135,30 @@ templates folder: library_system/templates/dashboard/student.html
                 const offset = (h + extra);
                 try { document.documentElement.style.setProperty('--header-offset', offset + 'px'); } catch (e) {}
 
-                // Position main absolutely under header so content appears immediately below it
-                main.style.position = 'absolute';
-                main.style.top = 'var(--header-offset)';
-                main.style.left = '0';
-                main.style.right = '0';
-                main.style.bottom = 'auto';
-                // Force-remove any top margin classes and inline spacing that may push content down
-                try { main.classList.remove('mt-16'); } catch(e){}
-                try { main.style.marginTop = '0px'; main.style.margin = '0'; main.style.paddingTop = '0px'; } catch(e){}
-                // ensure main height matches the viewport minus header offset
-                try { main.style.height = 'calc(100vh - ' + offset + 'px)'; } catch(e) { main.style.height = 'auto'; }
+                // For schedule page, use relative positioning to let content flow naturally
+                if (isSchedulePage) {
+                    main.style.position = 'relative';
+                    main.style.top = '0';
+                    main.style.left = '0';
+                    main.style.right = '0';
+                    main.style.bottom = 'auto';
+                    main.style.height = 'auto';
+                    main.style.marginTop = '0px';
+                    main.style.margin = '0';
+                    main.style.paddingTop = '0px';
+                } else {
+                    // Position main absolutely under header so content appears immediately below it
+                    main.style.position = 'absolute';
+                    main.style.top = 'var(--header-offset)';
+                    main.style.left = '0';
+                    main.style.right = '0';
+                    main.style.bottom = 'auto';
+                    // Force-remove any top margin classes and inline spacing that may push content down
+                    try { main.classList.remove('mt-16'); } catch(e){}
+                    try { main.style.marginTop = '0px'; main.style.margin = '0'; main.style.paddingTop = '0px'; } catch(e){}
+                    // ensure main height matches the viewport minus header offset
+                    try { main.style.height = 'calc(100vh - ' + offset + 'px)'; } catch(e) { main.style.height = 'auto'; }
+                }
                 main.style.overflow = 'auto';
 
                 // Align sidebar under header
@@ -115,6 +177,49 @@ templates folder: library_system/templates/dashboard/student.html
         window.addEventListener('load', adjustStudentMainForHeader);
         window.addEventListener('resize', adjustStudentMainForHeader);
         document.addEventListener('DOMContentLoaded', adjustStudentMainForHeader);
+        
+        // Add loading effect to dashboard navigation links
+        console.log('[STUDENT DASHBOARD] Initializing loading effects');
+        
+        // Find all dashboard action links (not sidebar, only dashboard content)
+        const dashboardLinks = document.querySelectorAll('a[href*="dashboard:"]');
+        
+        dashboardLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                const isDashboardNav = href && (
+                    href.includes('weekly_timetable') ||
+                    href.includes('enroll_course') ||
+                    href.includes('student_todays_status') ||
+                    href.includes('student_attendance_log')
+                );
+                
+                // Only show loading for main dashboard navigation links
+                if (isDashboardNav && href !== window.location.pathname) {
+                    e.preventDefault();
+                    
+                    // Show loading overlay
+                    const loadingOverlay = document.createElement('div');
+                    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+                    loadingOverlay.innerHTML = `
+                        <div class="bg-white rounded-lg shadow-2xl p-8 flex flex-col items-center gap-4">
+                            <div class="animate-spin">
+                                <i class="fas fa-spinner text-4xl" style="color: #4F46E5;"></i>
+                            </div>
+                            <p class="text-lg font-semibold text-gray-800">Loading...</p>
+                            <p class="text-sm text-gray-600">Please wait while we load the page</p>
+                        </div>
+                    `;
+                    document.body.appendChild(loadingOverlay);
+                    console.log('[STUDENT DASHBOARD] Loading overlay shown for:', href);
+                    
+                    // Navigate after short delay
+                    setTimeout(() => {
+                        window.location.href = href;
+                    }, 300);
+                }
+            });
+        });
     })();
 </script>
 {% endblock %}

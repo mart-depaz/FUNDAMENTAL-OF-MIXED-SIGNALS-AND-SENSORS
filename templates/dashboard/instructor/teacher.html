@@ -14,6 +14,167 @@ templates folder: library_system/templates/dashboard/teacher.html
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 <link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
 <style>
+    /* Ultra-small mobile portrait (320px - 479px) */
+    @media (max-width: 479px) {
+        /* Add top margin to prevent content from being hidden behind fixed topbar */
+        main, #main-content, main > * {
+            margin-top: 56px !important;
+        }
+
+        /* Ensure full viewport height for main content */
+        main#main-content {
+            min-height: calc(100vh - 56px) !important;
+            padding: 0 !important;
+            margin-left: 0 !important;
+            background: white !important;
+            overflow-y: auto !important;
+        }
+
+        /* Clean main content wrapper - no padding, shadow, or border on mobile */
+        main > .p-4.md\\:p-8,
+        .p-4.md\\:p-8.bg-white {
+            padding: 0.5rem !important;
+            background: white !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            min-height: auto !important;
+            flex-grow: 1 !important;
+        }
+
+        /* Page wrapper - clean layout */
+        #instructor-page-wrapper {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
+            background: white !important;
+        }
+
+        /* Block element - content sections */
+        main > .p-4.md\\:p-8 > div.space-y-6 {
+            gap: 0.75rem !important;
+        }
+
+        .daily-outlook-item {
+            font-size: 0.75rem !important;
+        }
+        
+        .daily-outlook-item p:first-child {
+            font-size: 1.5rem !important;
+        }
+        
+        .grid-responsive-ultra-small {
+            grid-template-columns: 1fr !important;
+        }
+        
+        .text-3xl {
+            font-size: 1.5rem !important;
+        }
+        
+        .text-2xl {
+            font-size: 1.25rem !important;
+        }
+        
+        .px-4 {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        
+        .py-2 {
+            padding-top: 0.375rem !important;
+            padding-bottom: 0.375rem !important;
+        }
+        
+        .gap-6 {
+            gap: 1rem !important;
+        }
+        
+        .gap-4 {
+            gap: 0.75rem !important;
+        }
+        
+        .p-5 {
+            padding: 0.75rem !important;
+        }
+        
+        .w-12 {
+            width: 2rem !important;
+        }
+        
+        .h-12 {
+            height: 2rem !important;
+        }
+        
+        .text-xl {
+            font-size: 0.875rem !important;
+        }
+
+        /* Grid consistency across all pages */
+        .grid {
+            grid-template-columns: 1fr !important;
+            gap: 0.75rem !important;
+        }
+
+        /* Hero and section styling */
+        section.bg-gradient-to-r.rounded-3xl {
+            padding: 1rem !important;
+            border-radius: 0.75rem !important;
+            margin-bottom: 0.75rem !important;
+        }
+
+        section.bg-gradient-to-r h1,
+        section.bg-gradient-to-r h2 {
+            font-size: 1.1rem !important;
+            line-height: 1.2 !important;
+        }
+
+        section.bg-gradient-to-r p {
+            font-size: 0.75rem !important;
+            line-height: 1.3 !important;
+        }
+
+        /* Card styling for all pages */
+        .rounded-2xl {
+            border-radius: 0.5rem !important;
+            padding: 0.75rem !important;
+        }
+
+        /* Daily outlook box */
+        .daily-outlook-box {
+            padding: 0.75rem !important;
+            border-radius: 0.5rem !important;
+            margin-bottom: 0.75rem !important;
+        }
+
+        /* Buttons and inline elements */
+        a.inline-flex,
+        button.inline-flex {
+            padding: 0.5rem 0.75rem !important;
+            font-size: 0.7rem !important;
+            gap: 0.3rem !important;
+        }
+
+        a.inline-flex i,
+        button.inline-flex i {
+            font-size: 0.75rem !important;
+        }
+
+        /* Course card grid */
+        #courses-grid {
+            grid-template-columns: 1fr !important;
+            gap: 0.75rem !important;
+        }
+
+        /* Ensure no horizontal overflow */
+        * {
+            box-sizing: border-box !important;
+        }
+
+        main, .flex-grow {
+            overflow-x: hidden !important;
+        }
+    }
+</style>
+<style>
     body { 
         font-family: 'Inter', sans-serif; 
         background: #f4f5fb;
@@ -120,8 +281,6 @@ templates folder: library_system/templates/dashboard/teacher.html
             max-width: 100% !important;
             margin-left: 0 !important;
             margin-right: 0 !important;
-            padding-left: 8px !important;
-            padding-right: 8px !important;
         }
 
         /* ensure cards don't overflow and scale their contents */
@@ -177,11 +336,39 @@ templates folder: library_system/templates/dashboard/teacher.html
         .rounded-3xl .flex > div, .rounded-2xl .flex > div { min-width: 0 !important; }
     }
 
-    /* Slightly larger phones / small tablets */
-    @media (min-width: 413px) and (max-width: 768px) {
-        #main-content { padding: 12px !important; }
-        .bg-gradient-to-r.rounded-3xl { padding: 16px !important; }
-        .rounded-2xl.p-5 { padding: 12px !important; }
+    /* Mobile-specific clean layout for all instructor pages (320px-479px) */
+    @media (max-width: 479px) {
+        /* Instructor page wrapper - clean layout */
+        #instructor-page-wrapper {
+            flex-direction: column !important;
+            background: white !important;
+            margin-top: 56px !important;
+        }
+
+        /* Sidebar styling for mobile */
+        #sidebar {
+            background: #3C4770 !important;
+        }
+
+        /* Main content area - full width on mobile */
+        main#main-content {
+            width: 100% !important;
+            max-width: 100% !important;
+            background: white !important;
+            padding: 0 !important;
+            overflow-x: hidden !important;
+        }
+
+        /* Content wrapper - consistent across all pages */
+        main > .p-4.md\\:p-8,
+        main > div {
+            width: 100% !important;
+            max-width: 100% !important;
+            padding: 0.5rem !important;
+            background: white !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
     }
 </style>
 
@@ -218,6 +405,114 @@ templates folder: library_system/templates/dashboard/teacher.html
     .rounded-3xl.glow, .rounded-2xl.glow, .rounded-xl.glow {
         overflow: visible !important;
     }
+
+    /* Profile Avatar Styling - Match profile modal */
+    .profile-avatar {
+        width: 6rem;
+        height: 6rem;
+        border-radius: 9999px;
+        background-color: #3C4770;
+        border: 4px solid rgba(190, 129, 153, 0.3);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2.25rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: white;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        flex-shrink: 0;
+    }
+
+    .profile-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    /* Mobile Portrait (320px - 479px) */
+    @media (max-width: 479px) {
+        .profile-avatar {
+            width: 3.5rem;
+            height: 3.5rem;
+            font-size: 1.25rem;
+            border: 3px solid rgba(190, 129, 153, 0.3);
+        }
+
+        .hero-profile-info {
+            gap: 0.75rem !important;
+        }
+
+        .hero-profile-text h1 {
+            font-size: 1rem !important;
+            line-height: 1.2 !important;
+        }
+
+        .hero-profile-text p {
+            font-size: 0.75rem !important;
+        }
+
+        .daily-outlook-box {
+            flex-direction: column !important;
+            gap: 0.5rem !important;
+        }
+
+        .daily-outlook-item {
+            flex-direction: column !important;
+            gap: 0 !important;
+        }
+
+        .daily-outlook-item p:first-child {
+            font-size: 1.5rem !important;
+        }
+
+        .daily-outlook-item p:last-child {
+            font-size: 0.625rem !important;
+        }
+    }
+
+    /* Small Phones (480px - 599px) */
+    @media (min-width: 480px) and (max-width: 599px) {
+        .profile-avatar {
+            width: 4.5rem;
+            height: 4.5rem;
+            font-size: 1.5rem;
+            border: 3px solid rgba(190, 129, 153, 0.3);
+        }
+
+        .hero-profile-info {
+            gap: 1rem !important;
+        }
+
+        .hero-profile-text h1 {
+            font-size: 1.125rem !important;
+        }
+
+        .daily-outlook-box {
+            flex-direction: column !important;
+            gap: 0.75rem !important;
+        }
+    }
+
+    /* Ensure consistent layout on all mobile sizes */
+    @media (max-width: 600px) {
+        #instructor-page-wrapper {
+            margin-top: 56px !important;
+            padding: 0 !important;
+            background: white !important;
+            flex-direction: column !important;
+            min-height: calc(100vh - 56px) !important;
+        }
+
+        main#main-content {
+            margin-top: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            width: 100% !important;
+            flex-grow: 1 !important;
+        }
+    }
 </style>
 
 <!-- Teacher Top Bar -->
@@ -238,15 +533,15 @@ templates folder: library_system/templates/dashboard/teacher.html
                     <div class="absolute inset-0 bg-white/10 blur-3xl"></div>
                     <div class="relative z-10 flex flex-col gap-6">
                         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-                            <div class="flex items-center gap-5">
-                                <div class="w-24 h-24 rounded-full bg-white/20 border-2 border-white/60 overflow-hidden flex items-center justify-center text-3xl font-semibold uppercase shadow-xl">
+                            <div class="flex items-center gap-5 hero-profile-info">
+                                <div class="profile-avatar">
                                     {% if user.profile_picture %}
-                                        <img src="{{ user.profile_picture.url }}" alt="{{ user.full_name|default:user.username }}" class="w-full h-full object-cover">
+                                        <img src="{{ user.profile_picture.url }}" alt="{{ user.full_name|default:user.username }}">
                                     {% else %}
                                         <span>{{ user.full_name|default:user.username|first|upper }}</span>
                                     {% endif %}
                                 </div>
-                                <div class="flex flex-col">
+                                <div class="flex flex-col hero-profile-text">
                                     <p class="uppercase text-xs tracking-[0.35em] text-white/70 font-semibold mb-1">Instructor Dashboard</p>
                                     <h1 class="text-xl md:text-2xl font-extrabold truncate max-w-full lg:max-w-2xl" title="{{ user.full_name|default:user.username }}">
                                         Hello, {{ user.full_name|default:user.username }}
@@ -256,18 +551,18 @@ templates folder: library_system/templates/dashboard/teacher.html
                                 </p>
                                 </div>
                             </div>
-                                <div class="rounded-2xl px-6 py-4 border border-white/20 shadow-lg text-sm text-white" style="background: rgba(255,255,255,0.15);">
+                                <div class="rounded-2xl px-6 py-4 border border-white/20 shadow-lg text-sm text-white daily-outlook-box" style="background: rgba(255,255,255,0.15);">
                                 <p class="font-semibold text-white/90 uppercase tracking-wide text-xs">Daily Outlook</p>
                                 <div class="flex items-center gap-6 mt-2 text-white">
-                                    <div>
+                                    <div class="daily-outlook-item">
                                         <p class="text-3xl font-bold">{{ total_courses|default:0 }}</p>
                                         <p class="text-xs uppercase tracking-wide text-white/70">Active Courses</p>
                                     </div>
-                                    <div>
+                                    <div class="daily-outlook-item">
                                         <p class="text-3xl font-bold">{{ active_students|default:0 }}</p>
                                         <p class="text-xs uppercase tracking-wide text-white/70">Students Reached</p>
                                     </div>
-                                    <div>
+                                    <div class="daily-outlook-item">
                                         <p class="text-3xl font-bold">{% if attendance_reports_count %}{{ attendance_reports_count }}{% elif reports_count %}{{ reports_count }}{% elif attendance_count %}{{ attendance_count }}{% else %}0{% endif %}</p>
                                         <p class="text-xs uppercase tracking-wide text-white/70">Attendance Reports</p>
                                     </div>
@@ -278,10 +573,10 @@ templates folder: library_system/templates/dashboard/teacher.html
                             <a href="{% url 'dashboard:instructor_courses' %}" class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 transition px-4 py-2 rounded-xl text-sm font-semibold">
                                 <i class="fas fa-layer-group text-white"></i> Manage Courses
                             </a>
-                            <a href="{% url 'dashboard:weekly_timetable' %}" class="inline-flex items-center gap-2 bg-white text-indigo-600 hover:bg-gray-100 transition px-4 py-2 rounded-xl text-sm font-semibold shadow">
+                            <a href="{% url 'dashboard:weekly_timetable' %}" data-dashboard-action="true" class="inline-flex items-center gap-2 bg-white text-indigo-600 hover:bg-gray-100 transition px-4 py-2 rounded-xl text-sm font-semibold shadow">
                                 <i class="fas fa-calendar-week"></i> Timetable
                             </a>
-                            <a href="{% url 'dashboard:students' %}" class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 transition px-4 py-2 rounded-xl text-sm font-semibold">
+                            <a href="{% url 'dashboard:students' %}" data-dashboard-action="true" class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 transition px-4 py-2 rounded-xl text-sm font-semibold">
                                 <i class="fas fa-user-graduate text-white"></i> Students
                             </a>
                         </div>
@@ -454,14 +749,14 @@ templates folder: library_system/templates/dashboard/teacher.html
                                 <p class="text-xs text-gray-500">Create a new subject</p>
                             </div>
                         </a>
-                        <a href="{% url 'dashboard:weekly_timetable' %}" class="p-4 rounded-2xl border border-gray-100 hover:border-indigo-200 hover:shadow-lg transition flex items-center gap-4">
+                        <a href="{% url 'dashboard:weekly_timetable' %}" data-dashboard-action="true" class="p-4 rounded-2xl border border-gray-100 hover:border-indigo-200 hover:shadow-lg transition flex items-center gap-4">
                             <span class="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center text-xl"><i class="fas fa-calendar-alt"></i></span>
                             <div>
                                 <p class="text-sm font-semibold text-gray-900">Weekly Timetable</p>
                                 <p class="text-xs text-gray-500">Review and filter schedule</p>
                             </div>
                         </a>
-                        <a href="{% url 'dashboard:students' %}" class="p-4 rounded-2xl border border-gray-100 hover:border-indigo-200 hover:shadow-lg transition flex items-center gap-4">
+                        <a href="{% url 'dashboard:students' %}" data-dashboard-action="true" class="p-4 rounded-2xl border border-gray-100 hover:border-indigo-200 hover:shadow-lg transition flex items-center gap-4">
                             <span class="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-xl"><i class="fas fa-user-friends"></i></span>
                             <div>
                                 <p class="text-sm font-semibold text-gray-900">Manage Students</p>
@@ -491,6 +786,50 @@ function toggleSystemCenterDropdown() {
         console.log('Redirect to attendance reports failed', e);
     }
 }
+
+// Add loading effect to dashboard navigation links
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('[HOME PAGE] Initializing loading effects for home page buttons');
+    
+    // Find all links with data-dashboard-action attribute or links in main area
+    const allLinks = document.querySelectorAll('a[data-dashboard-action="true"], main a');
+    
+    allLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            const href = this.getAttribute('href');
+            const isDashboardAction = this.getAttribute('data-dashboard-action') === 'true';
+            
+            // Check if this is a dashboard navigation link based on the URL path or attribute
+            const isDashboardLink = isDashboardAction || (href && (
+                href.includes('/dashboard/instructor/courses') ||
+                href.includes('/instructor/courses') ||
+                href.includes('/dashboard/instructor/students') ||
+                href.includes('/instructor/students') ||
+                href.includes('/dashboard/weekly_timetable') ||
+                href.includes('/instructor/weekly_timetable') ||
+                href.includes('/dashboard/instructor/attendance') ||
+                href.includes('/instructor/attendance') ||
+                href.includes('/dashboard/instructor/my-classes') ||
+                href.includes('/instructor/my-classes')
+            ));
+            
+            // Only show loading if it's a valid dashboard link and not same page
+            if (isDashboardLink && href !== '#' && href !== window.location.pathname) {
+                // Show loading overlay
+                const loadingOverlay = document.createElement('div');
+                loadingOverlay.id = 'home-page-loading-overlay';
+                loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+                loadingOverlay.innerHTML = `
+                    <div class="rainbow-spinner">
+                        <img src="/static/img/attendance-logo.png" alt="Loading">
+                    </div>
+                `;
+                document.body.appendChild(loadingOverlay);
+                console.log('[HOME PAGE] Loading overlay shown for:', href);
+            }
+        });
+    });
+});
 </script>
 {% endblock %}
 

@@ -1,0 +1,509 @@
+{% extends 'dashboard/student/student.html' %}
+{% load static %}
+
+{% block dashboard_content %}
+<div class="container-fluid px-4 py-5">
+    <div class="row">
+        <div class="col-12">
+            <div class="page-header mb-4">
+                <h2 class="page-title">
+                    <i class="fas fa-fingerprint"></i> Biometric Registration
+                </h2>
+                <p class="text-muted">Register your fingerprint for attendance tracking in your courses</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Alert -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-info" role="alert">
+                <div class="d-flex">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-lightbulb fa-2x"></i>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h5 class="alert-heading">What is Biometric Registration?</h5>
+                        <p class="mb-0">
+                            Biometric registration allows you to mark your attendance using your fingerprint. 
+                            Once registered, you can quickly scan your finger on the ESP32 fingerprint sensor to record your attendance in class.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs Navigation -->
+    <div class="row">
+        <div class="col-12">
+            <ul class="nav nav-tabs" id="biometricTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="courses-tab" data-bs-toggle="tab" data-bs-target="#coursesPane" 
+                            type="button" role="tab" aria-controls="coursesPane" aria-selected="true">
+                        <i class="fas fa-list"></i> My Courses
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="instructions-tab" data-bs-toggle="tab" data-bs-target="#instructionsPane" 
+                            type="button" role="tab" aria-controls="instructionsPane" aria-selected="false">
+                        <i class="fas fa-book"></i> Instructions
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="faq-tab" data-bs-toggle="tab" data-bs-target="#faqPane" 
+                            type="button" role="tab" aria-controls="faqPane" aria-selected="false">
+                        <i class="fas fa-question-circle"></i> FAQ
+                    </button>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="tab-content" id="biometricTabContent">
+        
+        <!-- My Courses Tab -->
+        <div class="tab-pane fade show active" id="coursesPane" role="tabpanel" aria-labelledby="courses-tab">
+            <div class="row mt-4">
+                {% if enrollments %}
+                    {% for enrollment in enrollments %}
+                        <div class="col-md-6 col-lg-4 mb-4">
+                            <div class="card h-100 course-card">
+                                <div class="card-header bg-primary text-white">
+                                    <h6 class="mb-0">{{ enrollment.course.code }}</h6>
+                                </div>
+                                <div class="card-body">
+                                    <h5 class="card-title">{{ enrollment.course.name }}</h5>
+                                    
+                                    <div class="course-info mb-3">
+                                        <p class="mb-2">
+                                            <strong>Instructor:</strong> 
+                                            {{ enrollment.course.instructor.full_name|default:enrollment.course.instructor.username }}
+                                        </p>
+                                        <p class="mb-2">
+                                            <strong>Schedule:</strong> 
+                                            {{ enrollment.course.days }} | {{ enrollment.course.start_time|time:"H:i" }} - {{ enrollment.course.end_time|time:"H:i" }}
+                                        </p>
+                                        {% if enrollment.course.room %}
+                                            <p class="mb-2">
+                                                <strong>Room:</strong> {{ enrollment.course.room }}
+                                            </p>
+                                        {% endif %}
+                                    </div>
+
+                                    <!-- Biometric Status Badge -->
+                                    <div class="mb-3">
+                                        {% if enrollment.has_biometric %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check-circle"></i> Biometric Registered
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-warning">
+                                                <i class="fas fa-exclamation-triangle"></i> Not Registered
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-light">
+                                    {% if enrollment.has_biometric %}
+                                        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" 
+                                                data-bs-target="#scanModal" onclick="setScanCourse({{ enrollment.course.id }})">
+                                            <i class="fas fa-hand-fist"></i> Scan Now
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" 
+                                                data-bs-target="#reregisterModal" onclick="setReregisterCourse({{ enrollment.course.id }})">
+                                            <i class="fas fa-redo"></i> Re-register
+                                        </button>
+                                    {% else %}
+                                        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" 
+                                                data-bs-target="#registerModal" onclick="setRegisterCourse({{ enrollment.course.id }})">
+                                            <i class="fas fa-plus-circle"></i> Register
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="col-12">
+                        <div class="alert alert-info" role="alert">
+                            <i class="fas fa-info-circle"></i> You are not enrolled in any courses yet.
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Summary -->
+            {% if enrollments %}
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">Summary</h6>
+                                <p>
+                                    You are enrolled in <strong>{{ total_courses }}</strong> course(s).
+                                    {% if registered_count %}
+                                        <strong>{{ registered_count }}</strong> have biometric registered,
+                                        <strong>{{ total_courses|add:"-"}}{{ registered_count }}</strong> pending registration.
+                                    {% else %}
+                                        None have biometric registered yet.
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Instructions Tab -->
+        <div class="tab-pane fade" id="instructionsPane" role="tabpanel" aria-labelledby="instructions-tab">
+            <div class="row mt-4">
+                <div class="col-lg-8">
+                    <!-- Registration Steps -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0"><i class="fas fa-clipboard-list"></i> Registration Steps</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-success mb-3">
+                                        <i class="fas fa-1"></i> Step 1: Prepare
+                                    </h6>
+                                    <ul>
+                                        <li>Wash and dry your hands</li>
+                                        <li>Ensure good lighting</li>
+                                        <li>Have clean fingertips</li>
+                                        <li>Select the course</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-success mb-3">
+                                        <i class="fas fa-2"></i> Step 2: Scan
+                                    </h6>
+                                    <ul>
+                                        <li>Click "Register" button</li>
+                                        <li>Place finger on sensor</li>
+                                        <li>Keep finger still</li>
+                                        <li>Follow on-screen prompts</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-success mb-3">
+                                        <i class="fas fa-3"></i> Step 3: Confirm
+                                    </h6>
+                                    <ul>
+                                        <li>Scan same finger again</li>
+                                        <li>Wait for confirmation</li>
+                                        <li>See success message</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-success mb-3">
+                                        <i class="fas fa-check"></i> Step 4: Complete
+                                    </h6>
+                                    <ul>
+                                        <li>Biometric is now registered</li>
+                                        <li>Use for attendance marking</li>
+                                        <li>No re-registration needed</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Marking Attendance -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-success text-white">
+                            <h6 class="mb-0"><i class="fas fa-hand-fist"></i> Marking Attendance</h6>
+                        </div>
+                        <div class="card-body">
+                            <ol>
+                                <li>When class starts, instructor opens attendance</li>
+                                <li>You will see "Attendance is OPEN" notification</li>
+                                <li>Click "Scan Now" button for your course</li>
+                                <li>Place your finger on the ESP32 sensor</li>
+                                <li>System verifies your fingerprint</li>
+                                <li>Your attendance is automatically recorded</li>
+                                <li>You'll receive a confirmation notification</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tips Sidebar -->
+                <div class="col-lg-4">
+                    <!-- Tips Card -->
+                    <div class="card mb-4 bg-light">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0"><i class="fas fa-lightbulb"></i> Tips & Tricks</h6>
+                        </div>
+                        <div class="card-body">
+                            <ul>
+                                <li>Use your index finger for best results</li>
+                                <li>Avoid holding finger too lightly</li>
+                                <li>Don't move your finger while scanning</li>
+                                <li>Keep your fingernail angle at 45°</li>
+                                <li>If it fails, try a different finger</li>
+                                <li>Clean the sensor between scans</li>
+                                <li>Stay calm and try again</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Common Issues Card -->
+                    <div class="card bg-light">
+                        <div class="card-header bg-warning text-white">
+                            <h6 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Common Issues</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="issue mb-3">
+                                <strong>Scan fails repeatedly?</strong>
+                                <p class="mb-0">Try a different finger or wash your hands first.</p>
+                            </div>
+                            <div class="issue mb-3">
+                                <strong>Not recognized during attendance?</strong>
+                                <p class="mb-0">Contact your instructor to re-register your biometric.</p>
+                            </div>
+                            <div class="issue">
+                                <strong>Can't find the sensor?</strong>
+                                <p class="mb-0">Ask your instructor where the ESP32 device is located.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FAQ Tab -->
+        <div class="tab-pane fade" id="faqPane" role="tabpanel" aria-labelledby="faq-tab">
+            <div class="row mt-4">
+                <div class="col-lg-8">
+                    <div class="accordion" id="faqAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faq1">
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1Collapse">
+                                    Is my fingerprint data secure?
+                                </button>
+                            </h2>
+                            <div id="faq1Collapse" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Yes. Your fingerprint is encrypted using HMAC-SHA256 encryption before storage. 
+                                    The system stores only a hash of your fingerprint, not the actual fingerprint data. 
+                                    This is the same encryption standard used by banks and government agencies.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faq2">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2Collapse">
+                                    Can I register multiple fingers?
+                                </button>
+                            </h2>
+                            <div id="faq2Collapse" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Currently, the system supports one fingerprint per course. You can register any finger, 
+                                    and we recommend using your index finger for consistency and best results.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faq3">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3Collapse">
+                                    What if I forget which finger I registered?
+                                </button>
+                            </h2>
+                            <div id="faq3Collapse" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Try all your fingers during attendance scanning. The system will only match if it's the registered finger. 
+                                    If you have trouble, contact your instructor and they can help re-register your biometric.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faq4">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4Collapse">
+                                    What if my scan fails during attendance?
+                                </button>
+                            </h2>
+                            <div id="faq4Collapse" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Try scanning again. Most failures are due to dirty sensors or dry fingers. 
+                                    If repeated attempts fail, contact your instructor immediately so they can manually record your attendance or help troubleshoot.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faq5">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5Collapse">
+                                    How long does registration take?
+                                </button>
+                            </h2>
+                            <div id="faq5Collapse" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Registration typically takes 2-3 minutes per course. You'll scan your finger twice for confirmation, 
+                                    and the system will store your biometric data securely.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faq6">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq6Collapse">
+                                    Can I delete my registered biometric?
+                                </button>
+                            </h2>
+                            <div id="faq6Collapse" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Yes. Contact your instructor or the school administrator, and they can remove your biometric registration. 
+                                    You can re-register anytime if needed.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faq7">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq7Collapse">
+                                    What happens if I lose enrollment in a course?
+                                </button>
+                            </h2>
+                            <div id="faq7Collapse" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Your biometric registration for that course is automatically removed. 
+                                    If you re-enroll, you'll need to register your biometric again.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Register Modal -->
+<div class="modal fade" id="registerModal" tabindex="-1" role="dialog" aria-labelledby="registerModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="registerModalTitle">
+                    <i class="fas fa-fingerprint"></i> Register Biometric
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div id="registerFingerprintVisual" style="font-size: 72px; color: #ccc; margin: 30px 0;">
+                    <i class="fas fa-fingerprint"></i>
+                </div>
+                <p id="registerStatus" class="text-muted mb-3">Waiting for fingerprint scan...</p>
+                <div class="progress" style="height: 25px;" id="registerProgress" style="display:none;">
+                    <div id="registerProgressBar" class="progress-bar progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="startRegisterBtn">
+                    <i class="fas fa-play"></i> Start Registration
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scan Modal -->
+<div class="modal fade" id="scanModal" tabindex="-1" role="dialog" aria-labelledby="scanModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="scanModalTitle">
+                    <i class="fas fa-hand-fist"></i> Scan Attendance
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div id="scanFingerprintVisual" style="font-size: 72px; color: #28a745; margin: 30px 0;">
+                    <i class="fas fa-fingerprint"></i>
+                </div>
+                <p id="scanStatus" class="text-muted mb-3">Waiting for fingerprint scan...</p>
+                <div class="progress" style="height: 25px;" id="scanProgress" style="display:none;">
+                    <div id="scanProgressBar" class="progress-bar bg-success progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="startScanBtn">
+                    <i class="fas fa-play"></i> Start Scan
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function setRegisterCourse(courseId) {
+    document.getElementById('currentRegisterCourseId').value = courseId;
+}
+
+function setScanCourse(courseId) {
+    document.getElementById('currentScanCourseId').value = courseId;
+}
+
+document.getElementById('startRegisterBtn')?.addEventListener('click', function() {
+    // Start biometric registration process
+    const courseId = document.getElementById('currentRegisterCourseId').value;
+    console.log('Starting registration for course:', courseId);
+    
+    // Show progress
+    document.getElementById('registerProgressBar').style.width = '100%';
+    document.getElementById('registerStatus').textContent = 'Fingerprint registered successfully!';
+});
+
+document.getElementById('startScanBtn')?.addEventListener('click', function() {
+    // Start attendance scan
+    const courseId = document.getElementById('currentScanCourseId').value;
+    console.log('Starting scan for course:', courseId);
+    
+    // Show progress
+    document.getElementById('scanProgressBar').style.width = '100%';
+    document.getElementById('scanStatus').textContent = 'Attendance recorded!';
+});
+</script>
+
+<style>
+.course-card {
+    transition: all 0.3s ease;
+    border: 1px solid #ddd;
+}
+
+.course-card:hover {
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
+.course-info {
+    font-size: 0.95rem;
+}
+
+.biometric-visual {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.issue {
+    padding: 10px;
+    border-left: 3px solid #ffc107;
+}
+</style>
+{% endblock %}

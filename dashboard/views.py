@@ -7,8 +7,9 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_http_methods
 from django.http import JsonResponse
 from django.db.models import Q, Count
+from django.utils import timezone
 from accounts.models import CustomUser
-from .models import Course, Program, Department, CourseSchedule, UserNotification, CourseEnrollment, AttendanceRecord, QRCodeRegistration
+from .models import Course, Program, Department, CourseSchedule, UserNotification, CourseEnrollment, AttendanceRecord, QRCodeRegistration, InstructorRegistrationStatus, BiometricRegistration
 from datetime import datetime
 import json
 import logging
@@ -102,21 +103,39 @@ def calculate_course_status(start_dt, end_dt, now_ph):
     # But if we're here, it means this is a past instance
     return 'finished'  # Past date
 
+def require_role(*allowed_roles):
+    """Decorator to restrict access to specific user roles (student, teacher, admin)"""
+    def decorator(view_func):
+        def wrapper(request, *args, **kwargs):
+            user = request.user
+            
+            # Admin users cannot access instructor or student dashboards
+            if user.is_authenticated:
+                if user.is_admin and ('teacher' in allowed_roles or 'student' in allowed_roles):
+                    logger.warning(f"Admin user {user.username} tried to access {allowed_roles} dashboard")
+                    return render(request, 'dashboard/shared/error.html', 
+                                {'message': 'Admin accounts do not have access to instructor or student dashboards.'})
+                
+                # Check if user has the required role
+                if 'teacher' in allowed_roles and not user.is_teacher:
+                    return render(request, 'dashboard/shared/error.html', 
+                                {'message': 'You are not authorized to access the instructor dashboard.'})
+                
+                if 'student' in allowed_roles and not user.is_student:
+                    return render(request, 'dashboard/shared/error.html', 
+                                {'message': 'You are not authorized to access the student dashboard.'})
+            
+            return view_func(request, *args, **kwargs)
+        return wrapper
+    return decorator
+
 @login_required
+@require_role('teacher')
 def teacher_dashboard_view(request):
-    if not request.user.is_teacher or not request.user.is_approved:
+    if not request.user.is_teacher or request.user.is_admin:
         return render(request, 'dashboard/shared/error.html', {'message': 'You are not authorized to access the teacher dashboard.'})
     
     user = request.user
-    
-    # Get school admin for topbar display
-    school_admin = None
-    if user.school_name:
-        school_admin = CustomUser.objects.filter(
-            is_admin=True,
-            school_name=user.school_name,
-            deleted_at__isnull=True
-        ).first()
     
     # Dashboard metrics
     instructor_courses = Course.objects.filter(instructor=user, is_active=True, deleted_at__isnull=True, is_archived=False).select_related('program').order_by('-created_at')
@@ -363,7 +382,6 @@ def teacher_dashboard_view(request):
         attendance_reports_count = 0
 
     context = {
-        'school_admin': school_admin,
         'unread_notifications': unread_notifications,
         'total_courses': total_courses,
         'active_students': active_students,
@@ -377,20 +395,12 @@ def teacher_dashboard_view(request):
     return render(request, 'dashboard/instructor/teacher.html', context)
 
 @login_required
+@require_role('student')
 def student_dashboard_view(request):
-    if not request.user.is_student:
+    if not request.user.is_student or request.user.is_admin:
         return render(request, 'dashboard/shared/error.html', {'message': 'You are not authorized to access the student dashboard.'})
     
     user = request.user
-    
-    # Get school admin for topbar display
-    school_admin = None
-    if user.school_name:
-        school_admin = CustomUser.objects.filter(
-            is_admin=True,
-            school_name=user.school_name,
-            deleted_at__isnull=True
-        ).first()
     
     # Get unread notification count (handle if table doesn't exist yet)
     try:
@@ -587,7 +597,6 @@ def student_dashboard_view(request):
     
     context = {
         'user': user,
-        'school_admin': school_admin,
         'unread_notifications': unread_notifications,
         'recent_courses': recent_courses,
         'upcoming_classes': upcoming_classes,
@@ -620,6 +629,7 @@ def student_dashboard_view(request):
     return render(request, 'dashboard/student/student.html', context)
 
 @login_required
+@require_role('student')
 def student_todays_status_view(request):
     """Student's Today's Status page - similar to instructor's My Classes"""
     user = request.user
@@ -1104,15 +1114,15 @@ def student_todays_status_view(request):
             else:
                 present_duration_minutes = int(getattr(focus_course, 'attendance_present_duration', 0) or 0)
 
-            # Determine QR opened timestamp (schedule-level or course-level)
-            qr_opened_at = None
+            # Get attendance status to verify if present window is active
+            attendance_status = None
             try:
-                if sched_obj and getattr(sched_obj, 'qr_code_opened_at', None):
-                    qr_opened_at = getattr(sched_obj, 'qr_code_opened_at')
-                elif getattr(focus_course, 'qr_code_opened_at', None):
-                    qr_opened_at = getattr(focus_course, 'qr_code_opened_at')
+                if sched_obj and getattr(sched_obj, 'attendance_status', None):
+                    attendance_status = sched_obj.attendance_status
+                else:
+                    attendance_status = getattr(focus_course, 'attendance_status', 'closed')
             except Exception:
-                qr_opened_at = None
+                attendance_status = 'closed'
 
             # Only show present-window countdown when the instructor actually opened it
             # (i.e., a schedule-level qr_code_opened_at exists for this specific occurrence).
@@ -1136,22 +1146,37 @@ def student_todays_status_view(request):
                     else:
                         # If no qr_code_date to compare (legacy), be conservative and require qr_code_opened_at
                         qr_opened_at = getattr(sched_obj, 'qr_code_opened_at')
+                # Fallback to course-level if schedule doesn't have it
+                elif getattr(focus_course, 'qr_code_opened_at', None):
+                    qr_opened_at = getattr(focus_course, 'qr_code_opened_at')
             except Exception:
                 qr_opened_at = None
 
             # If we have an explicit opened timestamp and a configured duration, compute expiry
-            if qr_opened_at and present_duration_minutes and present_duration_minutes > 0:
+            # Make sure attendance is open and expiry hasn't already passed
+            if qr_opened_at and present_duration_minutes and present_duration_minutes > 0 and attendance_status == 'open':
                 try:
-                    expiry = qr_opened_at + timezone.timedelta(minutes=int(present_duration_minutes))
-                    # convert to ms since epoch
-                    present_expiry_ms = int(expiry.timestamp() * 1000)
-                except Exception:
+                    from django.utils import timezone as tz_util
+                    current_time = tz_util.now()
+                    expiry = qr_opened_at + tz_util.timedelta(minutes=int(present_duration_minutes))
+                    # Only set expiry if it hasn't passed yet and is in the future
+                    if expiry > current_time:
+                        # convert to ms since epoch for JavaScript
+                        present_expiry_ms = int(expiry.timestamp() * 1000)
+                    else:
+                        # Expiry has already passed, don't show timer
+                        present_expiry_ms = None
+                except Exception as e:
+                    logger.warning(f"Error calculating present window expiry: {str(e)}")
                     present_expiry_ms = None
+            else:
+                present_expiry_ms = None
 
         context['focus_present_window_expiry_ms'] = present_expiry_ms
         context['focus_present_duration_minutes'] = present_duration_minutes
         context['focus_present_schedule_id'] = focus_schedule_identifier
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Error in present window calculation: {str(e)}")
         context['focus_present_window_expiry_ms'] = None
         context['focus_present_duration_minutes'] = None
         context['focus_present_schedule_id'] = None
@@ -1179,12 +1204,12 @@ def student_attendance_log_view(request):
         unread_notifications = 0
     
     # Get enrolled courses for this student - ordered by enrollment date (1st enrolled first)
+    # Include BOTH active AND inactive enrollments so students can see their complete attendance history
+    # Also include courses that are no longer active (finished/closed) but have attendance records
     from .models import CourseEnrollment, AttendanceRecord
     enrollments = CourseEnrollment.objects.filter(
         student=user,
-        is_active=True,
         deleted_at__isnull=True,
-        course__is_active=True,
         course__deleted_at__isnull=True,
         course__is_archived=False
     ).select_related('course', 'course__program', 'course__instructor').order_by('enrolled_at')
@@ -1194,6 +1219,8 @@ def student_attendance_log_view(request):
     for enrollment in enrollments:
         course = enrollment.course
         course.enrollment_info = enrollment  # Attach enrollment info for template access
+        course.is_active_enrollment = enrollment.is_active  # Mark whether enrollment is currently active
+        course.is_active_course = course.is_active  # Mark whether course is still active
         enrolled_courses.append(course)
     
     # Get selected course from query parameter
@@ -1206,16 +1233,166 @@ def student_attendance_log_view(request):
         try:
             selected_course = next((c for c in enrolled_courses if c.id == int(selected_course_id)), None)
             if selected_course:
+                # Get current date and time (in PH timezone)
+                try:
+                    from zoneinfo import ZoneInfo
+                    PH_TZ = ZoneInfo('Asia/Manila')
+                except Exception:
+                    try:
+                        import pytz
+                        PH_TZ = pytz.timezone('Asia/Manila')
+                    except Exception:
+                        PH_TZ = None
+                
+                from django.utils import timezone
+                now_ph = timezone.now().astimezone(PH_TZ) if PH_TZ else timezone.now()
+                today = now_ph.date()
+                current_time = now_ph.time()
+                
                 # Get attendance records for selected course
                 # Ensure any missing absent records are finalized for today's schedules
                 try:
-                    # finalize_all_course_attendance is idempotent and will create absent records
+                    # finalize_all_course_attendance is idempotent and will create absent/postponed records
                     # for students who didn't scan today; pass the course instructor for notifications
                     finalize_all_course_attendance(selected_course, getattr(selected_course, 'instructor', None))
                 except Exception:
                     # If finalization fails, continue and allow manual inspection
                     logger.exception('finalize_all_course_attendance failed')
 
+                # Get all existing attendance records AFTER finalization
+                # This ensures we include records created by finalize_all_course_attendance
+                records_qs = AttendanceRecord.objects.filter(
+                    student=user,
+                    course=selected_course
+                ).select_related('course', 'enrollment').order_by('-attendance_date', '-attendance_time')
+                
+                # Get existing records as a set for quick lookup
+                existing_records = list(records_qs)
+                existing_record_dates = {rec.attendance_date for rec in existing_records}
+                
+                # Filter attendance records by scheduled class days only
+                # Only show records for days the class is scheduled to meet
+                scheduled_days = set()
+                
+                # Get day-specific schedules for this course
+                day_schedules = selected_course.course_schedules.all()
+                if day_schedules.exists():
+                    for sched in day_schedules:
+                        if sched.day:
+                            scheduled_days.add(sched.day)
+                # Fallback to default course days if no specific schedules
+                elif selected_course.days:
+                    for day in [d.strip() for d in selected_course.days.split(',') if d.strip()]:
+                        scheduled_days.add(day)
+                
+                # Generate all scheduled dates from enrollment date to today
+                # where the student should have attended
+                from datetime import timedelta, datetime
+                
+                # Get enrollment info for this student-course pair
+                try:
+                    student_enrollment = CourseEnrollment.objects.filter(
+                        student=user,
+                        course=selected_course,
+                        deleted_at__isnull=True
+                    ).first()
+                    enrollment_date = student_enrollment.enrolled_at.date() if student_enrollment and student_enrollment.enrolled_at else today - timedelta(days=365)
+                except Exception:
+                    enrollment_date = today - timedelta(days=365)
+                
+                # Build map of scheduled dates for this course
+                scheduled_dates_to_check = []
+                current_check_date = enrollment_date
+                
+                while current_check_date <= today:
+                    # Get weekday name for current_check_date
+                    weekday_idx = current_check_date.weekday()
+                    weekday_map = {0: 'Mon', 1: 'Tue', 2: 'Wed', 3: 'Thu', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
+                    weekday_code = weekday_map.get(weekday_idx, '')
+                    
+                    # Check if this day is a scheduled day for the course
+                    day_matches = False
+                    for sched_day in scheduled_days:
+                        if sched_day in [weekday_code, ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][weekday_idx]]:
+                            day_matches = True
+                            break
+                    
+                    if day_matches and current_check_date not in existing_record_dates:
+                        scheduled_dates_to_check.append(current_check_date)
+                    
+                    current_check_date += timedelta(days=1)
+                
+                # Create absent records for scheduled dates where class has finished
+                # and student has no attendance record
+                for check_date in scheduled_dates_to_check:
+                    # Get course schedule for this date
+                    weekday_idx = check_date.weekday()
+                    weekday_code = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday_idx]
+                    
+                    # Find schedule for this day
+                    course_start_time = None
+                    course_end_time = None
+                    schedule_postponed = False
+                    
+                    # Check day-specific schedules
+                    day_schedules_for_date = selected_course.course_schedules.filter(day__iexact=weekday_code).first()
+                    if day_schedules_for_date:
+                        course_start_time = day_schedules_for_date.start_time
+                        course_end_time = day_schedules_for_date.end_time
+                        # Check if this schedule is marked as postponed
+                        if getattr(day_schedules_for_date, 'attendance_status', '') == 'postponed':
+                            schedule_postponed = True
+                    else:
+                        # Use course defaults
+                        course_start_time = selected_course.start_time
+                        course_end_time = selected_course.end_time
+                    
+                    if course_start_time and course_end_time:
+                        # Check if class has finished
+                        class_end_dt = datetime.combine(check_date, course_end_time)
+                        
+                        # Make timezone-aware
+                        if PH_TZ:
+                            if hasattr(PH_TZ, 'localize'):
+                                import pytz
+                                class_end_dt = PH_TZ.localize(class_end_dt)
+                            else:
+                                class_end_dt = class_end_dt.replace(tzinfo=PH_TZ)
+                        
+                        # Only create absent record if class has finished
+                        if class_end_dt < now_ph or check_date < today:
+                            # Check if record already exists (might have been created by finalize)
+                            existing = AttendanceRecord.objects.filter(
+                                student=user,
+                                course=selected_course,
+                                attendance_date=check_date
+                            ).exists()
+                            
+                            if not existing:
+                                # Determine status: postponed or absent
+                                record_status = 'postponed' if schedule_postponed else 'absent'
+                                
+                                # Create record with appropriate status
+                                try:
+                                    attendance_enrollment = CourseEnrollment.objects.filter(
+                                        student=user,
+                                        course=selected_course,
+                                        deleted_at__isnull=True
+                                    ).first()
+                                    
+                                    if attendance_enrollment:
+                                        AttendanceRecord.objects.create(
+                                            student=user,
+                                            course=selected_course,
+                                            enrollment=attendance_enrollment,
+                                            attendance_date=check_date,
+                                            attendance_time=None,
+                                            status=record_status
+                                        )
+                                except Exception as e:
+                                    logger.debug(f"Failed to create absent record: {e}")
+                
+                # Refetch records after creating postponed/absent records to include newly created ones
                 records_qs = AttendanceRecord.objects.filter(
                     student=user,
                     course=selected_course
@@ -1224,8 +1401,10 @@ def student_attendance_log_view(request):
                 # Apply status filter if provided
                 if status_filter:
                     records_qs = records_qs.filter(status=status_filter)
-
-                attendance_records = records_qs
+                
+                # Simply use all records without overly strict filtering
+                # This allows students to see their complete attendance history
+                attendance_records = list(records_qs)
 
                 # Annotate each attendance record with whether the schedule for that
                 # record's day was marked as postponed. This allows templates to
@@ -1234,13 +1413,26 @@ def student_attendance_log_view(request):
                     for rec in attendance_records:
                         rec.is_postponed = False
                         try:
-                            # Prefer day code stored on the record (e.g., 'Mon', 'Tue')
+                            # Check if the schedule for this date is marked as postponed
+                            if rec.attendance_date:
+                                # Get weekday code for this date
+                                weekday_idx = rec.attendance_date.weekday()
+                                weekday_code = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday_idx]
+                                
+                                # Check if schedule for this day is postponed
+                                sched = selected_course.course_schedules.filter(day__iexact=weekday_code).first()
+                                if sched and getattr(sched, 'attendance_status', '') == 'postponed':
+                                    rec.is_postponed = True
+                                    continue
+                            
+                            # Fallback: check day code stored on the record (e.g., 'Mon', 'Tue')
                             day_code = getattr(rec, 'schedule_day', None)
                             if day_code:
                                 sched = selected_course.course_schedules.filter(day__iexact=day_code).first()
                                 if sched and getattr(sched, 'attendance_status', '') == 'postponed':
                                     rec.is_postponed = True
                                     continue
+                            
                             # Fallback: if course-level attendance_status is postponed
                             if getattr(selected_course, 'attendance_status', '') == 'postponed':
                                 rec.is_postponed = True
@@ -1258,6 +1450,8 @@ def student_attendance_log_view(request):
     present_count = sum(1 for r in attendance_records if r.status == 'present')
     late_count = sum(1 for r in attendance_records if r.status == 'late')
     absent_count = sum(1 for r in attendance_records if r.status == 'absent')
+    # Count postponed: either status is 'postponed' OR is_postponed flag is True
+    postponed_count = sum(1 for r in attendance_records if r.status == 'postponed' or getattr(r, 'is_postponed', False))
     
     context = {
         'school_admin': school_admin,
@@ -1270,6 +1464,7 @@ def student_attendance_log_view(request):
         'present_count': present_count,
         'late_count': late_count,
         'absent_count': absent_count,
+        'postponed_count': postponed_count,
     }
     return render(request, 'dashboard/student/student_attendance_log.html', context)
 
@@ -1277,7 +1472,7 @@ def student_attendance_log_view(request):
 def instructor_my_classes_view(request):
     """Simple monitoring hub for instructors - shows today's and upcoming classes."""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return render(request, 'dashboard/shared/error.html', {'message': 'You are not authorized to access this page.'})
     
     # Topbar admin
@@ -1774,24 +1969,48 @@ def instructor_my_classes_view(request):
                     present_enrollments = set(att.enrollment_id for att in attendance_records)
                     for enrollment in enrolled_students:
                         if enrollment.id not in present_enrollments:
-                            # Avoid creating duplicate absent records
-                            exists = AttendanceRecord.objects.filter(
-                                course=focus_course,
-                                enrollment=enrollment,
-                                attendance_date=today,
-                                schedule_day=schedule_day
-                            ).exists()
-                            if not exists:
-                                AttendanceRecord.objects.create(
+                            # Only create absent record if the student was enrolled BEFORE the class occurred
+                            # Check if the enrollment date is before or on today's date at class start time
+                            from django.utils import timezone as _timezone_import
+                            enrollment_dt = enrollment.enrolled_at
+                            
+                            # Get the scheduled start time for this class
+                            class_start_time = None
+                            if day_schedule and day_schedule.start_time:
+                                class_start_time = day_schedule.start_time
+                            elif focus_course and focus_course.start_time:
+                                class_start_time = focus_course.start_time
+                            
+                            # Create a datetime for class start today
+                            if class_start_time:
+                                class_start_dt = _timezone_import.make_aware(
+                                    datetime.combine(today, class_start_time),
+                                    PH_TZ
+                                )
+                            else:
+                                # If no start time, use current time as reference
+                                class_start_dt = now_ph
+                            
+                            # Only mark as absent if enrolled before the class started
+                            if enrollment_dt <= class_start_dt:
+                                # Avoid creating duplicate absent records
+                                exists = AttendanceRecord.objects.filter(
                                     course=focus_course,
-                                    student=enrollment.student,
                                     enrollment=enrollment,
                                     attendance_date=today,
-                                    attendance_time=fallback_time,
-                                    status='absent',
                                     schedule_day=schedule_day
-                                )
-                                today_attendance_count += 1
+                                ).exists()
+                                if not exists:
+                                    AttendanceRecord.objects.create(
+                                        course=focus_course,
+                                        student=enrollment.student,
+                                        enrollment=enrollment,
+                                        attendance_date=today,
+                                        attendance_time=fallback_time,
+                                        status='absent',
+                                        schedule_day=schedule_day
+                                    )
+                                    today_attendance_count += 1
                 except Exception:
                     # If anything goes wrong while creating absent records, continue gracefully
                     pass
@@ -1917,6 +2136,72 @@ def instructor_my_classes_view(request):
                     focus_course.qr_code = focus_qr_code
                     focus_course.save(update_fields=['qr_code'])
     
+    # Calculate present window expiry for instructor timer (to persist across page reloads)
+    instructor_present_expiry_ms = None
+    try:
+        if focus_course_next_entry:
+            focus_schedule_identifier = focus_course_next_entry.get('schedule_id')
+            present_duration_minutes = None
+            qr_opened_at = None
+            
+            # Try to find schedule object for the focused course/day
+            from django.utils import timezone
+            try:
+                day_label = focus_course_next_entry.get('day_label')
+                day_map = {
+                    'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 'Thursday': 'Thu',
+                    'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'
+                }
+                day_code = day_map.get(day_label, None)
+            except Exception:
+                day_code = None
+
+            sched_obj = None
+            try:
+                if day_code and focus_course:
+                    sched_obj = CourseSchedule.objects.filter(course=focus_course, day__iexact=day_code).first()
+            except Exception:
+                sched_obj = None
+
+            # Get present duration from schedule or course
+            if sched_obj and getattr(sched_obj, 'attendance_present_duration', None):
+                present_duration_minutes = int(getattr(sched_obj, 'attendance_present_duration'))
+            else:
+                present_duration_minutes = int(getattr(focus_course, 'attendance_present_duration', 0) or 0)
+
+            # Get qr_code_opened_at
+            qr_opened_at = None
+            try:
+                if sched_obj and getattr(sched_obj, 'qr_code_opened_at', None):
+                    # Validate date matches if qr_code_date is set
+                    try:
+                        occ_date = focus_course_next_entry.get('start_dt').date() if focus_course_next_entry.get('start_dt') else None
+                    except Exception:
+                        occ_date = None
+                    
+                    sched_qr_date = getattr(sched_obj, 'qr_code_date', None)
+                    if sched_qr_date and occ_date:
+                        if sched_qr_date == occ_date:
+                            qr_opened_at = getattr(sched_obj, 'qr_code_opened_at')
+                    else:
+                        qr_opened_at = getattr(sched_obj, 'qr_code_opened_at')
+                elif getattr(focus_course, 'qr_code_opened_at', None):
+                    qr_opened_at = getattr(focus_course, 'qr_code_opened_at')
+            except Exception:
+                qr_opened_at = None
+            
+            # Calculate expiry if we have timestamp and duration
+            if qr_opened_at and present_duration_minutes and present_duration_minutes > 0:
+                try:
+                    expiry = qr_opened_at + timezone.timedelta(minutes=int(present_duration_minutes))
+                    # Only set if expiry is in future
+                    if expiry > timezone.now():
+                        instructor_present_expiry_ms = int(expiry.timestamp() * 1000)
+                except Exception:
+                    instructor_present_expiry_ms = None
+    except Exception:
+        instructor_present_expiry_ms = None
+    
     context = {
         'school_admin': school_admin,
         'unread_notifications': unread_notifications,
@@ -1929,6 +2214,7 @@ def instructor_my_classes_view(request):
         'today_attendance_count': today_attendance_count,
         'focus_qr_code': focus_qr_code,  # Day-specific QR code
         'course_finished': course_finished,  # Flag to show reminder when course ends
+        'instructor_present_expiry_ms': instructor_present_expiry_ms,  # Server-side timer expiry for persistence
     }
     return render(request, 'dashboard/instructor/my_classes.html', context)
 
@@ -1936,7 +2222,7 @@ def instructor_my_classes_view(request):
 def finalize_attendance_records(course, schedule, instructor):
     """
     Finalize attendance for a specific schedule.
-    Create absent records for enrolled students who didn't scan.
+    Create absent or postponed records for enrolled students who didn't scan.
     schedule can be a CourseSchedule object or a day string.
     """
     from django.utils import timezone
@@ -1951,10 +2237,15 @@ def finalize_attendance_records(course, schedule, instructor):
     now_ph = timezone.now().astimezone(ph_tz)
     today = now_ph.date()
     
-    # Extract schedule_day string
+    # Extract schedule_day string and attendance status
     schedule_day_str = None
+    record_status = 'absent'
+    
     if isinstance(schedule, CourseSchedule):
         schedule_day_str = schedule.day_of_week or schedule.day
+        # Check if the schedule is postponed
+        if getattr(schedule, 'attendance_status', None) == 'postponed':
+            record_status = 'postponed'
     else:
         schedule_day_str = str(schedule)
     
@@ -1966,6 +2257,31 @@ def finalize_attendance_records(course, schedule, instructor):
     ).select_related('student')
     
     for enrollment in enrollments:
+        # Check if student was enrolled BEFORE today's class time
+        enrollment_valid = False
+        
+        if isinstance(schedule, CourseSchedule) and schedule.start_time:
+            class_start_dt = timezone.make_aware(
+                datetime.combine(today, schedule.start_time),
+                ph_tz
+            )
+        elif hasattr(course, 'start_time') and course.start_time:
+            class_start_dt = timezone.make_aware(
+                datetime.combine(today, course.start_time),
+                ph_tz
+            )
+        else:
+            # If no start time, use current time as reference
+            class_start_dt = now_ph
+        
+        # Only process if enrolled before the class started
+        if enrollment.enrolled_at <= class_start_dt:
+            enrollment_valid = True
+        
+        if not enrollment_valid:
+            # Skip students who enrolled after the class started
+            continue
+        
         # Check if student has an attendance record for today with this schedule
         existing_record = AttendanceRecord.objects.filter(
             course=course,
@@ -1975,36 +2291,45 @@ def finalize_attendance_records(course, schedule, instructor):
         ).first()
         
         if not existing_record:
-            # Student didn't scan - mark as absent
-            AttendanceRecord.objects.create(
-                course=course,
-                student=enrollment.student,
-                enrollment=enrollment,
-                attendance_date=today,
-                schedule_day=schedule_day_str,
-                attendance_time=None,
-                status='absent'
-            )
+            # Student didn't scan - mark with appropriate status (absent or postponed)
+            try:
+                AttendanceRecord.objects.create(
+                    course=course,
+                    student=enrollment.student,
+                    enrollment=enrollment,
+                    attendance_date=today,
+                    schedule_day=schedule_day_str,
+                    attendance_time=None,
+                    status=record_status
+                )
+                logger.info(f"[FINALIZE] created {record_status.upper()} record for schedule: course={course.id} student={enrollment.student.id} date={today} schedule_day={schedule_day_str}")
+            except Exception as e:
+                logger.error(f"[FINALIZE] Error creating {record_status} record: {str(e)}")
             
             # Create notification for student
             try:
+                message_map = {
+                    'absent': f'You were marked absent in {course.code} - {course.name}',
+                    'postponed': f'Class marked as postponed in {course.code} - {course.name}'
+                }
                 create_notification(
                     user=enrollment.student,
                     notification_type='attendance_marked',
-                    title='Attendance Recorded',
-                    message=f'You were marked absent in {course.code} - {course.name}',
+                    title='Attendance Recorded' if record_status == 'absent' else 'Class Postponed',
+                    message=message_map.get(record_status, f'You were marked {record_status} in {course.code} - {course.name}'),
                     category='attendance',
                     related_course=course,
                     related_user=instructor
                 )
             except Exception as e:
-                logger.error(f"Error creating absent notification: {str(e)}")
+                logger.error(f"Error creating {record_status} notification: {str(e)}")
 
 
 def finalize_all_course_attendance(course, instructor):
     """
     Finalize attendance for all schedules of a course for today.
     Create absent records for enrolled students who didn't scan any session.
+    If schedule is postponed, create postponed records instead of absent records.
     """
     from django.utils import timezone
     from zoneinfo import ZoneInfo
@@ -2032,6 +2357,23 @@ def finalize_all_course_attendance(course, instructor):
         Q(day=today_day) | Q(day=today_day_abbrev)
     )
     
+    # Check if TODAY is marked as postponed for ANY of the schedules
+    # If so, create postponed records instead of absent records
+    is_today_postponed = False
+    for sched in today_schedules:
+        if getattr(sched, 'attendance_status', None) == 'postponed':
+            is_today_postponed = True
+            logger.info(f"[FINALIZE] Today's schedule is postponed for course={course.id}, creating postponed records")
+            break
+    
+    # Also check course-level postponed status
+    if not is_today_postponed and getattr(course, 'attendance_status', None) == 'postponed':
+        is_today_postponed = True
+        logger.info(f"[FINALIZE] Today's course is postponed for course={course.id}, creating postponed records")
+    
+    # Determine record status based on postponement
+    record_status = 'postponed' if is_today_postponed else 'absent'
+    
     # Get all enrolled students
     enrollments = CourseEnrollment.objects.filter(
         course=course,
@@ -2040,13 +2382,57 @@ def finalize_all_course_attendance(course, instructor):
     ).select_related('student')
     
     for enrollment in enrollments:
+        # Check if student was enrolled BEFORE today's class time
+        # Get the earliest schedule for today to check enrollment time
+        enrollment_valid = False
+        earliest_start_time = None
+        
+        if today_schedules.exists():
+            # Get the earliest start time from today's schedules
+            first_schedule = today_schedules.order_by('start_time').first()
+            if first_schedule and first_schedule.start_time:
+                earliest_start_time = first_schedule.start_time
+        
+        if not earliest_start_time and hasattr(course, 'start_time'):
+            earliest_start_time = course.start_time
+        
+        # Create a datetime for the first class start today
+        if earliest_start_time:
+            class_start_dt = timezone.make_aware(
+                datetime.combine(today, earliest_start_time),
+                ph_tz
+            )
+        else:
+            # If no start time, use current time as reference
+            class_start_dt = now_ph
+        
+        # Only process if enrolled before the class started
+        if enrollment.enrolled_at <= class_start_dt:
+            enrollment_valid = True
+        
+        if not enrollment_valid:
+            # Skip students who enrolled after the class started
+            continue
+        
         # Check if student has ANY attendance record for today for any schedule
-        has_attendance = AttendanceRecord.objects.filter(
+        # When postponed, create for all students. When absent, only if no present/late records exist.
+        has_record = AttendanceRecord.objects.filter(
             course=course,
             student=enrollment.student,
-            attendance_date=today,
-            status__in=['present', 'late']
+            attendance_date=today
         ).exists()
+        
+        if is_today_postponed:
+            # For postponed status, create a record only if no record exists for today
+            has_attendance = has_record
+        else:
+            # For absent status, only mark absent if student didn't mark present or late
+            has_attendance = AttendanceRecord.objects.filter(
+                course=course,
+                student=enrollment.student,
+                attendance_date=today,
+                status__in=['present', 'late']
+            ).exists()
         
         if not has_attendance:
             # Student didn't scan - mark as absent for all today's schedules
@@ -2105,11 +2491,11 @@ def finalize_all_course_attendance(course, instructor):
                             attendance_date=today,
                             schedule_day=schedule_day_str,
                             attendance_time=None,
-                            status='absent'
+                            status=record_status
                         )
-                        logger.info(f"[FINALIZE] created ABSENT record: course={course.id} student={enrollment.student.id} date={today} schedule_day={schedule_day_str}")
+                        logger.info(f"[FINALIZE] created {record_status.upper()} record: course={course.id} student={enrollment.student.id} date={today} schedule_day={schedule_day_str}")
                     except Exception as e:
-                        logger.error(f"[FINALIZE] failed creating absent record for course={getattr(course,'id',None)} student={getattr(enrollment.student,'id',None)} date={today} schedule_day={schedule_day_str}: {e}")
+                        logger.error(f"[FINALIZE] failed creating {record_status} record for course={getattr(course,'id',None)} student={getattr(enrollment.student,'id',None)} date={today} schedule_day={schedule_day_str}: {e}")
             
             # Create notification for student
             try:
@@ -2130,7 +2516,7 @@ def finalize_all_course_attendance(course, instructor):
 def instructor_update_enrollment_status_view(request, course_id):
     """Update enrollment status for a course"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     try:
@@ -2166,7 +2552,7 @@ def instructor_update_enrollment_status_view(request, course_id):
 def instructor_update_attendance_status_view(request, course_id):
     """Update attendance status for a course or specific day schedule"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     try:
@@ -2219,6 +2605,15 @@ def instructor_update_attendance_status_view(request, course_id):
                         try:
                             pd_val = int(present_duration)
                             day_schedule.attendance_present_duration = pd_val
+                            
+                            # GLOBAL AUTO-ASSIGN: Update ALL course schedules (across all courses) with the same duration
+                            # This makes the present window global for all teacher's classes
+                            all_schedules = CourseSchedule.objects.filter(
+                                course__instructor=user
+                            ).exclude(id=day_schedule.id)
+                            for schedule in all_schedules:
+                                schedule.attendance_present_duration = pd_val
+                                schedule.save(update_fields=['attendance_present_duration'])
                         except Exception:
                             pass
                 except Exception:
@@ -2262,8 +2657,8 @@ def instructor_update_attendance_status_view(request, course_id):
                 status_display = status.replace('_', ' ').title()
                 day_display = day_schedule.get_day_display()
                 
-                # If closing attendance, create absent records for students who didn't scan
-                if status == 'closed':
+                # If closing or postponing attendance, create appropriate records for students who didn't scan
+                if status in ['closed', 'postponed']:
                     try:
                         finalize_attendance_records(course, day_schedule, user)
                     except Exception as e:
@@ -2367,8 +2762,8 @@ def instructor_update_attendance_status_view(request, course_id):
         course.save()
         logger.info(f"[ATTENDANCE_UPDATE] course saved: id={course.id} status={course.attendance_status}")
         
-        # If closing attendance at course-level, finalize for all schedules
-        if status == 'closed':
+        # If closing or postponing attendance at course-level, finalize for all schedules
+        if status in ['closed', 'postponed']:
             try:
                 finalize_all_course_attendance(course, user)
             except Exception as e:
@@ -2720,10 +3115,11 @@ def schedule_view(request):
     return response
 
 @login_required
+@require_role('teacher')
 def courses_view(request):
     """View for managing courses (teachers only)"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return render(request, 'dashboard/shared/error.html', {'message': 'You are not authorized to access this page.'})
     
     # Get school admin for topbar display
@@ -2761,7 +3157,7 @@ def courses_view(request):
 def instructor_update_attendance_times_view(request, course_id):
     """Allow instructor to set attendance start and end times for their course"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     course = get_object_or_404(Course, id=course_id)
@@ -2782,7 +3178,7 @@ def instructor_update_attendance_times_view(request, course_id):
 def students_view(request):
     """View for managing students (teachers only) - shows enrolled students"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return render(request, 'dashboard/shared/error.html', {'message': 'You are not authorized to access this page.'})
     
     # Get school admin for topbar display
@@ -3040,6 +3436,24 @@ def students_view(request):
         if selected_course_enrollments is not None:
             for enrollment in selected_course_enrollments:
                 enrollment.has_qr = False
+    
+    # Annotate whether each enrollment already has a registered biometric for this course
+    try:
+        if selected_course is not None and selected_course_enrollments is not None:
+            for enrollment in selected_course_enrollments:
+                try:
+                    enrollment.has_biometric = BiometricRegistration.objects.filter(
+                        student=enrollment.student,
+                        course=selected_course,
+                        is_active=True
+                    ).exists()
+                except Exception:
+                    enrollment.has_biometric = False
+    except Exception:
+        # If annotation fails for any reason, default to False
+        if selected_course_enrollments is not None:
+            for enrollment in selected_course_enrollments:
+                enrollment.has_biometric = False
     
     context = {
         'user': user,
@@ -3454,17 +3868,8 @@ def weekly_timetable_view(request):
 def instructor_courses_view(request):
     """Course management view for instructors - shows all courses assigned to them across all programs"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return render(request, 'dashboard/shared/error.html', {'message': 'You are not authorized to access this page.'})
-    
-    # Get school admin for topbar display
-    school_admin = None
-    if user.school_name:
-        school_admin = CustomUser.objects.filter(
-            is_admin=True,
-            school_name=user.school_name,
-            deleted_at__isnull=True
-        ).first()
     
     # Get the instructor's primary program (for default display)
     program = user.program if user.program else None
@@ -3658,7 +4063,6 @@ def instructor_courses_view(request):
         'unique_semesters': unique_semesters,
         'school_year_options': school_year_options,
         'current_school_year': current_school_year,
-        'school_admin': school_admin,
         'auto_open_add_modal': request.GET.get('open_add_modal') == '1',
     }
     
@@ -3669,7 +4073,7 @@ def instructor_courses_view(request):
 def instructor_add_course_view(request):
     """Add a new course - instructor can add to any program in their school"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     if request.method == 'POST':
@@ -3707,8 +4111,7 @@ def instructor_add_course_view(request):
                 missing_fields.append('code')
             if not name:
                 missing_fields.append('name')
-            if not program_id:
-                missing_fields.append('program')
+            # Program is now OPTIONAL - removed from required fields
             if not year_level:
                 missing_fields.append('year_level')
             # Section is optional - students will fill it
@@ -3757,10 +4160,15 @@ def instructor_add_course_view(request):
                     return JsonResponse({'success': False, 'message': f'Please fill in all required fields. Missing: {", ".join(missing_fields)}. Note: When using day-specific schedules, make sure all course information is filled.'})
                 return JsonResponse({'success': False, 'message': f'Please fill in all required fields. Missing: {", ".join(missing_fields)}'})
             
-            # Get program and verify it belongs to the instructor's school
-            program = get_object_or_404(Program, id=int(program_id))
-            if user.school_name and program.school_name != user.school_name:
-                return JsonResponse({'success': False, 'message': 'You can only add courses to programs in your school.'})
+            # Get program if provided (now optional)
+            program = None
+            if program_id:
+                try:
+                    program = Program.objects.get(id=int(program_id))
+                    if user.school_name and program.school_name != user.school_name:
+                        return JsonResponse({'success': False, 'message': 'You can only add courses to programs in your school.'})
+                except (ValueError, Program.DoesNotExist):
+                    return JsonResponse({'success': False, 'message': 'Invalid program selected.'})
             
             # Parse time strings (handle both 24-hour and 12-hour formats)
             from datetime import datetime
@@ -4156,7 +4564,7 @@ def instructor_add_course_view(request):
 def instructor_update_course_view(request, course_id):
     """Update an existing course - instructor can only update courses they created"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     course = get_object_or_404(Course, id=course_id)
@@ -4607,7 +5015,7 @@ def instructor_delete_course_view(request, course_id):
     - If delete_all_sections is False or not provided: Delete only the specific section by ID
     """
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     from django.utils import timezone
@@ -4654,17 +5062,38 @@ def instructor_delete_course_view(request, course_id):
                     is_active=False
                 )
                 
-                # Also soft delete related enrollments for all deleted courses
-                enrollments_deleted = CourseEnrollment.objects.filter(
+                # Clean up QR and biometric registrations before deleting enrollments
+                enrollments_to_delete = CourseEnrollment.objects.filter(
                     course_id__in=course_ids_to_delete,
                     is_active=True,
                     deleted_at__isnull=True
-                ).update(
+                )
+                
+                for enrollment in enrollments_to_delete:
+                    try:
+                        # Delete QR registrations
+                        QRCodeRegistration.objects.filter(
+                            student=enrollment.student,
+                            course=enrollment.course,
+                            is_active=True
+                        ).delete()
+                        # Delete biometric registrations
+                        BiometricRegistration.objects.filter(
+                            student=enrollment.student,
+                            course=enrollment.course,
+                            is_active=True
+                        ).delete()
+                        logger.info(f"Deleted QR and biometric registrations for {enrollment.student.full_name} in course {enrollment.course.code}")
+                    except Exception as e:
+                        logger.error(f"Error cleaning up registrations: {str(e)}")
+                
+                # Also soft delete related enrollments for all deleted courses
+                enrollments_deleted = enrollments_to_delete.update(
                     is_active=False,
                     deleted_at=timezone.now()
                 )
                 
-                logger.info(f"Instructor {user.username} deleted {deleted_count} course sections ({course.code} - {course.name}). All sections deleted.")
+                logger.info(f"Instructor {user.username} deleted {deleted_count} course sections ({course.code} - {course.name}). All sections deleted. Cleaned up QR and biometric registrations for {enrollments_deleted} students.")
                 
                 if deleted_count > 1:
                     return JsonResponse({
@@ -4735,16 +5164,38 @@ def instructor_delete_course_view(request, course_id):
                 
                 # Also soft delete related enrollments for this specific course only
                 # Use course_id directly in the filter to ensure only enrollments for this course are affected
-                enrollments_deleted = CourseEnrollment.objects.filter(
+                # And clean up QR and biometric registrations for all students
+                enrollments_to_delete = CourseEnrollment.objects.filter(
                     course_id=course_id,  # Use course_id directly, not course object
                     is_active=True,
                     deleted_at__isnull=True
-                ).update(
+                )
+                
+                # Clean up QR and biometric registrations before deleting enrollments
+                for enrollment in enrollments_to_delete:
+                    try:
+                        # Delete QR registrations
+                        QRCodeRegistration.objects.filter(
+                            student=enrollment.student,
+                            course=enrollment.course,
+                            is_active=True
+                        ).delete()
+                        # Delete biometric registrations
+                        BiometricRegistration.objects.filter(
+                            student=enrollment.student,
+                            course=enrollment.course,
+                            is_active=True
+                        ).delete()
+                        logger.info(f"Deleted QR and biometric registrations for {enrollment.student.full_name} in course {enrollment.course.code}")
+                    except Exception as e:
+                        logger.error(f"Error cleaning up registrations: {str(e)}")
+                
+                enrollments_deleted = enrollments_to_delete.update(
                     is_active=False,
                     deleted_at=timezone.now()
                 )
                 
-                logger.info(f"Instructor {user.username} deleted course section {course.id} ({course.code} - {course.name}, Section: {course.section}). Sibling sections remaining: {len(sibling_courses_after)}")
+                logger.info(f"Instructor {user.username} deleted course section {course.id} ({course.code} - {course.name}, Section: {course.section}). Sibling sections remaining: {len(sibling_courses_after)}. Cleaned up QR and biometric registrations for {enrollments_deleted} students.")
                 
                 return JsonResponse({
                     'success': True,
@@ -4761,7 +5212,7 @@ def instructor_delete_course_view(request, course_id):
 def instructor_get_programs_by_department_view(request):
     """Get programs filtered by department for instructor course form"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
     
     department_name = request.GET.get('department', '').strip()
@@ -5197,7 +5648,7 @@ def unenroll_course_view(request, enrollment_id):
             # Student can only unenroll themselves
             if enrollment.student != user:
                 return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
-        elif user.is_teacher and user.is_approved:
+        elif user.is_teacher:
             # Instructor can drop students from their courses
             if enrollment.course.instructor != user:
                 return JsonResponse({'success': False, 'message': 'Unauthorized. You can only drop students from your own courses.'}, status=403)
@@ -5220,6 +5671,20 @@ def unenroll_course_view(request, enrollment_id):
             logger.info(f"Deleted QR registrations for {enrollment.student.full_name} in {enrollment.course.code}")
         except Exception as e:
             logger.error(f"Error deleting QR registrations: {str(e)}")
+        
+        # Clean up biometric registration for this student in this course
+        # So they need to re-register their fingerprint if they enroll again
+        try:
+            from .models import BiometricRegistration
+            biometric_registrations = BiometricRegistration.objects.filter(
+                student=enrollment.student,
+                course=enrollment.course,
+                is_active=True
+            )
+            biometric_registrations.delete()  # Permanently delete biometric registrations
+            logger.info(f"Deleted biometric registrations for {enrollment.student.full_name} in {enrollment.course.code}")
+        except Exception as e:
+            logger.error(f"Error deleting biometric registrations: {str(e)}")
         
         # Delete attendance records for this student in this course
         # So their attendance log is cleared from student dashboard
@@ -5275,7 +5740,7 @@ def unenroll_course_view(request, enrollment_id):
 def instructor_delete_semester_view(request):
     """Delete all courses in a semester or school year - instructor can only delete courses they created"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     try:
@@ -5398,7 +5863,7 @@ def instructor_delete_semester_view(request):
 def instructor_archive_school_year_view(request):
     """Archive all courses in a school year - instructor can only archive courses they created"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     try:
@@ -5459,7 +5924,7 @@ def instructor_archive_school_year_view(request):
 def instructor_archive_semester_view(request):
     """Archive all courses in a semester - instructor can only archive courses they created"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     try:
@@ -5530,7 +5995,7 @@ def instructor_archive_semester_view(request):
 def instructor_archive_course_view(request, course_id):
     """Archive a course - move to archive for completed sessions"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     course = get_object_or_404(Course, id=course_id, deleted_at__isnull=True, is_archived=False)
@@ -5593,6 +6058,21 @@ def teacher_update_profile_view(request):
         if full_name:
             user.full_name = full_name
         
+        # Update department if provided
+        department = request.POST.get('department', '').strip()
+        if department and department.upper() != 'NOT ASSIGNED':
+            user.department = department
+        elif not department:
+            user.department = ''
+        
+        # Update program if provided
+        program = request.POST.get('program', '').strip()
+        if program and program.upper() != 'NOT ASSIGNED':
+            # Store program input as program_text field (for free-text program entry)
+            user.program_text = program
+        elif not program:
+            user.program_text = ''
+        
         # Update custom password if provided
         new_password = request.POST.get('new_password', '').strip()
         confirm_password = request.POST.get('confirm_new_password', '').strip()
@@ -5639,12 +6119,22 @@ def teacher_update_profile_view(request):
         if user.profile_picture:
             profile_picture_url = user.profile_picture.url + '?v=' + str(int(datetime.now().timestamp()))
         
+        # Prepare response data
         response_data = {
             'success': True, 
             'message': 'Profile updated successfully!'
         }
         if profile_picture_url:
             response_data['profile_picture_url'] = profile_picture_url
+        
+        # Return department and program data for frontend update
+        response_data['department'] = user.department or 'Not Assigned'
+        if hasattr(user, 'program_text') and user.program_text:
+            response_data['program'] = user.program_text
+        elif user.program:
+            response_data['program'] = f"{user.program.code} - {user.program.name}" if user.program.code else user.program.name
+        else:
+            response_data['program'] = 'Not Assigned'
         
         return JsonResponse(response_data)
     except Exception as e:
@@ -5664,6 +6154,21 @@ def student_update_profile_view(request):
         full_name = request.POST.get('full_name', '').strip()
         if full_name:
             user.full_name = full_name
+        
+        # Update department if provided
+        department = request.POST.get('department', '').strip()
+        if department and department.upper() != 'NOT ASSIGNED':
+            user.department = department
+        elif not department:
+            user.department = ''
+        
+        # Update program if provided
+        program = request.POST.get('program', '').strip()
+        if program and program.upper() != 'NOT ASSIGNED':
+            # Store program input as program_text field for free-text entry
+            user.program_text = program
+        elif not program:
+            user.program_text = ''
         
         # Update custom password if provided
         new_password = request.POST.get('new_password', '').strip()
@@ -5711,6 +6216,7 @@ def student_update_profile_view(request):
         if user.profile_picture:
             profile_picture_url = user.profile_picture.url + '?v=' + str(int(datetime.now().timestamp()))
         
+        # Prepare response data
         response_data = {
             'success': True, 
             'message': 'Profile updated successfully!'
@@ -5718,9 +6224,68 @@ def student_update_profile_view(request):
         if profile_picture_url:
             response_data['profile_picture_url'] = profile_picture_url
         
+        # Return department and program data for frontend update
+        response_data['department'] = user.department or 'Not Assigned'
+        if hasattr(user, 'program_text') and user.program_text:
+            response_data['program'] = user.program_text
+        elif user.program:
+            response_data['program'] = f"{user.program.code} - {user.program.name}" if user.program.code else user.program.name
+        else:
+            response_data['program'] = 'Not Assigned'
+        
         return JsonResponse(response_data)
     except Exception as e:
         logger.error(f"Error updating profile: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
+@login_required
+@require_http_methods(["GET"])
+def get_user_profile(request):
+    """Get current user's profile data (department and program)"""
+    user = request.user
+    
+    try:
+        # Format department
+        department = user.department or 'Not Set'
+        
+        # Format program
+        if user.program_text:
+            program = user.program_text
+        elif user.program:
+            program = f"{user.program.code} - {user.program.name}" if user.program.code else user.program.name
+        else:
+            program = 'Not Set'
+        
+        return JsonResponse({
+            'success': True,
+            'department': department,
+            'program': program
+        })
+    except Exception as e:
+        logger.error(f"Error fetching profile: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
+@login_required
+@require_http_methods(["GET"])
+def get_custom_password_view(request):
+    """Get the current custom password for the logged-in user"""
+    user = request.user
+    if not user.is_authenticated:
+        return JsonResponse({'success': False, 'message': 'Not authenticated'})
+    
+    try:
+        from dashboard.models import UserCustomPassword
+        custom_pwd_record = UserCustomPassword.objects.filter(user=user).first()
+        
+        response_data = {
+            'success': True,
+            'has_custom_password': custom_pwd_record is not None,
+            'custom_password': custom_pwd_record.password if custom_pwd_record else None
+        }
+        
+        return JsonResponse(response_data)
+    except Exception as e:
+        logger.error(f"Error fetching custom password: {str(e)}")
         return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
 
 @login_required
@@ -5731,7 +6296,7 @@ def instructor_qr_code_view(request, course_id):
     from io import BytesIO
     
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         # Return a placeholder image instead of error
         try:
             from PIL import Image, ImageDraw
@@ -6778,7 +7343,7 @@ def student_scan_qr_attendance_view(request):
 def instructor_course_enrollments_view(request, course_id):
     """Get enrollments for a course - for archived course students display"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
     
     try:
@@ -6852,7 +7417,7 @@ def instructor_course_detail_view(request, course_id):
         course = get_object_or_404(Course, id=course_id)
         user = request.user
         
-        if not user.is_teacher or not user.is_approved:
+        if not user.is_teacher:
             return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
         
         # Verify the course is assigned to the instructor
@@ -7079,7 +7644,7 @@ def delete_all_notifications_view(request):
 @login_required
 def home_view(request):
     if request.user.is_authenticated:
-        if request.user.is_teacher and request.user.is_approved:
+        if request.user.is_teacher:
             return redirect('dashboard:teacher_dashboard')
         elif request.user.is_student:
             return redirect('dashboard:student_dashboard')
@@ -7090,7 +7655,7 @@ def home_view(request):
 def instructor_trash_view(request):
     """View deleted courses and enrollments for instructor"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return render(request, 'dashboard/shared/error.html', {'message': 'You are not authorized to access this page.'})
     
     from django.utils import timezone
@@ -7362,7 +7927,7 @@ def instructor_trash_view(request):
 def instructor_restore_course_view(request, course_id):
     """Restore a deleted or archived course"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     # Try to get course (either deleted or archived)
@@ -7409,7 +7974,7 @@ def instructor_restore_course_view(request, course_id):
 def instructor_drop_enrollment_view(request, enrollment_id):
     """Drop (soft delete) an enrollment"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     enrollment = get_object_or_404(CourseEnrollment, id=enrollment_id, deleted_at__isnull=True)
@@ -7434,7 +7999,7 @@ def instructor_drop_enrollment_view(request, enrollment_id):
 def instructor_restore_enrollment_view(request, enrollment_id):
     """Restore a deleted enrollment"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     enrollment = get_object_or_404(CourseEnrollment, id=enrollment_id, deleted_at__isnull=False)
@@ -7458,7 +8023,7 @@ def instructor_restore_enrollment_view(request, enrollment_id):
 def instructor_permanent_delete_course_view(request, course_id):
     """Permanently delete a course from trash"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     course = get_object_or_404(Course, id=course_id, deleted_at__isnull=False)
@@ -7489,7 +8054,7 @@ def instructor_permanent_delete_course_view(request, course_id):
 def instructor_restore_all_courses_view(request):
     """Restore all deleted courses for instructor"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     try:
@@ -7524,7 +8089,7 @@ def instructor_restore_all_courses_view(request):
 def instructor_restore_all_archived_courses_view(request):
     """Restore all archived courses for instructor"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     try:
@@ -7559,7 +8124,7 @@ def instructor_restore_all_archived_courses_view(request):
 def instructor_permanent_delete_all_courses_view(request):
     """Permanently delete all deleted courses for instructor"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     try:
@@ -7595,7 +8160,7 @@ def instructor_permanent_delete_all_courses_view(request):
 def instructor_get_dropped_students_view(request):
     """Get dropped students for a specific course"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to access this page.'})
     
     try:
@@ -7631,12 +8196,15 @@ def instructor_get_dropped_students_view(request):
                 days_until_deletion = 30 - (now - enrollment.deleted_at).days
                 days_left = max(0, days_until_deletion)
             
+            # Use the current student's full_name instead of the enrollment snapshot
+            # This ensures the dropped students modal shows the student's updated name
+            current_full_name = enrollment.student.full_name if enrollment.student else enrollment.full_name
             dropped_students.append({
                 'id': enrollment.id,
                 'student_id': enrollment.student.id if enrollment.student else None,
-                'full_name': enrollment.full_name or (enrollment.student.full_name if enrollment.student else 'Unknown'),
-                'student_id_number': enrollment.student_id_number or (enrollment.student.school_id if enrollment.student else 'N/A'),
-                'email': enrollment.email or (enrollment.student.email if enrollment.student else 'N/A'),
+                'full_name': current_full_name or 'Unknown',
+                'student_id_number': enrollment.student.school_id or enrollment.student_id_number if enrollment.student else enrollment.student_id_number or 'N/A',
+                'email': enrollment.student.email if enrollment.student else enrollment.email or 'N/A',
                 'section': enrollment.course.section or 'N/A',
                 'year_level': getattr(enrollment, 'year_level', None) or (enrollment.course.year_level if enrollment.course else None),
                 'dropped_date': enrollment.deleted_at.strftime('%B %d, %Y') if enrollment.deleted_at else 'N/A',
@@ -7658,7 +8226,7 @@ def instructor_get_dropped_students_view(request):
 def instructor_permanent_delete_enrollment_view(request, enrollment_id):
     """Permanently delete an enrollment from trash"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     enrollment = get_object_or_404(CourseEnrollment, id=enrollment_id, deleted_at__isnull=False)
@@ -7762,7 +8330,7 @@ def student_permanent_delete_enrollment_view(request, enrollment_id):
 def instructor_attendance_reports_view(request):
     """Attendance reports view for instructors"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return render(request, 'dashboard/shared/error.html', {'message': 'You are not authorized to access this page.'})
     
     # Get school admin for topbar display
@@ -7925,11 +8493,15 @@ def instructor_attendance_reports_view(request):
             selected_sections = sorted([(c.section or '').upper() for c in sibling_courses if c.section])
             
             # Validate section filter - if multiple sections exist, section must be selected
-            # If no section filter is provided and multiple sections exist, include all sections
+            # If no section filter is provided and multiple sections exist, default to the selected_course's section
             if len(selected_sections) > 1 and not section_filter:
-                # Multiple sections but no section selected - automatically include all sections
-                section_filter = 'all'
-                courses_to_process = sibling_courses
+                # Multiple sections but no section selected - default to the selected_course's section
+                # This ensures users see their own section's records when clicking the course
+                section_filter = (selected_course.section or '').upper() if selected_course.section else 'all'
+                if section_filter and section_filter != 'all':
+                    courses_to_process = sibling_courses.filter(section__iexact=section_filter)
+                else:
+                    courses_to_process = sibling_courses
             else:
                 # Filter courses by section if specified
                 if section_filter and section_filter.lower() == 'all':
@@ -7958,30 +8530,106 @@ def instructor_attendance_reports_view(request):
                 ).select_related('student', 'course')
                 
                 # Get unique students (distinct) - only from filtered enrollments
+                # Also track which courses each student is enrolled in (for multi-section courses)
                 unique_students = {}
+                student_courses_map = {}  # Maps student_id -> list of course objects
                 for enrollment in all_enrollments:
                     if enrollment.student.id not in unique_students:
                         unique_students[enrollment.student.id] = enrollment.student
+                        student_courses_map[enrollment.student.id] = []
+                    student_courses_map[enrollment.student.id].append(enrollment.course)
                 
                 # Get attendance records for the filtered courses
                 # Since courses_to_process is already filtered by section, we just need records for those courses
+                # IMPORTANT: Only include records where the student was enrolled in the selected course/section
+                # Do NOT include records for students who were enrolled in other sections
                 attendance_query = AttendanceRecord.objects.filter(
-                    course__in=courses_to_process
+                    course__in=courses_to_process,
+                    enrollment__in=all_enrollments  # Only records from ACTIVE enrollments in selected section
                 ).select_related('student', 'course', 'enrollment').order_by('-attendance_date', '-attendance_time')
                 
-                # Filter attendance records to only include those from the filtered enrollments
-                # This ensures we only show records for students enrolled in the selected section's courses
-                # Include records where:
-                # 1. The enrollment is in the list of valid enrollments, OR
-                # 2. The student is in our list of valid students (for cases where enrollment is NULL due to unenrollment)
-                enrollment_ids = [e.id for e in all_enrollments]
-                student_ids = list(unique_students.keys())
-                from django.db.models import Q
-                attendance_query = attendance_query.filter(
-                    Q(enrollment__id__in=enrollment_ids) | Q(student__id__in=student_ids)
-                )
+                # If a specific section is selected (not 'all'), ensure we only include those records
+                if section_filter and section_filter.lower() != 'all':
+                    attendance_query = attendance_query.filter(
+                        enrollment__course__section__iexact=section_filter
+                    )
                 
                 attendance_records = list(attendance_query)
+                
+                # CRITICAL: Double-check section filtering - ensure NO records from other sections slip through
+                if section_filter and section_filter.lower() != 'all':
+                    filtered_section = section_filter.strip().lower()
+                    cleaned_records = []
+                    for record in attendance_records:
+                        # Check if this record's course section matches the filter
+                        record_section = (record.course.section or '').strip().lower()
+                        if record_section == filtered_section:
+                            cleaned_records.append(record)
+                    attendance_records = cleaned_records
+                
+                # Filter attendance records by scheduled class days only
+                # Only show records for days the class is scheduled to meet
+                scheduled_days_map = {}  # Map course_id -> set of scheduled days
+                course_end_times = {}  # Map course_id -> end_time
+                for course in courses_to_process:
+                    scheduled_days = set()
+                    
+                    # Get day-specific schedules for this course
+                    day_schedules = course.course_schedules.all()
+                    if day_schedules.exists():
+                        for sched in day_schedules:
+                            if sched.day:
+                                scheduled_days.add(sched.day)
+                    # Fallback to default course days if no specific schedules
+                    elif course.days:
+                        for day in [d.strip() for d in course.days.split(',') if d.strip()]:
+                            scheduled_days.add(day)
+                    
+                    scheduled_days_map[course.id] = scheduled_days
+                    course_end_times[course.id] = course.end_time
+                
+                # Get current date and time (in PH timezone)
+                try:
+                    from zoneinfo import ZoneInfo
+                    PH_TZ = ZoneInfo('Asia/Manila')
+                except Exception:
+                    try:
+                        import pytz
+                        PH_TZ = pytz.timezone('Asia/Manila')
+                    except Exception:
+                        PH_TZ = None
+                
+                from django.utils import timezone
+                now_ph = timezone.now().astimezone(PH_TZ) if PH_TZ else timezone.now()
+                today = now_ph.date()
+                current_time = now_ph.time()
+                
+                # Filter records to only include:
+                # 1. Scheduled days only
+                # 2. NOT future dates (attendance_date must be <= today)
+                # 3. For today's date, only show if class schedule has finished
+                filtered_records = []
+                for record in attendance_records:
+                    scheduled_days = scheduled_days_map.get(record.course.id, set())
+                    
+                    # Check if record is on a scheduled day
+                    record_day = getattr(record, 'schedule_day', None)
+                    if record_day and record_day not in scheduled_days:
+                        continue  # Skip if not on a scheduled day
+                    elif not record_day and scheduled_days:
+                        # If no schedule_day recorded, use the day of week from the date
+                        day_name = record.attendance_date.strftime('%a')  # e.g., 'Mon'
+                        if day_name not in scheduled_days:
+                            continue  # Skip if not on a scheduled day
+                    
+                    # Check if record is not a future date
+                    if record.attendance_date > today:
+                        continue  # Skip future dates
+                    
+                    # All checks passed, include this record
+                    filtered_records.append(record)
+                
+                attendance_records = filtered_records
                 
                 # Filter by specific date if provided
                 if date_filter:
@@ -8330,7 +8978,7 @@ def instructor_attendance_reports_view(request):
                                 'student_profile_picture': student.profile_picture.url if student.profile_picture else None,
                                 'course_code': selected_course.code,
                                 'course_name': selected_course.name,
-                                'section': record.course.section or (courses_to_process.first().section or 'N/A'),
+                                'section': record.course.section or 'N/A',
                                 'attendance_date': record.attendance_date,
                                 'attendance_time': record.attendance_time,
                                 'course_start_time': course_start_time,
@@ -8369,6 +9017,22 @@ def instructor_attendance_reports_view(request):
                             
                             # Only mark as absent if class has finished
                             if class_has_finished:
+                                # Check if this date is marked as postponed
+                                # If so, mark status as 'postponed' instead of 'absent'
+                                status_to_use = 'absent'
+                                date_str = date_to_check.strftime('%Y-%m-%d')
+                                if date_str in postponed_dates_set:
+                                    status_to_use = 'postponed'
+                                
+                                # Get the section for this student
+                                # Use the first course they're enrolled in for this date
+                                student_section = 'N/A'
+                                if student_id in student_courses_map and student_courses_map[student_id]:
+                                    for course in student_courses_map[student_id]:
+                                        if course.id in [c.id for c in courses_to_process]:
+                                            student_section = course.section or 'N/A'
+                                            break
+                                
                                 attendance_data.append({
                                     'id': None,
                                     'student_id': student.id,
@@ -8377,13 +9041,13 @@ def instructor_attendance_reports_view(request):
                                     'student_profile_picture': student.profile_picture.url if student.profile_picture else None,
                                     'course_code': selected_course.code,
                                     'course_name': selected_course.name,
-                                    'section': courses_to_process.first().section or 'N/A',
+                                    'section': student_section,
                                     'attendance_date': date_to_check,
                                     'attendance_time': None,
                                     'course_start_time': attendance_start_time,
                                     'course_end_time': attendance_end_time,
-                                    'status': 'absent',
-                                    'status_display': 'Absent',
+                                    'status': status_to_use,
+                                    'status_display': dict(AttendanceRecord.STATUS_CHOICES).get(status_to_use, status_to_use.title()),
                                     'can_edit': True,
                                     'record_exists': False,
                                 })
@@ -8490,15 +9154,18 @@ def instructor_attendance_reports_view(request):
                 present_count = sum(1 for r in attendance_data if r['status'] == 'present')
                 late_count = sum(1 for r in attendance_data if r['status'] == 'late')
                 absent_count = sum(1 for r in attendance_data if r['status'] == 'absent')
+                postponed_count = sum(1 for r in attendance_data if r['status'] == 'postponed')
                 
                 course_stats = {
                     'total_records': total_records,
                     'present_count': present_count,
                     'late_count': late_count,
                     'absent_count': absent_count,
+                    'postponed_count': postponed_count,
                     'present_percentage': round((present_count / total_records * 100) if total_records > 0 else 0, 2),
                     'late_percentage': round((late_count / total_records * 100) if total_records > 0 else 0, 2),
                     'absent_percentage': round((absent_count / total_records * 100) if total_records > 0 else 0, 2),
+                    'postponed_percentage': round((postponed_count / total_records * 100) if total_records > 0 else 0, 2),
                 }
                 
                 # Calculate student statistics
@@ -8524,6 +9191,7 @@ def instructor_attendance_reports_view(request):
                             'present': 0,
                             'late': 0,
                             'absent': 0,
+                            'postponed': 0,
                             'total': 0,
                         }
                     
@@ -8540,10 +9208,12 @@ def instructor_attendance_reports_view(request):
                         'present': stats['present'],
                         'late': stats['late'],
                         'absent': stats['absent'],
+                        'postponed': stats['postponed'],
                         'total': total,
                         'present_percentage': round((stats['present'] / total * 100) if total > 0 else 0, 2),
                         'late_percentage': round((stats['late'] / total * 100) if total > 0 else 0, 2),
                         'absent_percentage': round((stats['absent'] / total * 100) if total > 0 else 0, 2),
+                        'postponed_percentage': round((stats['postponed'] / total * 100) if total > 0 else 0, 2),
                     }
             
         except Course.DoesNotExist:
@@ -8765,7 +9435,7 @@ def instructor_attendance_reports_view(request):
 def instructor_attendance_reports_download_view(request):
     """Download attendance reports as Excel file"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to access this page.'})
     
     try:
@@ -8827,6 +9497,13 @@ def instructor_attendance_reports_download_view(request):
     attendance_query = AttendanceRecord.objects.filter(
         course__in=courses_to_include
     ).select_related('student', 'course', 'enrollment').order_by('-attendance_date', '-attendance_time')
+    
+    # If a specific section is selected (not 'all'), filter records to students enrolled in that section
+    if section_filter and section_filter.lower() != 'all':
+        # Only include attendance records for students enrolled in the selected section
+        attendance_query = attendance_query.filter(
+            enrollment__course__section__iexact=section_filter
+        )
 
     # Optional: filter by exact date (YYYY-MM-DD) when provided (used for per-date exports)
     date_param = request.GET.get('date', None)
@@ -9015,6 +9692,10 @@ def instructor_attendance_reports_download_view(request):
                 is_active=True,
                 deleted_at__isnull=True
             ).select_related('student', 'course')
+            
+            # If a specific section is selected (not 'all'), filter enrollments to that section only
+            if section_filter and section_filter.lower() != 'all':
+                all_enrollments = all_enrollments.filter(course__section__iexact=section_filter)
 
             # Unique students map
             unique_students = {}
@@ -9254,7 +9935,23 @@ def instructor_attendance_reports_download_view(request):
             ws.cell(row=row, column=6, value='N/A')
         # Status (Column 7)
         status_display = dict(AttendanceRecord.STATUS_CHOICES).get(record.status, record.status.title())
-        ws.cell(row=row, column=7, value=status_display)
+        status_cell = ws.cell(row=row, column=7, value=status_display)
+        
+        # Add color formatting based on status
+        if record.status == 'present':
+            status_cell.fill = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")  # Light green
+            status_cell.font = Font(color="065F46", bold=True)  # Dark green text
+        elif record.status == 'late':
+            status_cell.fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")  # Light yellow
+            status_cell.font = Font(color="92400E", bold=True)  # Dark yellow text
+        elif record.status == 'absent':
+            status_cell.fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")  # Light red
+            status_cell.font = Font(color="991B1B", bold=True)  # Dark red text
+        elif record.status == 'postponed':
+            status_cell.fill = PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid")  # Light grey
+            status_cell.font = Font(color="374151", bold=True)  # Dark grey text
+        
+        status_cell.alignment = Alignment(horizontal='center', vertical='center')
         row += 1
     
     # Statistics Sheet
@@ -9298,7 +9995,7 @@ def instructor_attendance_reports_download_view(request):
     row += 2
     
     # Student Statistics Header
-    student_headers = ['Student ID', 'Student Name', 'Present', 'Late', 'Absent', 'Total', 'Present %', 'Late %', 'Absent %']
+    student_headers = ['Student ID', 'Student Name', 'Present', 'Late', 'Absent', 'Postponed', 'Total', 'Present %', 'Late %', 'Absent %', 'Postponed %']
     for col, header in enumerate(student_headers, 1):
         cell = ws2.cell(row=row, column=col, value=header)
         cell.fill = header_fill
@@ -9318,6 +10015,7 @@ def instructor_attendance_reports_download_view(request):
                 'present': 0,
                 'late': 0,
                 'absent': 0,
+                'postponed': 0,
                 'total': 0,
             }
         
@@ -9329,13 +10027,40 @@ def instructor_attendance_reports_download_view(request):
         total = stats['total']
         ws2.cell(row=row, column=1, value=stats['student_id_number'])
         ws2.cell(row=row, column=2, value=stats['student_name'])
-        ws2.cell(row=row, column=3, value=stats['present'])
-        ws2.cell(row=row, column=4, value=stats['late'])
-        ws2.cell(row=row, column=5, value=stats['absent'])
-        ws2.cell(row=row, column=6, value=total)
-        ws2.cell(row=row, column=7, value=round((stats['present'] / total * 100) if total > 0 else 0, 2))
-        ws2.cell(row=row, column=8, value=round((stats['late'] / total * 100) if total > 0 else 0, 2))
-        ws2.cell(row=row, column=9, value=round((stats['absent'] / total * 100) if total > 0 else 0, 2))
+        
+        # Present (Column 3) - Green
+        present_cell = ws2.cell(row=row, column=3, value=stats['present'])
+        present_cell.fill = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
+        present_cell.font = Font(color="065F46", bold=True)
+        present_cell.alignment = Alignment(horizontal='center')
+        
+        # Late (Column 4) - Yellow
+        late_cell = ws2.cell(row=row, column=4, value=stats['late'])
+        late_cell.fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+        late_cell.font = Font(color="92400E", bold=True)
+        late_cell.alignment = Alignment(horizontal='center')
+        
+        # Absent (Column 5) - Red
+        absent_cell = ws2.cell(row=row, column=5, value=stats['absent'])
+        absent_cell.fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+        absent_cell.font = Font(color="991B1B", bold=True)
+        absent_cell.alignment = Alignment(horizontal='center')
+        
+        # Postponed (Column 6) - Light Grey
+        postponed_cell = ws2.cell(row=row, column=6, value=stats['postponed'])
+        postponed_cell.fill = PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid")
+        postponed_cell.font = Font(color="374151", bold=True)
+        postponed_cell.alignment = Alignment(horizontal='center')
+        
+        # Total (Column 7)
+        total_cell = ws2.cell(row=row, column=7, value=total)
+        total_cell.alignment = Alignment(horizontal='center')
+        
+        # Percentages (Columns 8-11) - Center aligned
+        ws2.cell(row=row, column=8, value=round((stats['present'] / total * 100) if total > 0 else 0, 2)).alignment = Alignment(horizontal='center')
+        ws2.cell(row=row, column=9, value=round((stats['late'] / total * 100) if total > 0 else 0, 2)).alignment = Alignment(horizontal='center')
+        ws2.cell(row=row, column=10, value=round((stats['absent'] / total * 100) if total > 0 else 0, 2)).alignment = Alignment(horizontal='center')
+        ws2.cell(row=row, column=11, value=round((stats['postponed'] / total * 100) if total > 0 else 0, 2)).alignment = Alignment(horizontal='center')
         row += 1
     
     # Auto-adjust column widths and apply formatting
@@ -9378,14 +10103,17 @@ def instructor_attendance_reports_download_view(request):
                         cell.alignment = Alignment(horizontal='center')
                         # Color code status
                         if cell.value == 'Present':
-                            cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-                            cell.font = Font(bold=True, color="006100")
+                            cell.fill = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
+                            cell.font = Font(bold=True, color="065F46")
                         elif cell.value == 'Late':
-                            cell.fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
-                            cell.font = Font(bold=True, color="9C6500")
+                            cell.fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+                            cell.font = Font(bold=True, color="92400E")
                         elif cell.value == 'Absent':
-                            cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-                            cell.font = Font(bold=True, color="9C0006")
+                            cell.fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+                            cell.font = Font(bold=True, color="991B1B")
+                        elif cell.value == 'Postponed':
+                            cell.fill = PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid")
+                            cell.font = Font(bold=True, color="374151")
         elif sheet.title == "Statistics":
             # Apply borders to statistics
             for row in sheet.iter_rows(min_row=4, max_row=sheet.max_row):
@@ -9414,7 +10142,7 @@ def instructor_attendance_reports_download_view(request):
 def instructor_update_attendance_record_status_view(request):
     """Update individual attendance record status manually"""
     user = request.user
-    if not user.is_teacher or not user.is_approved:
+    if not user.is_teacher:
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     try:
@@ -10182,19 +10910,52 @@ def instructor_register_student_qr_code_view(request):
         
         # Create or update QR code registration
         from dashboard.models import QRCodeRegistration
-        # Ensure the QR code value is unique across active registrations (one QR per student)
-        existing = QRCodeRegistration.objects.filter(qr_code=qr_code, is_active=True).exclude(student=student).first()
-        if existing:
-            return JsonResponse({'success': False, 'message': f'This QR code is already registered to {existing.student.full_name}. Each QR code can only be assigned to one student.'})
+        
+        # ============= CRITICAL SECURITY CHECK =============
+        # CHECK 1: If this student already has a DIFFERENT QR code registered to their account
+        if student.qr_code_id and student.qr_code_id != qr_code:
+            return JsonResponse({
+                'success': False,
+                'message': f'❌ ERROR: {student.full_name} already has QR code ID "{student.qr_code_id}" registered to their account. Each student can only have ONE QR code ID. Cannot register a different QR code.'
+            })
+        
+        # CHECK 2: Ensure the QR code is not registered to ANY OTHER student via account
+        other_student = CustomUser.objects.filter(qr_code_id=qr_code, is_student=True).exclude(id=student.id).first()
+        if other_student:
+            return JsonResponse({
+                'success': False,
+                'message': f'❌ ERROR: This QR code ID "{qr_code}" is already registered to {other_student.full_name}. Each QR code can only belong to one student.'
+            })
+        
+        # CHECK 3: Ensure the QR code is NOT registered to ANY OTHER student in the SAME COURSE ONLY
+        # NOTE: We only check within the same course - same student can use same QR in different courses
+        other_student_reg = QRCodeRegistration.objects.filter(qr_code=qr_code, course=course, is_active=True).exclude(student=student).first()
+        if other_student_reg:
+            return JsonResponse({
+                'success': False,
+                'message': f'❌ ERROR: This QR code is already registered to {other_student_reg.student.full_name} in {course.code}. Each QR code can only be assigned to one student per course. You cannot register another student\'s QR code for this course.'
+            })
 
-        qr_reg, created = QRCodeRegistration.objects.update_or_create(
+        # ============= REGISTRATION APPROVED =============
+        # Store the QR code on the student's account (global registration)
+        if not student.qr_code_id:
+            student.qr_code_id = qr_code
+            student.save()
+            logger.info(f"Registered QR code ID '{qr_code}' to student account: {student.full_name}")
+
+        # Delete any old registrations for this student in this course to avoid unique_together constraint violations
+        QRCodeRegistration.objects.filter(
+            student=student,
+            course=course
+        ).delete()
+
+        # Create new QR registration
+        qr_reg = QRCodeRegistration.objects.create(
             student=student,
             course=course,
-            defaults={
-                'qr_code': qr_code,
-                'registered_by': request.user,
-                'is_active': True
-            }
+            qr_code=qr_code,
+            registered_by=request.user,
+            is_active=True
         )
         
         # Create notification for instructor
@@ -10202,7 +10963,7 @@ def instructor_register_student_qr_code_view(request):
             request.user,
             'qr_registered',
             'QR Code Registered',
-            f'QR code registered for {student.full_name} in {course.code}',
+            f'QR code ID "{qr_code}" registered for {student.full_name} in {course.code}',
             category='course_management',
             related_course=course,
             related_user=student
@@ -10210,9 +10971,10 @@ def instructor_register_student_qr_code_view(request):
         
         return JsonResponse({
             'success': True,
-            'message': 'QR code registered successfully',
+            'message': f'✅ QR code ID "{qr_code}" registered successfully for {student.full_name}',
             'student_name': student.full_name,
-            'student_id': student.school_id
+            'student_id': student.school_id,
+            'qr_code_id': qr_code
         })
     
     except json.JSONDecodeError:
@@ -10272,11 +11034,246 @@ def instructor_decode_image_view(request):
 
 
 @login_required
+@require_http_methods(["GET"])
+def check_course_registration_status(request):
+    """Check if registration is enabled for instructor's courses"""
+    try:
+        user = request.user
+        
+        # Get the registration status for this instructor
+        status, created = InstructorRegistrationStatus.objects.get_or_create(instructor=user)
+        
+        return JsonResponse({
+            'success': True,
+            'registration_enabled': status.is_registration_enabled,
+        })
+    
+    except Exception as e:
+        logger.error(f"Error checking registration status: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
+
+@login_required
+@require_http_methods(["POST"])
+def enable_course_registration(request):
+    """Enable QR and Fingerprint registration for all courses handled by instructor"""
+    try:
+        user = request.user
+        
+        # Get or create registration status for this instructor
+        status, created = InstructorRegistrationStatus.objects.get_or_create(instructor=user)
+        
+        # Set registration as enabled
+        status.is_registration_enabled = True
+        status.enabled_at = datetime.now()
+        status.save()
+        
+        # Get all courses where this user is the instructor
+        courses = Course.objects.filter(instructor=user, is_active=True, deleted_at__isnull=True)
+        
+        # Create notification for instructor
+        create_notification(
+            user,
+            'registration_enabled',
+            'Course Registration Enabled',
+            f'Attendance registration (QR Code and Fingerprint) has been enabled for {courses.count()} course(s)',
+            category='course_management'
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Registration enabled for {courses.count()} course(s)',
+            'course_count': courses.count()
+        })
+    
+    except Exception as e:
+        logger.error(f"Error enabling course registration: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
+
+@login_required
+@require_http_methods(["POST"])
+def disable_course_registration(request):
+    """Disable QR and Fingerprint registration for all courses handled by instructor"""
+    try:
+        user = request.user
+        
+        # Get or create registration status for this instructor
+        status, created = InstructorRegistrationStatus.objects.get_or_create(instructor=user)
+        
+        # Set registration as disabled
+        status.is_registration_enabled = False
+        status.save()
+        
+        # Get all courses where this user is the instructor
+        courses = Course.objects.filter(instructor=user, is_active=True, deleted_at__isnull=True)
+        
+        # Create notification for instructor
+        create_notification(
+            user,
+            'registration_disabled',
+            'Course Registration Disabled',
+            f'Attendance registration has been disabled for {courses.count()} course(s)',
+            category='course_management'
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Registration disabled for {courses.count()} course(s)',
+            'course_count': courses.count()
+        })
+    
+    except Exception as e:
+        logger.error(f"Error disabling course registration: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
+
+@login_required
+@require_http_methods(["GET"])
+def student_get_registration_instructors_view(request):
+    """Get list of instructors with registration enabled and courses enrolled by student"""
+    try:
+        student = request.user
+        if not student.is_student:
+            return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
+        
+        # Get all active courses enrolled by this student
+        enrolled_enrollments = CourseEnrollment.objects.filter(
+            student=student,
+            is_active=True,
+            deleted_at__isnull=True
+        ).select_related('course', 'course__instructor').distinct()
+        
+        # Group by instructor and check if they have registration enabled
+        instructors_data = {}
+        for enrollment in enrolled_enrollments:
+            instructor = enrollment.course.instructor
+            if not instructor:
+                continue
+                
+            # Check if this instructor has registration enabled
+            status = InstructorRegistrationStatus.objects.filter(
+                instructor=instructor,
+                is_registration_enabled=True
+            ).first()
+            
+            if status:  # Only include instructors with registration enabled
+                if instructor.id not in instructors_data:
+                    # Get profile picture URL
+                    profile_pic_url = ''
+                    if instructor.profile_picture:
+                        profile_pic_url = instructor.profile_picture.url
+                    
+                    instructors_data[instructor.id] = {
+                        'id': instructor.id,
+                        'name': instructor.full_name or instructor.username,
+                        'profile_picture': profile_pic_url,
+                        'courses': []
+                    }
+                
+                # Add this course if not already added
+                course_data = {
+                    'id': enrollment.course.id,
+                    'code': enrollment.course.code,
+                    'name': enrollment.course.name,
+                    'color': enrollment.course.color or '#3C4770'
+                }
+                if course_data not in instructors_data[instructor.id]['courses']:
+                    instructors_data[instructor.id]['courses'].append(course_data)
+        
+        return JsonResponse({
+            'success': True,
+            'instructors': list(instructors_data.values())
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting registration instructors: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
+
+@login_required
+@require_http_methods(["POST"])
+def student_register_qr_code_with_instructor_view(request):
+    """
+    Student registers their QR code with a specific instructor.
+    The QR code will be registered for all courses with that instructor.
+    """
+    try:
+        if not request.user.is_student:
+            return JsonResponse({'success': False, 'message': 'Only students can register QR codes.'})
+        
+        data = json.loads(request.body)
+        instructor_id = data.get('instructor_id')
+        qr_code = data.get('qr_code', '').strip()
+        
+        if not instructor_id or not qr_code:
+            return JsonResponse({'success': False, 'message': 'Missing required fields.'})
+        
+        # Get the instructor
+        instructor = get_object_or_404(CustomUser, id=instructor_id, is_teacher=True, deleted_at__isnull=True)
+        
+        # Get all active courses this student is enrolled in with this instructor
+        courses = Course.objects.filter(
+            instructor=instructor,
+            is_active=True,
+            deleted_at__isnull=True,
+            enrollments__student=request.user,
+            enrollments__is_active=True,
+            enrollments__deleted_at__isnull=True
+        ).distinct()
+        
+        if not courses.exists():
+            return JsonResponse({'success': False, 'message': 'You are not enrolled in any courses with this instructor.'})
+        
+        from .models import QRCodeRegistration
+        registered_count = 0
+        
+        # Register the QR code for each course with this instructor
+        for course in courses:
+            # Delete existing QR registration for this student in this course
+            QRCodeRegistration.objects.filter(
+                student=request.user,
+                course=course,
+                is_active=True
+            ).delete()
+            
+            # Create new QR registration
+            qr_registration, created = QRCodeRegistration.objects.get_or_create(
+                student=request.user,
+                course=course,
+                defaults={
+                    'qr_code': qr_code,
+                    'is_active': True
+                }
+            )
+            
+            if not created:
+                # Update existing registration
+                qr_registration.qr_code = qr_code
+                qr_registration.is_active = True
+                qr_registration.save()
+            
+            registered_count += 1
+            logger.info(f"Student {request.user.full_name} registered QR code for {course.code}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'QR code registered successfully for {registered_count} course(s)',
+            'courses_registered': registered_count
+        })
+    
+    except Exception as e:
+        logger.error(f"Error registering QR code with instructor: {str(e)}")
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
+
+@login_required
 @require_http_methods(["POST"])
 def student_register_qr_code_view(request):
     """
     Student self-registration endpoint for registering their QR code for a specific course.
     Allows students to register their school ID as a QR code for a course they are enrolled in.
+    The QR code is stored globally on the student's account and can be reused for all their courses.
     """
     try:
         if not request.user.is_student:
@@ -10305,19 +11302,51 @@ def student_register_qr_code_view(request):
         # Store the QR code registration (one per student per course)
         from .models import QRCodeRegistration
         
-        # Check for duplicate QR in this course (other students)
-        existing = QRCodeRegistration.objects.filter(qr_code=qr_code, is_active=True, course=course).exclude(student=request.user).first()
-        if existing:
-            return JsonResponse({'success': False, 'message': f'This QR code is already registered to another student for this course.'})
+        # ============= CRITICAL SECURITY CHECK =============
+        # CHECK 1: If this student already has a QR code registered to their account
+        if request.user.qr_code_id and request.user.qr_code_id != qr_code:
+            # Student is trying to register a DIFFERENT QR code than what's on their account
+            return JsonResponse({
+                'success': False,
+                'message': f'❌ ERROR: You already have QR code ID "{request.user.qr_code_id}" registered to your account. Each student can only have ONE QR code ID. You must use your registered QR code ID: "{request.user.qr_code_id}"'
+            })
         
-        qr_reg, created = QRCodeRegistration.objects.update_or_create(
+        # CHECK 2: Ensure the QR code is unique globally (no other student has this QR code)
+        other_student = CustomUser.objects.filter(qr_code_id=qr_code, is_student=True).exclude(id=request.user.id).first()
+        if other_student:
+            return JsonResponse({
+                'success': False,
+                'message': f'❌ ERROR: This QR code ID "{qr_code}" is already registered to {other_student.full_name}. Each QR code can only belong to one student. You cannot use another student\'s QR code.'
+            })
+        
+        # CHECK 3: Ensure the QR code is NOT registered to ANY OTHER student in the SAME COURSE
+        # NOTE: We only check within the same course - same student can use same QR in different courses
+        other_student_reg = QRCodeRegistration.objects.filter(qr_code=qr_code, course=course, is_active=True).exclude(student=request.user).first()
+        if other_student_reg:
+            return JsonResponse({
+                'success': False,
+                'message': f'❌ ERROR: This QR code is already registered to {other_student_reg.student.full_name} in {other_student_reg.course.code}. Each QR code can only belong to one student per course. You cannot register another student\'s QR code for this course.'
+            })
+        
+        # ============= REGISTRATION APPROVED =============
+        # Store the QR code on the student's account (global registration)
+        request.user.qr_code_id = qr_code
+        request.user.save()
+        logger.info(f"Registered QR code ID '{qr_code}' to student account: {request.user.full_name}")
+        
+        # Delete any old registrations for this student in this course to avoid unique_together constraint violations
+        QRCodeRegistration.objects.filter(
+            student=request.user,
+            course=course
+        ).delete()
+        
+        # Create new QR registration for this specific course
+        qr_reg = QRCodeRegistration.objects.create(
             student=request.user,
             course=course,
-            defaults={
-                'qr_code': qr_code,
-                'registered_by': request.user,
-                'is_active': True
-            }
+            qr_code=qr_code,
+            registered_by=request.user,
+            is_active=True
         )
         
         # Create notification for student
@@ -10325,7 +11354,7 @@ def student_register_qr_code_view(request):
             request.user,
             'qr_registered',
             'QR Code Registered',
-            f'Your QR code has been registered for {course.code} - {course.name}',
+            f'Your QR code ID "{qr_code}" has been registered to your account and for {course.code} - {course.name}',
             category='course_management',
             related_course=course,
             related_user=request.user
@@ -10333,9 +11362,10 @@ def student_register_qr_code_view(request):
         
         return JsonResponse({
             'success': True,
-            'message': 'QR code registered successfully for this course!',
+            'message': f'✅ QR code ID "{qr_code}" registered successfully! This QR code is now tied to your account and can be used for all your courses.',
             'course_name': course.name,
-            'course_code': course.code
+            'course_code': course.code,
+            'qr_code_id': qr_code
         })
     
     except json.JSONDecodeError:
@@ -10343,3 +11373,1097 @@ def student_register_qr_code_view(request):
     except Exception as e:
         logger.error(f"Error registering QR code: {str(e)}")
         return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
+
+
+@login_required
+def get_course_enrollments_view(request):
+    """API endpoint to get enrollments for a course"""
+    user = request.user
+    if not user.is_teacher:
+        return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
+    
+    course_id = request.GET.get('course_id')
+    if not course_id:
+        return JsonResponse({'success': False, 'message': 'Course ID required'})
+    
+    try:
+        # Get the course
+        course = Course.objects.get(id=int(course_id), instructor=user)
+        
+        # Get all active enrollments for this course
+        enrollments = CourseEnrollment.objects.filter(
+            course=course,
+            is_active=True,
+            deleted_at__isnull=True
+        ).select_related('student').order_by('full_name')
+        
+        enrollments_data = []
+        for enrollment in enrollments:
+            # Use the current student's full_name instead of the enrollment snapshot
+            # This ensures the reassign modal shows the student's updated name
+            current_full_name = enrollment.student.full_name if enrollment.student else enrollment.full_name
+            enrollments_data.append({
+                'id': enrollment.id,
+                'full_name': current_full_name or enrollment.student.username,
+                'section': enrollment.section or 'N/A',
+                'profile_picture': enrollment.student.profile_picture.url if enrollment.student and enrollment.student.profile_picture else None
+            })
+        
+        return JsonResponse({'success': True, 'enrollments': enrollments_data})
+    except Course.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Course not found or you do not have permission'})
+    except Exception as e:
+        logger.error(f"Error getting course enrollments: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)})
+
+
+@login_required
+def get_course_sections_view(request):
+    """API endpoint to get available sections for a course"""
+    user = request.user
+    if not user.is_teacher:
+        return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
+    
+    course_id = request.GET.get('course_id')
+    if not course_id:
+        return JsonResponse({'success': False, 'message': 'Course ID required'})
+    
+    try:
+        # Get the course
+        course = Course.objects.get(id=int(course_id))
+        
+        # Get all sibling courses (same code, name, semester, school_year)
+        sibling_courses = Course.objects.filter(
+            code=course.code,
+            name=course.name,
+            semester=course.semester,
+            school_year=course.school_year,
+            is_active=True,
+            deleted_at__isnull=True,
+            is_archived=False
+        ).order_by('section')
+        
+        sections = []
+        for sibling in sibling_courses:
+            sections.append({
+                'id': sibling.id,
+                'section': sibling.section or 'N/A'
+            })
+        
+        return JsonResponse({'success': True, 'sections': sections})
+    except Exception as e:
+        logger.error(f"Error getting course sections: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)})
+
+
+@login_required
+def move_students_to_section_view(request):
+    """API endpoint to move students to another section"""
+    user = request.user
+    if not user.is_teacher:
+        return JsonResponse({'success': False, 'message': 'Unauthorized'}, status=403)
+    
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'POST required'})
+    
+    try:
+        data = json.loads(request.body)
+        enrollment_ids = data.get('enrollment_ids', [])
+        target_course_id = data.get('target_course_id')
+        
+        logger.info(f"[TRANSFER] Request received: enrollment_ids={enrollment_ids}, target_course_id={target_course_id}")
+        
+        if not enrollment_ids or not target_course_id:
+            return JsonResponse({'success': False, 'message': 'Missing required parameters'})
+        
+        # Convert to list of integers
+        enrollment_ids = [int(eid) for eid in enrollment_ids]
+        target_course_id = int(target_course_id)
+        
+        # Verify target course exists and instructor owns it
+        try:
+            target_course = Course.objects.get(
+                id=target_course_id,
+                instructor=user,
+                is_active=True,
+                deleted_at__isnull=True
+            )
+        except Course.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Target section not found or you do not have permission'})
+        
+        # Get source course from first enrollment
+        try:
+            first_enrollment = CourseEnrollment.objects.get(id=enrollment_ids[0])
+            source_course = first_enrollment.course
+        except CourseEnrollment.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Enrollment not found'})
+        
+        # Verify instructor owns the source course
+        if source_course.instructor != user:
+            return JsonResponse({'success': False, 'message': 'You do not own the source course'})
+        
+        # Verify both courses are related (same code, name, semester, school_year)
+        if (source_course.code != target_course.code or
+            source_course.name != target_course.name or
+            source_course.semester != target_course.semester or
+            source_course.school_year != target_course.school_year):
+            return JsonResponse({'success': False, 'message': 'Cannot move students between unrelated courses'})
+        
+        moved_count = 0
+        errors = []
+        
+        for enrollment_id in enrollment_ids:
+            try:
+                enrollment = CourseEnrollment.objects.get(
+                    id=enrollment_id,
+                    course=source_course,
+                    is_active=True,
+                    deleted_at__isnull=True
+                )
+                
+                student = enrollment.student
+                
+                # Delete any existing enrollment in the target course (if any)
+                existing_in_target = CourseEnrollment.objects.filter(
+                    student=student,
+                    course=target_course
+                ).first()
+                
+                if existing_in_target:
+                    existing_in_target.delete()
+                
+                # Now update the enrollment to point to the target course
+                enrollment.course = target_course
+                enrollment.section = target_course.section or 'N/A'
+                enrollment.course_code = target_course.code
+                enrollment.course_name = target_course.name
+                enrollment.course_section = target_course.section or 'N/A'
+                enrollment.enrolled_at = timezone.now()
+                enrollment.save()
+                
+                # Transfer QR Code registrations to the new course
+                qr_registrations = QRCodeRegistration.objects.filter(
+                    student=student,
+                    course=source_course,
+                    is_active=True
+                )
+                for qr_reg in qr_registrations:
+                    # Delete any existing QR registration in target course for this student
+                    QRCodeRegistration.objects.filter(
+                        student=student,
+                        course=target_course
+                    ).delete()
+                    # Update the QR registration to point to target course
+                    qr_reg.course = target_course
+                    qr_reg.save()
+                    logger.info(f"[TRANSFER] Transferred QR code registration for student {student.id} to section {target_course.section}")
+                
+                # Transfer Biometric registrations to the new course
+                biometric_registrations = BiometricRegistration.objects.filter(
+                    student=student,
+                    course=source_course,
+                    is_active=True
+                )
+                for bio_reg in biometric_registrations:
+                    # Delete any existing biometric registration in target course for this student
+                    BiometricRegistration.objects.filter(
+                        student=student,
+                        course=target_course
+                    ).delete()
+                    # Update the biometric registration to point to target course
+                    bio_reg.course = target_course
+                    bio_reg.save()
+                    logger.info(f"[TRANSFER] Transferred biometric registration for student {student.id} to section {target_course.section}")
+                
+                logger.info(f"[TRANSFER] Student {student.id} successfully moved to section {target_course.section}")
+                
+                # Log the action
+                logger.info(f"Student {student.id} ({student.username}) moved to course {target_course.id} section {target_course.section}")
+                
+                moved_count += 1
+                
+            except CourseEnrollment.DoesNotExist:
+                logger.error(f"Enrollment {enrollment_id} not found")
+                errors.append(f"Enrollment {enrollment_id} not found")
+            except Exception as e:
+                logger.error(f"Error moving enrollment {enrollment_id}: {str(e)}")
+                errors.append(f"Error: {str(e)}")
+        
+        message = f"Successfully moved {moved_count} student(s)"
+        if errors:
+            message += f". {len(errors)} error(s) occurred"
+            message += f". Errors: {', '.join(errors[:3])}"
+        
+        return JsonResponse({
+            'success': True,
+            'message': message,
+            'moved_count': moved_count,
+            'errors': errors
+        })
+    
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data'})
+    except Exception as e:
+        logger.error(f"Error in move_students_to_section_view: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)})
+
+
+# ==================== BIOMETRIC INTEGRATION ====================
+
+@login_required
+@require_http_methods(["POST"])
+@csrf_exempt
+def api_biometric_enroll_view(request):
+    """
+    API endpoint for ESP32 fingerprint sensor enrollment.
+    Students/instructors call this to enroll a fingerprint for a course.
+    
+    Expected POST data:
+    {
+        'course_id': <int>,
+        'student_id': <int> (optional, for instructor enrolling student),
+        'biometric_data': '<string>',  # Fingerprint template or ID from ESP32
+        'biometric_type': 'fingerprint' (default)
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        student_id = data.get('student_id')
+        biometric_data = data.get('biometric_data', '').strip()
+        biometric_type = data.get('biometric_type', 'fingerprint')
+        
+        if not course_id or not biometric_data:
+            return JsonResponse({
+                'success': False,
+                'message': 'Missing course_id or biometric_data'
+            }, status=400)
+        
+        # Get course
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'message': 'Course not found'
+            }, status=404)
+        
+        # Determine target student
+        if student_id and request.user.is_teacher:
+            # Instructor enrolling a student
+            try:
+                target_student = CustomUser.objects.get(id=student_id, is_student=True)
+                # Verify instructor owns this course
+                if course.instructor != request.user:
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'You do not have permission to register biometric for this course'
+                    }, status=403)
+            except CustomUser.DoesNotExist:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Student not found'
+                }, status=404)
+        else:
+            # Student self-registering
+            target_student = request.user
+            if not target_student.is_student:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'You must be a student to register biometric'
+                }, status=403)
+            # Verify student is enrolled in this course
+            enrollment = CourseEnrollment.objects.filter(
+                student=target_student,
+                course=course,
+                is_active=True
+            ).first()
+            if not enrollment:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'You are not enrolled in this course'
+                }, status=403)
+        
+        # Encrypt biometric data
+        from .biometric_utils import encrypt_biometric_data
+        encrypted_data = encrypt_biometric_data(biometric_data)
+        
+        if not encrypted_data:
+            return JsonResponse({
+                'success': False,
+                'message': 'Failed to encrypt biometric data'
+            }, status=500)
+        
+        # Create or update biometric registration
+        biometric_reg, created = BiometricRegistration.objects.update_or_create(
+            student=target_student,
+            course=course,
+            defaults={
+                'biometric_data': encrypted_data,
+                'biometric_type': biometric_type,
+                'is_active': True,
+            }
+        )
+        
+        # Create notification
+        try:
+            create_notification(
+                user=target_student,
+                notification_type='student_enrolled',
+                title='Biometric Registration Successful',
+                message=f'Your fingerprint has been registered for {course.code} - {course.name}',
+                category='enrollment',
+                related_course=course,
+                related_user=request.user if request.user.is_teacher else None
+            )
+        except Exception as e:
+            logger.error(f"Error creating notification: {str(e)}")
+        
+        logger.info(f"Biometric registration {'created' if created else 'updated'} for student {target_student.id} in course {course.id}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Biometric {"registered" if created else "updated"} successfully',
+            'enrollment_id': biometric_reg.id,
+            'biometric_type': biometric_type,
+        })
+    
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error in biometric enrollment: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+@csrf_exempt
+def api_biometric_verify_view(request):
+    """
+    API endpoint to verify a fingerprint against registered biometric.
+    Used by ESP32 to check if scanned fingerprint matches student's registered print.
+    
+    Expected POST data:
+    {
+        'course_id': <int>,
+        'biometric_data': '<string>'  # Scanned fingerprint template
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        biometric_data = data.get('biometric_data', '').strip()
+        
+        if not course_id or not biometric_data:
+            return JsonResponse({
+                'success': False,
+                'message': 'Missing course_id or biometric_data',
+                'matched_student': None
+            }, status=400)
+        
+        # Get course
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'message': 'Course not found',
+                'matched_student': None
+            }, status=404)
+        
+        # Find matching biometric registration for this course
+        from .biometric_utils import verify_biometric_match
+        biometric_registrations = BiometricRegistration.objects.filter(
+            course=course,
+            is_active=True
+        ).select_related('student')
+        
+        matched_student = None
+        for bio_reg in biometric_registrations:
+            if verify_biometric_match(bio_reg.biometric_data, biometric_data):
+                matched_student = bio_reg.student
+                logger.info(f"Biometric match found for student {matched_student.id} in course {course.id}")
+                break
+        
+        if matched_student:
+            return JsonResponse({
+                'success': True,
+                'message': f'Fingerprint matched for {matched_student.full_name or matched_student.username}',
+                'matched_student': {
+                    'id': matched_student.id,
+                    'username': matched_student.username,
+                    'full_name': matched_student.full_name or matched_student.username,
+                    'student_id_number': matched_student.student_id_number or '',
+                }
+            })
+        else:
+            logger.warning(f"No biometric match found for fingerprint in course {course.id}")
+            return JsonResponse({
+                'success': False,
+                'message': 'Fingerprint does not match any registered student',
+                'matched_student': None
+            }, status=401)
+    
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data', 'matched_student': None}, status=400)
+    except Exception as e:
+        logger.error(f"Error in biometric verification: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e), 'matched_student': None}, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+@csrf_exempt
+def api_biometric_scan_attendance_view(request):
+    """
+    API endpoint for recording attendance via biometric scan.
+    Called by ESP32/frontend when fingerprint is verified.
+    
+    Expected POST data:
+    {
+        'course_id': <int>,
+        'student_id': <int>,
+        'schedule_id': '<string>' (optional)
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        student_id = data.get('student_id')
+        schedule_id = data.get('schedule_id', '')
+        
+        if not course_id or not student_id:
+            return JsonResponse({'success': False, 'message': 'Missing course_id or student_id'}, status=400)
+        
+        # Get course and student
+        try:
+            course = Course.objects.get(id=course_id)
+            student = CustomUser.objects.get(id=student_id, is_student=True)
+        except (Course.DoesNotExist, CustomUser.DoesNotExist):
+            return JsonResponse({'success': False, 'message': 'Course or student not found'}, status=404)
+        
+        # Get student's enrollment
+        try:
+            enrollment = CourseEnrollment.objects.get(
+                student=student,
+                course=course,
+                is_active=True
+            )
+        except CourseEnrollment.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Student is not enrolled in this course'}, status=403)
+        
+        # Check if attendance is open
+        from django.utils import timezone
+        from zoneinfo import ZoneInfo
+        
+        try:
+            ph_tz = ZoneInfo('Asia/Manila')
+        except:
+            import pytz
+            ph_tz = pytz.timezone('Asia/Manila')
+        
+        now_ph = timezone.now().astimezone(ph_tz)
+        today = now_ph.date()
+        
+        # Determine schedule day and check attendance status
+        schedule_day = None
+        attendance_status = 'closed'
+        
+        if schedule_id:
+            # Extract day from schedule_id format: course_id_day_YYYYMMDD
+            try:
+                parts = schedule_id.split('_')
+                if len(parts) >= 2:
+                    day_short = parts[1]
+                    day_schedule = CourseSchedule.objects.filter(
+                        course=course,
+                        day=day_short
+                    ).first()
+                    if day_schedule:
+                        schedule_day = day_schedule.day
+                        attendance_status = day_schedule.attendance_status or course.attendance_status
+            except Exception as e:
+                logger.warning(f"Error parsing schedule_id: {str(e)}")
+        
+        # Fallback: use course-level attendance status
+        if not attendance_status or attendance_status == 'closed':
+            attendance_status = course.attendance_status or 'closed'
+        
+        # Check if attendance is open
+        if attendance_status not in ['open', 'automatic']:
+            return JsonResponse({
+                'success': False,
+                'message': f'Attendance is currently {attendance_status}. Cannot record attendance.'
+            }, status=403)
+        
+        # Record attendance
+        from django.db import transaction
+        with transaction.atomic():
+            # Check for existing attendance record today
+            existing_record = AttendanceRecord.objects.filter(
+                student=student,
+                course=course,
+                attendance_date=today,
+                schedule_day=schedule_day
+            ).first()
+            
+            if existing_record and existing_record.status in ['present', 'late']:
+                return JsonResponse({
+                    'success': False,
+                    'message': f'You already have {existing_record.status} attendance recorded for today'
+                }, status=409)
+            
+            # Determine attendance status based on present window
+            attendance_record_status = 'present'
+            attendance_time = now_ph.time()
+            
+            # Check if within present window
+            present_duration_minutes = None
+            qr_opened_at = None
+            
+            # Get present duration from schedule or course
+            if schedule_day:
+                day_schedule = CourseSchedule.objects.filter(
+                    course=course,
+                    day=schedule_day
+                ).first()
+                if day_schedule:
+                    present_duration_minutes = getattr(day_schedule, 'attendance_present_duration', None)
+            
+            if not present_duration_minutes:
+                present_duration_minutes = getattr(course, 'attendance_present_duration', None)
+            
+            # Get qr_code_opened_at
+            if schedule_day:
+                day_schedule = CourseSchedule.objects.filter(
+                    course=course,
+                    day=schedule_day
+                ).first()
+                if day_schedule:
+                    qr_opened_at = getattr(day_schedule, 'qr_code_opened_at', None)
+            
+            if not qr_opened_at:
+                qr_opened_at = getattr(course, 'qr_code_opened_at', None)
+            
+            # Check if marked as late (after present window expired)
+            if qr_opened_at and present_duration_minutes and present_duration_minutes > 0:
+                present_window_end = qr_opened_at + timezone.timedelta(minutes=int(present_duration_minutes))
+                if now_ph > present_window_end:
+                    attendance_record_status = 'late'
+                    logger.info(f"Student {student.id} marked as LATE (present window expired)")
+            
+            # Create or update attendance record
+            attendance_record, created = AttendanceRecord.objects.update_or_create(
+                student=student,
+                course=course,
+                attendance_date=today,
+                schedule_day=schedule_day or '',
+                defaults={
+                    'enrollment': enrollment,
+                    'attendance_time': attendance_time,
+                    'status': attendance_record_status,
+                }
+            )
+            
+            # Create notification
+            try:
+                create_notification(
+                    user=student,
+                    notification_type='attendance_marked',
+                    title='Attendance Recorded - Biometric',
+                    message=f'Your biometric attendance has been recorded as {attendance_record_status.upper()} in {course.code}',
+                    category='attendance',
+                    related_course=course,
+                    related_user=course.instructor
+                )
+            except Exception as e:
+                logger.error(f"Error creating notification: {str(e)}")
+            
+            logger.info(f"Attendance record {'created' if created else 'updated'} via biometric for student {student.id} in course {course.id} with status {attendance_record_status}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Attendance recorded as {attendance_record_status.upper()}',
+            'status': attendance_record_status,
+            'timestamp': now_ph.isoformat(),
+        })
+    
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error recording biometric attendance: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def instructor_register_student_biometric_view(request):
+    """
+    Instructor registers a student's biometric for their course.
+    """
+    try:
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        student_id = data.get('student_id')
+        biometric_data = data.get('biometric_data', '').strip()
+        
+        if not course_id or not student_id or not biometric_data:
+            return JsonResponse({'success': False, 'message': 'Missing required fields'})
+        
+        # Get course and verify instructor
+        course = get_object_or_404(Course, id=course_id, instructor=request.user)
+        student = get_object_or_404(CustomUser, id=student_id, is_student=True)
+        
+        # Verify student is enrolled
+        enrollment = get_object_or_404(CourseEnrollment, student=student, course=course, is_active=True)
+        
+        # Call the biometric enrollment API
+        from .biometric_utils import encrypt_biometric_data
+        encrypted_data = encrypt_biometric_data(biometric_data)
+        
+        biometric_reg, created = BiometricRegistration.objects.update_or_create(
+            student=student,
+            course=course,
+            defaults={
+                'biometric_data': encrypted_data,
+                'biometric_type': 'fingerprint',
+                'is_active': True,
+            }
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Biometric registered for {student.full_name or student.username}',
+            'created': created,
+        })
+    
+    except Exception as e:
+        logger.error(f"Error registering student biometric: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)})
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def student_register_biometric_view(request):
+    """
+    Student self-registers biometric for their enrolled courses.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            course_id = data.get('course_id')
+            biometric_data = data.get('biometric_data', '').strip()
+            
+            if not course_id or not biometric_data:
+                return JsonResponse({'success': False, 'message': 'Missing required fields'})
+            
+            # Get course and verify student is enrolled
+            course = get_object_or_404(Course, id=course_id)
+            enrollment = get_object_or_404(CourseEnrollment, student=request.user, course=course, is_active=True)
+            
+            # Register biometric
+            from .biometric_utils import encrypt_biometric_data
+            encrypted_data = encrypt_biometric_data(biometric_data)
+            
+            biometric_reg, created = BiometricRegistration.objects.update_or_create(
+                student=request.user,
+                course=course,
+                defaults={
+                    'biometric_data': encrypted_data,
+                    'biometric_type': 'fingerprint',
+                    'is_active': True,
+                }
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Biometric registered successfully',
+                'created': created,
+            })
+        
+        except Exception as e:
+            logger.error(f"Error registering biometric: {str(e)}")
+            return JsonResponse({'success': False, 'message': str(e)})
+    
+    # GET: Show registration form for enrolled courses
+    enrollments = CourseEnrollment.objects.filter(
+        student=request.user,
+        is_active=True
+    ).select_related('course', 'course__program', 'course__instructor')
+    
+    context = {
+        'enrollments': enrollments,
+        'total_courses': enrollments.count(),
+    }
+    return render(request, 'dashboard/student/register_biometric.html', context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def student_verify_biometric_view(request):
+    """
+    Student verifies biometric during attendance scanning.
+    """
+    try:
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        biometric_data = data.get('biometric_data', '').strip()
+        
+        if not course_id or not biometric_data:
+            return JsonResponse({'success': False, 'message': 'Missing required fields'})
+        
+        # Get course and verify student is enrolled
+        course = get_object_or_404(Course, id=course_id)
+        enrollment = get_object_or_404(CourseEnrollment, student=request.user, course=course, is_active=True)
+        
+        # Verify biometric matches
+        from .biometric_utils import verify_biometric_match
+        biometric_reg = BiometricRegistration.objects.filter(
+            student=request.user,
+            course=course,
+            is_active=True
+        ).first()
+        
+        if not biometric_reg:
+            return JsonResponse({'success': False, 'message': 'No biometric registered for this course'})
+        
+        if verify_biometric_match(biometric_reg.biometric_data, biometric_data):
+            return JsonResponse({
+                'success': True,
+                'message': 'Biometric verified successfully',
+                'matched': True,
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'message': 'Biometric does not match',
+                'matched': False,
+            })
+    
+    except Exception as e:
+        logger.error(f"Error verifying biometric: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)})
+
+
+@login_required
+@require_http_methods(["GET"])
+def instructor_check_biometric_registration_view(request):
+    """
+    Check if a student has registered biometric for a course.
+    """
+    try:
+        course_id = request.GET.get('course_id')
+        student_id = request.GET.get('student_id')
+        
+        if not course_id or not student_id:
+            return JsonResponse({'has_biometric': False})
+        
+        # Verify instructor has access to this course
+        course = get_object_or_404(Course, id=course_id, instructor=request.user)
+        
+        # Check if student has biometric registered
+        has_biometric = BiometricRegistration.objects.filter(
+            student_id=student_id,
+            course=course,
+            is_active=True
+        ).exists()
+        
+        return JsonResponse({'has_biometric': has_biometric})
+    
+    except Exception as e:
+        logger.error(f"Error checking biometric registration: {str(e)}")
+        return JsonResponse({'has_biometric': False, 'error': str(e)})
+
+
+@login_required
+@require_http_methods(["GET"])
+def api_get_instructor_courses_view(request):
+    """
+    API endpoint to get courses for a specific instructor.
+    Used by students when registering biometric with an instructor.
+    
+    Expected GET parameter:
+    - instructor_id: ID of the instructor
+    
+    Returns:
+    {
+        'success': bool,
+        'courses': [
+            {
+                'id': <int>,
+                'code': '<string>',
+                'name': '<string>'
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        instructor_id = request.GET.get('instructor_id')
+        
+        logger.info(f"API: Getting courses for instructor_id={instructor_id}")
+        
+        if not instructor_id:
+            logger.warning("API: Missing instructor_id parameter")
+            return JsonResponse({
+                'success': False,
+                'message': 'Missing instructor_id parameter'
+            }, status=400)
+        
+        # Get instructor
+        try:
+            instructor = CustomUser.objects.get(id=instructor_id, is_teacher=True)
+            logger.info(f"API: Found instructor: {instructor.username}")
+        except CustomUser.DoesNotExist:
+            logger.warning(f"API: Instructor not found for id={instructor_id}")
+            return JsonResponse({
+                'success': False,
+                'message': 'Instructor not found'
+            }, status=404)
+        except Exception as e:
+            logger.error(f"API: Error looking up instructor: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'message': f'Error looking up instructor: {str(e)}'
+            }, status=500)
+        
+        # Get courses taught by this instructor (including archived/inactive for now)
+        courses = Course.objects.filter(
+            instructor=instructor
+        ).exclude(
+            deleted_at__isnull=False  # Exclude soft-deleted courses
+        ).values('id', 'code', 'name').order_by('code')
+        
+        courses_list = list(courses)
+        logger.info(f"API: Found {len(courses_list)} courses for instructor {instructor.username}")
+        
+        return JsonResponse({
+            'success': True,
+            'courses': courses_list
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting instructor courses: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["GET"])
+def api_get_student_enrolled_courses_view(request):
+    """
+    API endpoint to get courses the current student is enrolled in with a specific instructor.
+    Used for automatic biometric enrollment in all courses with that instructor.
+    
+    Expected GET parameter:
+    - instructor_id: ID of the instructor
+    
+    Returns:
+    {
+        'success': bool,
+        'courses': [
+            {
+                'id': <int>,
+                'code': '<string>',
+                'name': '<string>'
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        instructor_id = request.GET.get('instructor_id')
+        
+        logger.info(f"API: Getting enrolled courses for student {request.user.id} with instructor {instructor_id}")
+        
+        if not instructor_id:
+            logger.warning("API: Missing instructor_id parameter")
+            return JsonResponse({
+                'success': False,
+                'message': 'Missing instructor_id parameter'
+            }, status=400)
+        
+        if not request.user.is_student:
+            return JsonResponse({
+                'success': False,
+                'message': 'Only students can access this endpoint'
+            }, status=403)
+        
+        # Get instructor
+        try:
+            instructor = CustomUser.objects.get(id=instructor_id, is_teacher=True)
+            logger.info(f"API: Found instructor: {instructor.username}")
+        except CustomUser.DoesNotExist:
+            logger.warning(f"API: Instructor not found for id={instructor_id}")
+            return JsonResponse({
+                'success': False,
+                'message': 'Instructor not found'
+            }, status=404)
+        
+        # Get courses the student is enrolled in with this instructor
+        enrolled_courses = CourseEnrollment.objects.filter(
+            student=request.user,
+            course__instructor=instructor,
+            is_active=True
+        ).select_related('course').exclude(
+            course__deleted_at__isnull=False  # Exclude soft-deleted courses
+        ).values('course__id', 'course__code', 'course__name').distinct()
+        
+        courses_list = [
+            {
+                'id': course['course__id'],
+                'code': course['course__code'],
+                'name': course['course__name']
+            }
+            for course in enrolled_courses
+        ]
+        
+        logger.info(f"API: Found {len(courses_list)} enrolled courses for student with instructor {instructor.username}")
+        
+        return JsonResponse({
+            'success': True,
+            'courses': courses_list,
+            'instructor_name': instructor.full_name or instructor.username
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting student enrolled courses: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def api_health_check(request):
+    """
+    Simple health check endpoint for Arduino to test connectivity.
+    GET /dashboard/api/health-check/
+    Returns JSON with server status.
+    """
+    return JsonResponse({
+        'status': 'ok',
+        'message': 'Django server is reachable',
+        'timestamp': timezone.now().isoformat()
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_broadcast_scan_update(request):
+    """
+    API endpoint to broadcast R307 scan updates to WebSocket clients.
+    Called by Arduino or polling mechanism to push updates to frontend via WebSocket.
+    
+    POST data:
+    {
+        'enrollment_id': '<enrollment_id>',
+        'slot': <1-5>,
+        'success': <true/false>,
+        'quality_score': <0-100>,
+        'message': '<status message>'
+    }
+    """
+    try:
+        from channels.layers import get_channel_layer
+        import asyncio
+        
+        data = json.loads(request.body)
+        enrollment_id = data.get('enrollment_id')
+        slot = data.get('slot')
+        success = data.get('success', False)
+        quality = data.get('quality_score', 0)
+        message = data.get('message', '')
+        progress = (slot / 5) * 100 if slot else 0
+        
+        logger.info(f"[BROADCAST] Received scan update: enrollment={enrollment_id}, slot={slot}, success={success}")
+        
+        if not enrollment_id:
+            logger.warning("[BROADCAST] Missing enrollment_id in request")
+            return JsonResponse({'success': False, 'message': 'Missing enrollment_id'}, status=400)
+        
+        # Get channel layer and broadcast to group
+        channel_layer = get_channel_layer()
+        group_name = f"biometric_enrollment_{enrollment_id}"
+        
+        logger.info(f"[BROADCAST] Sending to group: {group_name}")
+        
+        # Send message to WebSocket group
+        asyncio.run(channel_layer.group_send(
+            group_name,
+            {
+                'type': 'scan_update',
+                'slot': slot,
+                'success': success,
+                'quality': quality,
+                'message': message,
+                'progress': progress
+            }
+        ))
+        
+        logger.info(f"[BROADCAST] ✓ Broadcast sent: enrollment={enrollment_id}, slot={slot}, group={group_name}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Scan update broadcasted to clients'
+        })
+    
+    except Exception as e:
+        logger.error(f"Error broadcasting scan update: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_broadcast_enrollment_complete(request):
+    """
+    API endpoint to broadcast enrollment completion to WebSocket clients.
+    
+    POST data:
+    {
+        'enrollment_id': '<enrollment_id>',
+        'success': <true/false>,
+        'courses_enrolled': <count>,
+        'message': '<message>'
+    }
+    """
+    try:
+        from channels.layers import get_channel_layer
+        import asyncio
+        
+        data = json.loads(request.body)
+        enrollment_id = data.get('enrollment_id')
+        success = data.get('success', True)
+        courses_enrolled = data.get('courses_enrolled', 0)
+        message = data.get('message', 'Enrollment complete')
+        
+        if not enrollment_id:
+            return JsonResponse({'success': False, 'message': 'Missing enrollment_id'}, status=400)
+        
+        channel_layer = get_channel_layer()
+        group_name = f"biometric_enrollment_{enrollment_id}"
+        
+        asyncio.run(channel_layer.group_send(
+            group_name,
+            {
+                'type': 'enrollment_complete',
+                'success': success,
+                'courses_enrolled': courses_enrolled,
+                'message': message
+            }
+        ))
+        
+        logger.info(f"Broadcast enrollment complete: enrollment={enrollment_id}, courses={courses_enrolled}")
+        
+        return JsonResponse({'success': True, 'message': 'Enrollment completion broadcasted'})
+    
+    except Exception as e:
+        logger.error(f"Error broadcasting enrollment completion: {str(e)}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+

@@ -26,32 +26,7 @@
     .semester-folder[style*="display: none"] {
         display: none !important;
     }
-    /* Twinkling stars for multi-section courses */
-    @keyframes twinkle {
-        0%, 45%, 55%, 100% {
-            opacity: 0.1;
-            transform: scale(0.9);
-        }
-        50% {
-            opacity: 1.0;
-            transform: scale(1.1);
-        }
-    }
-    .multi-stars-field {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        overflow: hidden;
-        border-radius: 1rem;
-        mix-blend-mode: screen;
-    }
-    .star-dot {
-        position: absolute;
-        background-color: #ffffff;
-        border-radius: 50%;
-        box-shadow: 0 0 5px #a0c3ff, 0 0 10px #ffffff;
-        animation: twinkle linear infinite;
-    }
+    /* Twinkling stars - REMOVED */
     .course-card-block {
         position: relative;
         transform-style: preserve-3d;
@@ -98,10 +73,10 @@
         </div>
         <!-- Trash/Archive Separation Buttons - Right Corner -->
         <div class="flex gap-2">
-            <button onclick="filterMode('trash')" id="trash-mode-btn" class="px-4 py-2 text-white text-sm font-semibold rounded-lg transition duration-150 shadow-sm {% if mode == 'trash' or mode == 'all' %}bg-red-600 hover:bg-red-700 ring-2 ring-red-300{% else %}bg-gray-400 hover:bg-gray-500{% endif %}">
+            <button onclick="showTrashLoadingModal('{% url "dashboard:instructor_trash" %}?mode=trash')" id="trash-mode-btn" class="px-4 py-2 text-white text-sm font-semibold rounded-lg transition duration-150 shadow-sm {% if mode == 'trash' or mode == 'all' %}bg-red-600 hover:bg-red-700 ring-2 ring-red-300{% else %}bg-gray-400 hover:bg-gray-500{% endif %}">
                 <i class="fas fa-trash-alt mr-2"></i> Trash
             </button>
-            <button onclick="filterMode('archive')" id="archive-mode-btn" class="px-4 py-2 text-white text-sm font-semibold rounded-lg transition duration-150 shadow-sm {% if mode == 'archive' %}bg-purple-600 hover:bg-purple-700 ring-2 ring-purple-300{% else %}bg-gray-400 hover:bg-gray-500{% endif %}">
+            <button onclick="showTrashLoadingModal('{% url "dashboard:instructor_trash" %}?mode=archive')" id="archive-mode-btn" class="px-4 py-2 text-white text-sm font-semibold rounded-lg transition duration-150 shadow-sm {% if mode == 'archive' %}bg-purple-600 hover:bg-purple-700 ring-2 ring-purple-300{% else %}bg-gray-400 hover:bg-gray-500{% endif %}">
                 <i class="fas fa-archive mr-2"></i> Archive
             </button>
             {% if mode == 'all' or mode == 'trash' %}
@@ -199,7 +174,7 @@
                                                             <div class="absolute bottom-0 left-0 w-20 h-20 bg-white rounded-full -ml-10 -mb-10"></div>
                                                         </div>
                                                         {% if course.sibling_sections and course.sibling_sections|length > 1 %}
-                                                        <div class="multi-stars-field" data-star-count="60"></div>
+                                                        <!-- Twinkling star overlay - REMOVED -->
                                                         {% endif %}
                                                         <div class="relative z-10 text-center px-4">
                                                             <h3 class="text-lg font-bold text-white mb-1 leading-tight" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
@@ -217,7 +192,7 @@
                                                         </div>
                                                         <div class="flex gap-1">
                                                             
-                                                            <button onclick="restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
+                                                            <button onclick="showTrashLoadingModal(null); restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
                                                                 <i class="fas fa-undo"></i> Restore
                                                             </button>
                                                         </div>
@@ -312,7 +287,7 @@
                                                             <div class="absolute bottom-0 left-0 w-20 h-20 bg-white rounded-full -ml-10 -mb-10"></div>
                                                         </div>
                                                         {% if course.sibling_sections and course.sibling_sections|length > 1 %}
-                                                        <div class="multi-stars-field" data-star-count="60"></div>
+                                                        <!-- Twinkling star overlay - REMOVED -->
                                                         {% endif %}
                                                         <div class="relative z-10 text-center px-4">
                                                             <h3 class="text-lg font-bold text-white mb-1 leading-tight" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
@@ -332,10 +307,10 @@
                                                             </div>
                                                         </div>
                                                         <div class="flex gap-1">
-                                                            <button onclick="restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
+                                                            <button onclick="showTrashLoadingModal(null); restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
                                                                 <i class="fas fa-undo"></i> Restore
                                                             </button>
-                                                            <button onclick="permanentDeleteCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition">
+                                                            <button onclick="showTrashLoadingModal(null); permanentDeleteCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition">
                                                                 <i class="fas fa-trash"></i> Delete
                                                             </button>
                                                         </div>
@@ -414,10 +389,10 @@
                         </td>
                         <td class="px-3 py-2 whitespace-nowrap">
                             <div class="flex gap-2">
-                                <button onclick="restoreEnrollment({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" class="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-sm">
+                                <button onclick="showTrashLoadingModal(null); restoreEnrollment({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" class="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-sm">
                                     <i class="fas fa-undo mr-1"></i> Restore
                                 </button>
-                                <button onclick="permanentDeleteEnrollment({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" class="px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm">
+                                <button onclick="showTrashLoadingModal(null); permanentDeleteEnrollment({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" class="px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm">
                                     <i class="fas fa-trash mr-1"></i> Delete
                                 </button>
                             </div>
@@ -854,66 +829,8 @@ function toggleSemesterFolder(folderId) {
                 icon.style.transition = 'transform 0.3s ease';
             }
             
-            // Reinitialize stars and gradients when folder opens
-            setTimeout(() => {
-                const starFields = folder.querySelectorAll('.multi-stars-field:not([data-stars-initialized])');
-                starFields.forEach(field => {
-                    if (field.hasAttribute('data-stars-initialized')) return;
-                    field.setAttribute('data-stars-initialized', 'true');
-                    const STAR_COUNT_DEFAULT = 60;
-                    const countAttr = parseInt(field.getAttribute('data-star-count') || `${STAR_COUNT_DEFAULT}`, 10);
-                    const count = isNaN(countAttr) ? STAR_COUNT_DEFAULT : Math.max(20, Math.min(150, countAttr));
-                    
-                    function createStar() {
-                        const rect = field.getBoundingClientRect();
-                        const width = rect.width || field.clientWidth || 200;
-                        const height = rect.height || field.clientHeight || 128;
-                        
-                        const star = document.createElement('div');
-                        star.className = 'star-dot';
-                        const size = Math.random() * 3 + 1;
-                        star.style.width = `${size}px`;
-                        star.style.height = `${size}px`;
-                        
-                        let x, y;
-                        if (Math.random() < 0.7) {
-                            if (Math.floor(Math.random() * 2) === 0) {
-                                const band = Math.random() < 0.5 ? 0.12 : 0.88;
-                                y = band * height + (Math.random() - 0.5) * 0.12 * height;
-                                y = Math.max(0, Math.min(height, y));
-                                x = Math.random() * width;
-                            } else {
-                                const band = Math.random() < 0.5 ? 0.12 : 0.88;
-                                x = band * width + (Math.random() - 0.5) * 0.12 * width;
-                                x = Math.max(0, Math.min(width, x));
-                                y = Math.random() * height;
-                            }
-                        } else {
-                            x = Math.random() * width;
-                            y = Math.random() * height;
-                        }
-                        star.style.left = `${x}px`;
-                        star.style.top = `${y}px`;
-                        const duration = Math.random() * 4 + 2;
-                        star.style.animationDuration = `${duration}s`;
-                        const delay = Math.random() * duration * -1;
-                        star.style.animationDelay = `${delay}s`;
-                        field.appendChild(star);
-                    }
-                    
-                    for (let i = 0; i < count; i++) {
-                        createStar();
-                    }
-                });
-                
-                // Apply gradients
-                folder.querySelectorAll('.course-card-block[data-gradient]').forEach(el => {
-                    const grad = el.getAttribute('data-gradient');
-                    if (grad && grad.includes('linear-gradient')) {
-                        el.style.background = grad;
-                    }
-                });
-            }, 100);
+            // Star initialization - REMOVED
+            
         } else {
             folder.style.display = 'none';
             if (icon) {
@@ -1542,6 +1459,26 @@ function confirmRestoreAllArchivedCourses() {
         }
     });
 }
+
+// Trash & Archive page loading modal
+function showTrashLoadingModal(url) {
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+    loadingOverlay.innerHTML = `
+        <div class="rainbow-spinner">
+            <img src="/static/img/attendance-logo.png" alt="Loading">
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+    
+    if (url) {
+        setTimeout(() => {
+            window.location.href = url;
+        }, 300);
+    }
+}
+
+window.showTrashLoadingModal = showTrashLoadingModal;
 </script>
 {% endblock %}
 

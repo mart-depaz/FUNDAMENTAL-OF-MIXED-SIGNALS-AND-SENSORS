@@ -15,12 +15,36 @@
             color: #333;
             margin: 0;
             padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
             min-height: 100vh;
             overflow-x: hidden;
             position: relative;
+            padding-top: 60px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .page-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: calc(100vh - 60px);
+            width: 100%;
+            max-width: 600px;
+            padding: 10px 20px;
+            margin-bottom: 10%;
+            margin: 0;
+        }
+
+        .left-section {
+            display: none;
+        }
+
+        .right-section {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
         }
 
         /* Background Design Elements - Side by Side */
@@ -105,16 +129,106 @@
         }
 
         .page-logo {
-            width: 140px;
-            margin: -140px auto 25px auto;
             text-align: center;
+            margin-bottom: 20px;
         }
 
-        .page-logo img {
-            width: 100%;
-            height: auto;
-            display: block;
+        .page-logo-badge {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+            background-color: rgba(60,71,112,0.1);
+            border: 2px solid rgba(60,71,112,0.2);
+            overflow: hidden;
+        }
+
+        .page-logo-badge img {
+            width: 64px;
+            height: 64px;
             object-fit: contain;
+        }
+
+        /* Top Navigation Bar */
+        .top-navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(90deg, #3C4770 0%, #447294 100%);
+            border-bottom: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 30px;
+            height: 60px;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(60, 71, 112, 0.3);
+        }
+
+        .navbar-brand {
+            font-size: 18px;
+            font-weight: bold;
+            color: #FFFFFF;
+            letter-spacing: 2px;
+        }
+
+        .navbar-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .navbar-btn {
+            background-color: transparent;
+            border: 2px solid #FFFFFF;
+            padding: 8px 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+            font-size: 0.9em;
+            color: #FFFFFF;
+            font-weight: 600;
+        }
+
+        .navbar-btn:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .navbar-btn.active {
+            background-color: #FFFFFF;
+            color: #3C4770;
+            border-color: #FFFFFF;
+        }
+
+        /* Welcome Section - Inside Form Container */
+        .welcome-section {
+            text-align: center;
+            margin: 0 0 20px 0;
+            padding: 20px 0;
+            border-bottom: 1px solid #E0E0E0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .welcome-section h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+            margin-top: 10px;
+            color: #3C4770;
+            font-weight: bold;
+        }
+
+        .welcome-section p {
+            font-size: 0.95em;
+            color: #666;
+            letter-spacing: 0.5px;
+            margin: 0;
         }
 
         .container {
@@ -124,7 +238,6 @@
             box-sizing: border-box;
             position: relative;
             z-index: 1;
-            margin: 0 auto;
         }
 
         .form-card {
@@ -132,7 +245,7 @@
             border: 2px solid #3C4770;
             border-radius: 8px;
             padding: 10px 20px;
-            box-shadow: 0 4px 8px rgba(60, 71, 112, 0.2);
+            box-shadow: 0 0 20px rgba(60, 71, 112, 0.4), 0 0 40px rgba(68, 114, 148, 0.2), 0 4px 8px rgba(60, 71, 112, 0.2);
         }
 
         h1 {
@@ -370,30 +483,26 @@
         }
 
         .message {
-            margin-top: 10px;
-            padding: 8px;
-            border-radius: 5px;
+            margin-top: 0;
+            margin-bottom: 10px;
+            padding: 12px 16px;
+            border-radius: 8px;
             text-align: center;
             opacity: 1;
             transition: opacity 0.5s ease-out;
             position: relative;
             z-index: 999999 !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            animation: slideInDown 0.3s ease-out;
+            font-weight: 500;
         }
         
         /* Ensure message elements are at top layer */
         #login-message,
         #signup-message,
-        #admin-login-message {
-            position: relative;
-            z-index: 999999 !important;
-        }
-        
-        /* Forgot message is now in fixed container at top */
         #forgot-message {
             position: relative;
-            z-index: 10001 !important;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            animation: slideInDown 0.3s ease-out;
+            z-index: 999999 !important;
         }
         
         @keyframes slideInDown {
@@ -412,21 +521,21 @@
         }
 
         .message.success {
-            background-color: #e6ffe6;
-            color: #008000;
-            border: 1px solid #008000;
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
         }
 
         .message.error {
-            background-color: #ffe6e6;
-            color: #cc0000;
-            border: 1px solid #cc0000;
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
         }
 
         .message.info {
-            background-color: #e6f3ff;
-            color: #0066cc;
-            border: 1px solid #0066cc;
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
         }
 
         .hidden {
@@ -439,7 +548,73 @@
             margin-top: 5px;
         }
 
+        @media (max-width: 768px) {
+            .page-wrapper {
+                max-width: 100%;
+                padding: 20px 15px;
+            }
+
+            .welcome-section h1 {
+                font-size: 24px;
+            }
+
+            .welcome-section p {
+                font-size: 0.9em;
+            }
+        }
+
         @media (max-width: 500px) {
+            body {
+                padding-top: 50px;
+            }
+
+            .top-navbar {
+                padding: 0 15px;
+                height: 50px;
+            }
+
+            .navbar-brand {
+                font-size: 13px;
+                letter-spacing: 1px;
+            }
+
+            .navbar-btn {
+                padding: 6px 12px;
+                font-size: 0.75em;
+                border-width: 1.5px;
+            }
+
+            .page-wrapper {
+                min-height: calc(100vh - 50px);
+                padding: 15px 10px;
+                max-width: 100%;
+            }
+
+            .welcome-section {
+                margin: 0 0 15px 0;
+                padding: 15px 0;
+                border-bottom: 1px solid #E0E0E0;
+            }
+
+            .welcome-section h1 {
+                font-size: 22px;
+                margin-top: 8px;
+            }
+
+            .welcome-section p {
+                font-size: 0.85em;
+            }
+
+            .page-logo-badge {
+                width: 60px;
+                height: 60px;
+            }
+
+            .page-logo-badge img {
+                width: 56px;
+                height: 56px;
+            }
+
             .container {
                 max-width: 100%;
                 padding: 10px;
@@ -477,8 +652,23 @@
     {% include 'dashboard/shared/notification_system.html' %}
 </head>
 <body>
-    <!-- Password Recovery Notification Container (at top) -->
-    <div id="password-recovery-notification-container" style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10000; max-width: 90%; width: 480px; pointer-events: none;">
+    <!-- Top Navigation Bar -->
+    <div class="top-navbar">
+        <div class="navbar-brand">ATTENDANCE SYSTEM</div>
+        <div class="navbar-buttons">
+            <button id="navbar-login-btn" class="navbar-btn active"><i class="fa-solid fa-right-to-bracket"></i> Login</button>
+            <button id="navbar-signup-btn" class="navbar-btn"><i class="fa-solid fa-user-plus"></i> Sign Up</button>
+        </div>
+    </div>
+
+    <!-- Notification Containers (at top) -->
+    <div id="login-notification-container" style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10002; max-width: 90%; width: 480px; pointer-events: none;">
+        <div id="login-message" class="message hidden" style="margin-top: 0; margin-bottom: 10px; pointer-events: auto;"></div>
+    </div>
+    <div id="signup-notification-container" style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10002; max-width: 90%; width: 480px; pointer-events: none;">
+        <div id="signup-message" class="message hidden" style="margin-top: 0; margin-bottom: 10px; pointer-events: auto;"></div>
+    </div>
+    <div id="password-recovery-notification-container" style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10001; max-width: 90%; width: 480px; pointer-events: none;">
         <div id="forgot-message" class="message hidden" style="margin-top: 0; margin-bottom: 10px; pointer-events: auto;"></div>
     </div>
     
@@ -504,22 +694,22 @@
         </div>
     </div>
 
-    <div class="container">
-        <div class="page-logo">
-            <img src="{% static 'img/attendance-logo-alt.png' %}" alt="Attendance System logo">
-        </div>
-        <div class="form-card">
-        <div class="main-tabs">
-            <button id="login-tab" class="main-tab-btn active"><i class="fa-solid fa-right-to-bracket"></i> Login</button>
-            <!-- Signup removed - users are created by school administrators only -->
-        </div>
+    <!-- Welcome Section - Inside Container -->
+    <div class="page-wrapper">
+        <div class="right-section">
+            <div class="container">
+                <div class="form-card">
+                    <!-- Welcome Section at Top of Form -->
+                    <div class="welcome-section">
+                        <div class="page-logo-badge">
+                            <img src="{% static 'img/attendance-logo.png' %}" alt="Attendance System logo">
+                        </div>
+                        <h1>Welcome</h1>
+                        <p>Attendance Management System</p>
+                    </div>
 
-            <!-- LOGIN SECTION -->
+                    <!-- LOGIN SECTION -->
             <div id="login-section">
-                <h1>Welcome Back!</h1>
-                <p>Log in to your account to continue.</p>
-                <p class="subhead">Select your role to access your dashboard.</p>
-
                 <div class="role-selection">
                     <button id="teacher-role" class="role-btn active"><i class="fa-solid fa-chalkboard-user"></i> I’m a Teacher</button>
                     <button id="student-role" class="role-btn"><i class="fa-solid fa-graduation-cap"></i> I’m a Student</button>
@@ -540,63 +730,41 @@
                     <button type="submit" class="btn primary"><i class="fa-solid fa-sign-in-alt"></i> Login</button>
                     <a href="#" id="forgot-password-link" class="link">Forgot Password?</a>
                 </form>
-
-                <div id="login-message" class="message hidden"></div>
             </div>
 
-            <!-- SIGN-UP SECTION - HIDDEN: Users are created by school administrators only -->
-            <div id="signup-section" class="hidden" style="display: none !important;">
-                <h1>Create Your Account</h1>
-                <p>Join the attendance system and access your dashboard.</p>
-
+            <!-- SIGN-UP SECTION -->
+            <div id="signup-section" class="hidden">
                 <div class="role-tabs">
                     <button id="teacher-tab" class="tab-btn active"><i class="fa-solid fa-chalkboard-user"></i> Teacher Registration</button>
                     <button id="student-tab" class="tab-btn"><i class="fa-solid fa-graduation-cap"></i> Student Registration</button>
                 </div>
 
+                <!-- TEACHER SIGNUP FORM -->
                 <form id="signup-form" class="teacher-form">
-                    <label for="full-name-teacher">Full Name</label>
-                    <input type="text" id="full-name-teacher" name="full_name" required>
+                    <label for="full-name-teacher">First Name</label>
+                    <input type="text" id="full-name-teacher" name="first_name" placeholder="First Name" required>
+
+                    <label for="middle-name-teacher">Middle Name</label>
+                    <input type="text" id="middle-name-teacher" name="middle_name" placeholder="Middle Name">
+
+                    <label for="last-name-teacher">Last Name</label>
+                    <input type="text" id="last-name-teacher" name="last_name" placeholder="Last Name" required>
 
                     <label for="email-teacher">Email Address</label>
-                    <input type="email" id="email-teacher" name="email" required>
+                    <input type="email" id="email-teacher" name="email" placeholder="your.email@example.com" required>
 
                     <label for="employee-id">Employee ID</label>
-                    <input type="text" id="employee-id" name="employee_id" required>
-
-                    <label for="education-level-teacher">Education Level</label>
-                    <select id="education-level-teacher" name="education_level" required>
-                        <option value="">-- Select Education Level --</option>
-                        <option value="high_senior">High/Senior High</option>
-                        <option value="university_college">University/College</option>
-                    </select>
-
-                    <label for="school-teacher">School <span style="color: red;">*</span></label>
-                    <select id="school-teacher" name="school_name" required>
-                        <option value="">-- Select Education Level First --</option>
-                    </select>
-
-                    <div id="program-teacher-container" class="input-group" style="display: none;">
-                        <label for="program-teacher">Program/Major <span style="color: red;">*</span></label>
-                        <select id="program-teacher" name="program_id">
-                            <option value="">-- Select School First --</option>
-                        </select>
-                    </div>
-
-                    <div id="department-teacher-container" class="input-group">
-                        <label for="department-teacher">Department</label>
-                        <input type="text" id="department-teacher" name="department" required>
-                    </div>
+                    <input type="text" id="employee-id" name="employee_id" placeholder="Your Employee ID" required>
 
                     <label for="password-teacher">Password</label>
                     <div class="input-group">
-                        <input type="password" id="password-teacher" name="password1" required>
+                        <input type="password" id="password-teacher" name="password1" placeholder="Create a strong password" required>
                         <i class="fa-solid fa-eye toggle-password" data-target="password-teacher"></i>
                     </div>
 
                     <label for="confirm-password-teacher">Confirm Password</label>
                     <div class="input-group">
-                        <input type="password" id="confirm-password-teacher" name="password2" required>
+                        <input type="password" id="confirm-password-teacher" name="password2" placeholder="Confirm your password" required>
                         <i class="fa-solid fa-eye toggle-password" data-target="confirm-password-teacher"></i>
                     </div>
 
@@ -605,49 +773,32 @@
                     <button type="submit" class="btn primary"><i class="fa-solid fa-arrow-right"></i> Create Teacher Account</button>
                 </form>
 
+                <!-- STUDENT SIGNUP FORM -->
                 <form id="signup-form-student" class="student-form hidden">
-                    <label for="full-name-student">Full Name</label>
-                    <input type="text" id="full-name-student" name="full_name" required>
+                    <label for="full-name-student">First Name</label>
+                    <input type="text" id="full-name-student" name="first_name" placeholder="First Name" required>
+
+                    <label for="middle-name-student">Middle Name</label>
+                    <input type="text" id="middle-name-student" name="middle_name" placeholder="Middle Name">
+
+                    <label for="last-name-student">Last Name</label>
+                    <input type="text" id="last-name-student" name="last_name" placeholder="Last Name" required>
 
                     <label for="student-id">Student ID Number</label>
-                    <input type="text" id="student-id" name="student_id" required>
-
-                    <label for="education-level-student">Education Level</label>
-                    <select id="education-level-student" name="education_level" required>
-                        <option value="">-- Select Education Level --</option>
-                        <option value="high_senior">High/Senior High</option>
-                        <option value="university_college">University/College</option>
-                    </select>
-
-                    <label for="school-student">School <span style="color: red;">*</span></label>
-                    <select id="school-student" name="school_name" required>
-                        <option value="">-- Select Education Level First --</option>
-                    </select>
-
-                    <div id="program-student-container" class="input-group" style="display: none;">
-                        <label for="program-student">Program/Major <span style="color: red;">*</span></label>
-                        <select id="program-student" name="program_id">
-                            <option value="">-- Select School First --</option>
-                        </select>
-                    </div>
-
-                    <div id="department-student-container" class="input-group">
-                        <label for="department-student">Department</label>
-                        <input type="text" id="department-student" name="department" required>
-                    </div>
+                    <input type="text" id="student-id" name="student_id" placeholder="Your Student ID" required>
 
                     <label for="email-student">Email Address</label>
-                    <input type="email" id="email-student" name="email" required>
+                    <input type="email" id="email-student" name="email" placeholder="your.email@example.com" required>
 
                     <label for="password-student">Password</label>
                     <div class="input-group">
-                        <input type="password" id="password-student" name="password1" required>
+                        <input type="password" id="password-student" name="password1" placeholder="Create a strong password" required>
                         <i class="fa-solid fa-eye toggle-password" data-target="password-student"></i>
                     </div>
 
                     <label for="confirm-password-student">Confirm Password</label>
                     <div class="input-group">
-                        <input type="password" id="confirm-password-student" name="password2" required>
+                        <input type="password" id="confirm-password-student" name="password2" placeholder="Confirm your password" required>
                         <i class="fa-solid fa-eye toggle-password" data-target="confirm-password-student"></i>
                     </div>
 
@@ -655,15 +806,11 @@
                     <input type="hidden" name="role" value="student">
                     <button type="submit" class="btn primary"><i class="fa-solid fa-arrow-right"></i> Create Student Account</button>
                 </form>
-
-                <div id="signup-message" class="message hidden"></div>
-
-                <p class="footer-note">By signing up, you agree to our <a href="#">Terms of Use</a> and <a href="#">Privacy Policy</a>.</p>
             </div>
 
             <!-- FORGOT PASSWORD SECTION -->
             <div id="forgot-section" class="hidden">
-                <h1>Password Recovery</h1>
+                <h2 style="color: #3C4770; text-align: center; margin-top: 10px; margin-bottom: 5px;">Password Recovery</h2>
                 <p id="forgot-header-text">Step 1: Enter your registered email.</p>
 
                 <form id="verify-form" method="post" action="">
@@ -705,14 +852,16 @@
                 <button type="button" id="back-to-login" class="btn secondary"><i class="fa-solid fa-arrow-left"></i> Back to Login</button>
             </div>
         </div>
+            </div>
+        </div>
     </div>
 
     <script>
         let verifiedEmail = '{{ request.session.verified_email|default:"" }}';
 
         function switchSection(activeTabId, activeSectionId) {
-            const tabs = ['login-tab']; // Signup tab removed
-            const sections = ['login-section', 'forgot-section']; // Signup section removed
+            const tabs = ['login-tab', 'signup-tab'];
+            const sections = ['login-section', 'signup-section', 'forgot-section'];
 
             tabs.forEach(tabId => {
                 const tab = document.getElementById(tabId);
@@ -938,33 +1087,87 @@
             ['login-message', 'signup-message', 'forgot-message'].forEach(id => {
                 showMessageWithFade(document.getElementById(id));
             });
-        });
 
-        document.getElementById('login-tab').addEventListener('click', () => switchSection('login-tab', 'login-section'));
-        // Signup tab removed - users are created by school administrators only
+            // Tab switching event listeners
+            const loginTab = document.getElementById('login-tab');
+            const signupTab = document.getElementById('signup-tab');
+            if (loginTab) loginTab.addEventListener('click', () => switchSection('login-tab', 'login-section'));
+            if (signupTab) signupTab.addEventListener('click', () => switchSection('signup-tab', 'signup-section'));
 
-        document.getElementById('forgot-password-link').addEventListener('click', function(e) {
-            e.preventDefault();
-            switchSection('login-tab', 'forgot-section');
-        });
+            // Navbar button event listeners
+            const navbarLoginBtn = document.getElementById('navbar-login-btn');
+            const navbarSignupBtn = document.getElementById('navbar-signup-btn');
+            
+            if (navbarLoginBtn) {
+                navbarLoginBtn.addEventListener('click', () => {
+                    switchSection('login-tab', 'login-section');
+                    navbarLoginBtn.classList.add('active');
+                    navbarSignupBtn.classList.remove('active');
+                });
+            }
 
-        document.getElementById('back-to-login').addEventListener('click', () => switchSection('login-tab', 'login-section'));
+            if (navbarSignupBtn) {
+                navbarSignupBtn.addEventListener('click', () => {
+                    switchSection('signup-tab', 'signup-section');
+                    navbarSignupBtn.classList.add('active');
+                    navbarLoginBtn.classList.remove('active');
+                });
+            }
 
-        document.getElementById('teacher-role').addEventListener('click', function() {
-            this.classList.add('active');
-            document.getElementById('student-role').classList.remove('active');
-        });
+            // Forgot password link
+            const forgotPasswordLink = document.getElementById('forgot-password-link');
+            if (forgotPasswordLink) {
+                forgotPasswordLink.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    switchSection('login-tab', 'forgot-section');
+                });
+            }
 
-        document.getElementById('student-role').addEventListener('click', function() {
-            this.classList.add('active');
-            document.getElementById('teacher-role').classList.remove('active');
-        });
+            // Back to login button
+            const backToLoginBtn = document.getElementById('back-to-login');
+            if (backToLoginBtn) {
+                backToLoginBtn.addEventListener('click', () => switchSection('login-tab', 'login-section'));
+            }
 
-        document.getElementById('teacher-tab').addEventListener('click', function() {
-            this.classList.add('active');
-            document.getElementById('student-tab').classList.remove('active');
-            document.getElementById('signup-form').classList.remove('hidden');
-            document.getElementById('signup-form-student').classList.add('hidden');
+            // Teacher and Student role buttons
+            const teacherRole = document.getElementById('teacher-role');
+            const studentRole = document.getElementById('student-role');
+            
+            if (teacherRole) {
+                teacherRole.addEventListener('click', function() {
+                    this.classList.add('active');
+                    studentRole.classList.remove('active');
+                });
+            }
+
+            if (studentRole) {
+                studentRole.addEventListener('click', function() {
+                    this.classList.add('active');
+                    teacherRole.classList.remove('active');
+                });
+            }
+
+            // Teacher and Student signup tabs
+            const teacherTab = document.getElementById('teacher-tab');
+            const studentTab = document.getElementById('student-tab');
+            
+            if (teacherTab) {
+                teacherTab.addEventListener('click', function() {
+                    this.classList.add('active');
+                    studentTab.classList.remove('active');
+                    document.getElementById('signup-form').classList.remove('hidden');
+                    document.getElementById('signup-form-student').classList.add('hidden');
+                });
+            }
+
+            if (studentTab) {
+                studentTab.addEventListener('click', function() {
+                    this.classList.add('active');
+                    teacherTab.classList.remove('active');
+                    document.getElementById('signup-form').classList.add('hidden');
+                    document.getElementById('signup-form-student').classList.remove('hidden');
+                });
+            }
         });
 
         document.getElementById('student-tab').addEventListener('click', function() {
@@ -1061,11 +1264,15 @@
                 const message = document.getElementById('signup-message');
                 message.classList.add('hidden');
                 if (data.success) {
-                    message.textContent = data.message || '✅ Your teacher account request has been submitted. Await admin approval.';
+                    message.textContent = data.message || '✅ Your teacher account has been created successfully! Redirecting to dashboard...';
                     message.className = 'message success';
                     setTimeout(() => {
-                        switchSection('login-tab', 'login-section');
-                    }, 2000);
+                        if (data.redirect) {
+                            window.location.href = data.redirect;
+                        } else {
+                            window.location.href = '/dashboard/';
+                        }
+                    }, 1000);
                 } else {
                     message.textContent = data.message || '❌ An error occurred during signup.';
                     message.className = 'message error';
@@ -1112,9 +1319,9 @@
                         if (data.redirect) {
                             window.location.href = data.redirect;
                         } else {
-                            switchSection('login-tab', 'login-section');
+                            window.location.href = '/dashboard/';
                         }
-                    }, data.redirect ? 1000 : 2000);  // Faster redirect if auto-login succeeded
+                    }, 1000);
                 } else {
                     message.textContent = data.message || '❌ An error occurred during signup.';
                     message.className = 'message error';

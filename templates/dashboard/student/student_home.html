@@ -11,6 +11,212 @@
         transform: translateY(-2px) !important; 
         box-shadow: 0 4px 12px rgba(0,0,0,0.12);
     }
+    /* Course card styling for home page */
+    .course-card-home {
+        transition: all 0.3s ease;
+        min-height: 260px;
+        display: flex;
+        flex-direction: column;
+        padding: 1rem;
+    }
+    .course-card-home:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.2) !important;
+    }
+    .course-title-home {
+        font-size: clamp(1rem, 2.2vw, 1.3rem);
+        line-height: 1.25;
+        word-break: break-word;
+        text-wrap: balance;
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Ultra-small mobile portrait (320px - 479px) */
+    @media (max-width: 479px) {
+        /* Add padding to prevent content from being hidden behind fixed topbar */
+        .space-y-6 {
+            padding: 0.5rem 0.5rem !important;
+            gap: 0.75rem !important;
+        }
+
+        /* Hero section - optimize for small screens */
+        section.bg-gradient-to-r.rounded-3xl {
+            padding: 1rem !important;
+            border-radius: 0.75rem !important;
+            margin-bottom: 0.75rem !important;
+        }
+
+        /* Hero flex layout - stack vertically on ultra-small */
+        section.bg-gradient-to-r .flex.flex-col.lg\\:flex-row {
+            flex-direction: column !important;
+            gap: 1rem !important;
+        }
+
+        /* Hero flex layout - stack profile and text vertically */
+        section.bg-gradient-to-r .flex.items-center {
+            flex-direction: column !important;
+            gap: 0.75rem !important;
+            text-align: center !important;
+            align-items: center !important;
+        }
+
+        /* Profile picture in hero - optimize size */
+        section.bg-gradient-to-r .w-24.h-24 {
+            width: 56px !important;
+            height: 56px !important;
+            min-width: 56px !important;
+            flex-shrink: 0 !important;
+        }
+
+        section.bg-gradient-to-r .w-24.h-24 img {
+            width: 56px !important;
+            height: 56px !important;
+        }
+
+        /* Hero text container */
+        section.bg-gradient-to-r .flex.flex-col {
+            text-align: center !important;
+            align-items: center !important;
+            width: 100% !important;
+        }
+
+        /* Hero text - reduce sizes and prevent overflow */
+        section.bg-gradient-to-r h1 {
+            font-size: 0.9rem !important;
+            line-height: 1.15 !important;
+            word-break: break-word !important;
+            max-width: 100% !important;
+            overflow-wrap: break-word !important;
+            font-weight: 700 !important;
+        }
+
+        section.bg-gradient-to-r > .relative p {
+            font-size: 0.7rem !important;
+            line-height: 1.2 !important;
+            max-width: 100% !important;
+        }
+
+        section.bg-gradient-to-r .text-white\/90 {
+            font-size: 0.7rem !important;
+            max-width: 100% !important;
+        }
+
+        /* Daily overview box */
+        section.bg-gradient-to-r .rounded-2xl {
+            padding: 0.75rem !important;
+            border-radius: 0.5rem !important;
+            width: 100% !important;
+        }
+
+        /* Daily overview text */
+        section.bg-gradient-to-r .text-3xl {
+            font-size: 1.5rem !important;
+        }
+
+        section.bg-gradient-to-r .text-xs {
+            font-size: 0.65rem !important;
+        }
+
+        /* Daily overview flex layout - horizontal scroll for small screens */
+        section.bg-gradient-to-r .flex.items-center.gap-6 {
+            flex-direction: row !important;
+            gap: 1rem !important;
+            overflow-x: auto !important;
+            padding: 0.25rem !important;
+        }
+
+        /* Buttons styling */
+        section.bg-gradient-to-r .inline-flex {
+            padding: 0.5rem 0.75rem !important;
+            font-size: 0.7rem !important;
+            gap: 0.3rem !important;
+            flex-shrink: 0 !important;
+        }
+
+        section.bg-gradient-to-r .inline-flex i {
+            font-size: 0.75rem !important;
+        }
+
+        /* Buttons flex wrap */
+        section.bg-gradient-to-r .flex.flex-wrap {
+            gap: 0.5rem !important;
+            justify-content: center !important;
+        }
+
+        /* Stat Cards Grid */
+        .grid.grid-cols-1.md\\:grid-cols-2.xl\\:grid-cols-4 {
+            grid-template-columns: 1fr !important;
+            gap: 0.75rem !important;
+        }
+
+        /* Stat Card Styling */
+        .rounded-2xl.p-5.flex.items-center {
+            padding: 0.75rem !important;
+            border-radius: 0.5rem !important;
+            gap: 0.75rem !important;
+        }
+
+        .rounded-2xl.p-5 .w-12.h-12 {
+            width: 40px !important;
+            height: 40px !important;
+            min-width: 40px !important;
+            font-size: 0.875rem !important;
+        }
+
+        .rounded-2xl.p-5 p.text-2xl {
+            font-size: 1.25rem !important;
+        }
+
+        .rounded-2xl.p-5 p.text-xs {
+            font-size: 0.65rem !important;
+        }
+
+        /* Detailed Columns Grid */
+        .grid.grid-cols-1.xl\\:grid-cols-3 {
+            grid-template-columns: 1fr !important;
+            gap: 0.75rem !important;
+        }
+
+        /* Section cards */
+        .rounded-3xl.border.border-gray-200 {
+            padding: 1rem !important;
+            border-radius: 0.75rem !important;
+            margin-bottom: 0.75rem !important;
+        }
+
+        .rounded-3xl h3 {
+            font-size: 1rem !important;
+        }
+
+        /* Course cards in Recent Courses */
+        .grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-3 {
+            grid-template-columns: 1fr !important;
+            gap: 0.5rem !important;
+        }
+
+        .course-card-home {
+            min-height: auto !important;
+            padding: 0.75rem !important;
+        }
+
+        .course-title-home {
+            font-size: 0.9rem !important;
+        }
+
+        /* Ensure no horizontal overflow */
+        * {
+            box-sizing: border-box !important;
+        }
+
+        body, main, .flex-grow {
+            overflow-x: hidden !important;
+        }
+    }
 </style>
 <div class="space-y-6">
     <!-- Hero section -->
@@ -55,13 +261,13 @@
                 </div>
             </div>
             <div class="flex flex-wrap gap-3">
-                <a href="{% url 'dashboard:student_todays_status' %}" class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 transition px-4 py-2 rounded-xl text-sm font-semibold">
+                <a href="{% url 'dashboard:student_todays_status' %}" data-dashboard-action="true" class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 transition px-4 py-2 rounded-xl text-sm font-semibold">
                     <i class="fas fa-calendar-check text-white"></i> My Attendance
                 </a>
-                <a href="{% url 'dashboard:enroll_course' %}" class="inline-flex items-center gap-2 bg-white text-indigo-600 hover:bg-gray-100 transition px-4 py-2 rounded-xl text-sm font-semibold shadow">
+                <a href="{% url 'dashboard:enroll_course' %}" data-dashboard-action="true" class="inline-flex items-center gap-2 bg-white text-indigo-600 hover:bg-gray-100 transition px-4 py-2 rounded-xl text-sm font-semibold shadow">
                     <i class="fas fa-plus-circle"></i> Enroll in Course
                 </a>
-                <a href="{% url 'dashboard:weekly_timetable' %}" class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 transition px-4 py-2 rounded-xl text-sm font-semibold">
+                <a href="{% url 'dashboard:weekly_timetable' %}" data-dashboard-action="true" class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 transition px-4 py-2 rounded-xl text-sm font-semibold">
                     <i class="fas fa-calendar-week text-white"></i> Timetable
                 </a>
             </div>
@@ -122,8 +328,8 @@
             </div>
             <div class="space-y-2">
                 {% if upcoming_classes %}
-                    {% for entry in upcoming_classes|slice:":5" %}
-                    <a href="{% url 'dashboard:student_todays_status' %}?course={{ entry.id }}" class="flex items-center justify-between p-3 rounded-xl border hover:border-indigo-300 hover:bg-indigo-50/40 transition border-gray-200 no-underline hover:no-underline">
+                    {% for entry in upcoming_classes|slice:":3" %}
+                    <a href="{% url 'dashboard:student_todays_status' %}?course={{ entry.id }}" data-dashboard-action="true" class="flex items-center justify-between p-3 rounded-xl border hover:border-indigo-300 hover:bg-indigo-50/40 transition border-gray-200 no-underline hover:no-underline">
                         <div class="min-w-0">
                             {% if entry.section %}
                             <p class="mb-1">
@@ -160,32 +366,26 @@
         </div>
 
         <!-- Recent Courses -->
-        <div class="xl:col-span-2 rounded-3xl border border-gray-200 shadow p-6 space-y-4 glow" style="background: #FAFAFA;">
+        <div class="xl:col-span-2 rounded-3xl border border-gray-200 shadow p-4 space-y-3 glow" style="background: #FAFAFA;">
             <div class="flex items-center justify-between">
                 <h3 class="text-lg font-bold text-gray-900">Recent Courses</h3>
-                <a href="{% url 'dashboard:enroll_course' %}" class="text-xs text-indigo-600 hover:text-indigo-700 font-semibold">View All →</a>
+                <a href="{% url 'dashboard:enroll_course' %}" data-dashboard-action="true" class="text-xs text-indigo-600 hover:text-indigo-700 font-semibold">View All →</a>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {% if recent_courses %}
-                    {% for enrollment in recent_courses %}
-                    <div class="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 cursor-pointer" onclick="showCourseDetails({{ enrollment.course.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}', '{{ enrollment.course.program.code|escapejs }}', '{{ enrollment.course.program.name|escapejs }}', {{ enrollment.course.year_level }}, '{{ enrollment.course.semester|escapejs }}', '{{ enrollment.course.school_year|escapejs }}', '{{ enrollment.course.instructor.full_name|default:enrollment.course.instructor.username|escapejs }}', '{{ enrollment.course.room|default:"TBA"|escapejs }}', '{{ enrollment.enrolled_at|date:"F d, Y"|escapejs }}')">
-                        <div class="flex items-start gap-3">
-                            <div class="w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow" style="background: linear-gradient(135deg, {{ enrollment.course.color|default:'#3C4770' }} 0%, {{ enrollment.course.color|default:'#447294' }} 100%);">
-                                {{ enrollment.course.code|first|upper }}
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <h4 class="font-semibold text-gray-900 text-sm truncate">{{ enrollment.course.code }}</h4>
-                                <p class="text-xs text-gray-600 mt-1 line-clamp-2">{{ enrollment.course.name }}</p>
-                                <div class="flex items-center gap-2 mt-2 text-xs text-gray-500">
-                                    <span><i class="fas fa-graduation-cap"></i> {{ enrollment.course.program.code }}</span>
-                                    <span><i class="fas fa-user"></i> {{ enrollment.course.year_level|ordinal_year }}</span>
-                                </div>
-                            </div>
+                    {% for enrollment in recent_courses|slice:":3" %}
+                    <div class="course-card-home group relative rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer text-white"
+                         style="background: linear-gradient(135deg, {{ enrollment.course.color|default:'#3C4770' }} 0%, {{ enrollment.course.color|default:'#447294' }} 100%); box-shadow: 0 10px 20px -5px rgba(60, 71, 112, 0.3);"
+                         onclick="showCourseDetails({{ enrollment.course.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}', '{{ enrollment.course.program.code|escapejs }}', '{{ enrollment.course.program.name|escapejs }}', {{ enrollment.course.year_level }}, '{{ enrollment.course.semester|escapejs }}', '{{ enrollment.course.school_year|escapejs }}', '{{ enrollment.course.instructor.full_name|default:enrollment.course.instructor.username|escapejs }}', '{{ enrollment.course.room|default:'TBA'|escapejs }}', '{{ enrollment.enrolled_at|date:'F d, Y'|escapejs }}')">
+                        <div class="flex justify-between items-start mb-3">
+                            <i class="fas fa-book-open text-2xl opacity-70"></i>
                         </div>
+                        <h3 class="course-title-home font-bold mb-1 text-base">{{ enrollment.course.code }}</h3>
+                        <p class="text-xs font-medium opacity-90 mb-3 line-clamp-2">{{ enrollment.course.name }}</p>
                     </div>
                     {% endfor %}
                 {% else %}
-                    <div class="col-span-2 text-center py-8 text-gray-500">
+                    <div class="col-span-full text-center py-8 text-gray-500">
                         <i class="fas fa-book-open text-3xl mb-2"></i>
                         <p class="text-sm mb-3">No enrolled courses yet</p>
                         <a href="{% url 'dashboard:enroll_course' %}" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-semibold">
@@ -216,10 +416,6 @@
                 <p class="text-sm text-gray-600 mt-1" id="modal-course-code-full"></p>
             </div>
             <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Program</p>
-                    <p class="text-sm font-semibold text-gray-900" id="modal-program"></p>
-                </div>
                 <div>
                     <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Year Level</p>
                     <p class="text-sm font-semibold text-gray-900" id="modal-year-level"></p>
@@ -254,12 +450,65 @@
     </div>
 </div>
 
+<!-- Student Registration Modal -->
+<div id="studentRegistrationModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 md:p-8">
+        <div class="flex items-center justify-between mb-6 border-b border-gray-200 pb-4">
+            <h2 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                <i class="fas fa-user-check text-blue-600"></i>Register Attendance Method
+            </h2>
+            <button onclick="closeStudentRegistrationModal()" class="text-gray-400 hover:text-gray-600 transition">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        
+        <p class="text-gray-700 mb-6" id="registrationCourseInfo">
+            Select how you want to register for attendance in this course:
+        </p>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <!-- QR Code Registration Option -->
+            <button onclick="selectRegistrationMethod('qr')" class="group p-6 rounded-xl border-2 border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition cursor-pointer text-left">
+                <div class="flex items-center justify-center w-12 h-12 rounded-lg bg-blue-100 group-hover:bg-blue-200 transition mb-4">
+                    <i class="fas fa-qrcode text-blue-600 text-xl"></i>
+                </div>
+                <h3 class="font-semibold text-gray-900 mb-2">QR Code</h3>
+                <p class="text-sm text-gray-600">
+                    Register your ID QR code for quick attendance marking. You can scan the course QR code during class.
+                </p>
+                <div class="mt-4 inline-flex items-center text-blue-600 font-semibold text-sm">
+                    Select <i class="fas fa-arrow-right ml-2"></i>
+                </div>
+            </button>
+            
+            <!-- Fingerprint Registration Option -->
+            <button onclick="selectRegistrationMethod('fingerprint')" class="group p-6 rounded-xl border-2 border-gray-200 hover:border-purple-500 hover:bg-purple-50 transition cursor-pointer text-left">
+                <div class="flex items-center justify-center w-12 h-12 rounded-lg bg-purple-100 group-hover:bg-purple-200 transition mb-4">
+                    <i class="fas fa-fingerprint text-purple-600 text-xl"></i>
+                </div>
+                <h3 class="font-semibold text-gray-900 mb-2">Fingerprint</h3>
+                <p class="text-sm text-gray-600">
+                    Register your fingerprint for biometric attendance tracking. Fast and secure.
+                </p>
+                <div class="mt-4 inline-flex items-center text-purple-600 font-semibold text-sm">
+                    Coming Soon <i class="fas fa-lock ml-2"></i>
+                </div>
+            </button>
+        </div>
+        
+        <div class="flex justify-end">
+            <button onclick="closeStudentRegistrationModal()" class="px-6 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition">
+                <i class="fas fa-times mr-2"></i>Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
 function showCourseDetails(courseId, code, name, programCode, programName, yearLevel, semester, schoolYear, instructor, room, enrolledDate) {
     document.getElementById('modal-course-code').textContent = code;
     document.getElementById('modal-course-name').textContent = name;
     document.getElementById('modal-course-code-full').textContent = code;
-    document.getElementById('modal-program').textContent = programCode + ' - ' + programName;
     document.getElementById('modal-year-level').textContent = formatYearLabel(yearLevel);
     document.getElementById('modal-semester').textContent = semester === '1st' ? '1st Semester' : semester === '2nd' ? '2nd Semester' : semester;
     document.getElementById('modal-school-year').textContent = schoolYear;
@@ -283,5 +532,81 @@ function formatYearLabel(yearLevel) {
     }
     return `${numericValue}${suffix} Year`;
 }
+
+// Student Registration Modal Functions
+let studentRegisterCourseId = null;
+let studentRegisterCourseName = null;
+
+function openStudentRegistrationModal(courseId, courseCode) {
+    studentRegisterCourseId = courseId;
+    studentRegisterCourseName = courseCode;
+    document.getElementById('studentRegistrationModal').classList.remove('hidden');
+}
+
+function closeStudentRegistrationModal() {
+    document.getElementById('studentRegistrationModal').classList.add('hidden');
+    studentRegisterCourseId = null;
+    studentRegisterCourseName = null;
+}
+
+function selectRegistrationMethod(method) {
+    if (!studentRegisterCourseId) {
+        alert('Course not selected');
+        return;
+    }
+    
+    if (method === 'qr') {
+        // Open QR scanner for registration
+        if (typeof openQRScanner === 'function') {
+            window.isStudentRegisterMode = true;
+            window.studentRegisterCourseId = studentRegisterCourseId;
+            openQRScanner(studentRegisterCourseId, '{{ user.school_id|default:''|escapejs }}');
+            closeStudentRegistrationModal();
+        } else {
+            alert('QR Scanner not available. Please try again.');
+        }
+    } else if (method === 'fingerprint') {
+        // TODO: Implement fingerprint registration
+        alert('Fingerprint registration is coming soon');
+    }
+}
+
+// Close modal when clicking outside
+document.addEventListener('DOMContentLoaded', function() {
+    const studentRegModal = document.getElementById('studentRegistrationModal');
+    if (studentRegModal) {
+        studentRegModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeStudentRegistrationModal();
+            }
+        });
+    }
+
+    // Add loading effect to student home dashboard action links
+    console.log('[STUDENT HOME] Initializing loading effects');
+    
+    const dashboardLinks = document.querySelectorAll('a[data-dashboard-action="true"]');
+    
+    dashboardLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            const href = this.getAttribute('href');
+            
+            // Only show loading if it's a valid link
+            if (href && href !== '#' && href !== window.location.pathname) {
+                // Show loading overlay
+                const loadingOverlay = document.createElement('div');
+                loadingOverlay.id = 'home-loading-overlay';
+                loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+                loadingOverlay.innerHTML = `
+                    <div class="rainbow-spinner">
+                        <img src="/static/img/attendance-logo.png" alt="Loading">
+                    </div>
+                `;
+                document.body.appendChild(loadingOverlay);
+                console.log('[STUDENT HOME] Loading overlay shown for:', href);
+            }
+        });
+    });
+});
 </script>
 

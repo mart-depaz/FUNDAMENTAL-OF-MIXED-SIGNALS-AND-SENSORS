@@ -765,6 +765,10 @@ templates folder: library_system/templates/dashboard/courses.html
         };
 
         window.CourseManager = CourseManager;
+        
+        // Make functions globally accessible
+        window.updateDepartmentProgramDisplay = () => {}; // Stub for backward compatibility
+        window.refreshDepartmentProgram = () => {}; // Stub for backward compatibility
     </script>
 </div>
 {% endblock %}

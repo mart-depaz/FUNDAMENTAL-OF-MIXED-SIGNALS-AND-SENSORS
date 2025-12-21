@@ -23,8 +23,8 @@
             <!-- Results -->
             <div class="space-y-3">
                 <div>
-                    <label class="text-sm font-medium text-gray-700">Student ID:</label>
-                       <input id="studentIdInput" type="text" placeholder="Enter Student ID manually" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-top: 5px;">
+                    <label class="text-sm font-medium text-gray-700">Student ID: <span class="text-xs text-green-600 font-semibold">(Auto-filled)</span></label>
+                       <input id="studentIdInput" type="text" placeholder="Enter Student ID manually" readonly style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-top: 5px; background: #f9fafb;">
                 </div>
                 <div>
                        <label class="text-sm font-medium text-gray-700">Registration QR (Scan):</label>
@@ -254,7 +254,19 @@ function submitQRData() {
     const studentId = document.getElementById('studentIdInput').value;
     const regQr = document.getElementById('regQrInput').value;
 
-    if (!courseId || !regQr) {
+    if (!regQr) {
+        alert('Please scan a QR code');
+        return;
+    }
+
+    // Check if we're in student register mode (registering with instructor from enroll course page)
+    if (window.isStudentRegisterMode && window.currentInstructorId) {
+        // In student mode from enroll course, we don't need individual courseId
+        if (!studentId) {
+            alert('Please enter your student ID');
+            return;
+        }
+    } else if (!courseId) {
         alert('Please fill in all fields');
         return;
     }
@@ -265,8 +277,32 @@ function submitQRData() {
     const csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || document.querySelector('meta[name="csrf-token"]')?.content || '';
 
     // Support both instructor registration (manual student id) and student self-registration mode
-    if (window.isStudentRegisterMode) {
-        // Student registers their own QR for the current course
+    if (window.isStudentRegisterMode && window.currentInstructorId) {
+        // Student registers QR with specific instructor (from enroll course page)
+        fetch('{% url "dashboard:student_register_qr_code_with_instructor" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify({ instructor_id: parseInt(window.currentInstructorId), qr_code: regQr })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                if (output) { output.textContent = '✓ QR Registered'; output.style.color = '#10b981'; }
+                try { if (typeof showNotification === 'function') showNotification(data.message || 'QR registered successfully', 'success'); }
+                catch(e){}
+                setTimeout(() => { closeQRScanner(); window.isStudentRegisterMode = false; window.currentInstructorId = null; location.reload(); }, 1200);
+            } else {
+                if (output) { output.textContent = '✗ ' + (data.message || 'Failed'); output.style.color = '#dc2626'; }
+                try { if (typeof showNotification === 'function') showNotification(data.message || 'Failed to register QR', 'error'); }
+                catch(e){}
+            }
+        })
+        .catch(err => {
+            if (output) { output.textContent = '✗ Error: ' + (err?.message || err); output.style.color = '#dc2626'; }
+            console.error('Student register error:', err);
+        });
+    } else if (window.isStudentRegisterMode) {
+        // Student registers their own QR for a specific course
         fetch('{% url "dashboard:student_register_qr_code" %}', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
@@ -289,7 +325,6 @@ function submitQRData() {
             if (output) { output.textContent = '✗ Error: ' + (err?.message || err); output.style.color = '#dc2626'; }
             console.error('Student register error:', err);
         });
-    } else {
         // Instructor mode (existing)
         fetch('{% url "dashboard:instructor_register_student_qr_code" %}', {
             method: 'POST',

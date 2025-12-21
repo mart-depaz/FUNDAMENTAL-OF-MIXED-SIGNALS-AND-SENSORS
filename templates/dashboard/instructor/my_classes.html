@@ -1,6 +1,933 @@
 {% extends 'dashboard/instructor/teacher.html' %}
 {% block dashboard_content %}
+
+<!-- Present Window Modal Functions (Define Early) -->
+<script>
+// Initialize window variables from URL parameters on page load
+(function() {
+    const params = new URLSearchParams(window.location.search);
+    const courseParam = params.get('course');
+    const scheduleParam = params.get('schedule');
+    
+    // Set global variables from URL if present
+    if (courseParam) {
+        window.currentCourseId = courseParam;
+        console.log('[PAGE INIT] Set currentCourseId from URL:', courseParam);
+    }
+    if (scheduleParam) {
+        window.currentScheduleId = scheduleParam;
+        console.log('[PAGE INIT] Set currentScheduleId from URL:', scheduleParam);
+    }
+    
+    // Also read from the attendance button if it has values
+    const attendanceBtn = document.getElementById('attendance-control-btn');
+    if (attendanceBtn) {
+        const btnCourseId = attendanceBtn.getAttribute('data-course-id');
+        const btnScheduleId = attendanceBtn.getAttribute('data-schedule-id');
+        
+        // Use button values as fallback if URL params aren't set
+        if (!window.currentCourseId && btnCourseId) {
+            window.currentCourseId = btnCourseId;
+            console.log('[PAGE INIT] Set currentCourseId from button:', btnCourseId);
+        }
+        if (!window.currentScheduleId && btnScheduleId) {
+            window.currentScheduleId = btnScheduleId;
+            console.log('[PAGE INIT] Set currentScheduleId from button:', btnScheduleId);
+        }
+    }
+    
+    console.log('[PAGE INIT] Initialization complete - courseId:', window.currentCourseId, 'scheduleId:', window.currentScheduleId);
+})();
+
+// Early wrapper functions - these are defined early and will call the real functions when needed
+// This ensures they're available even if the full functions are defined later
+
+window.startCountdownWrapper = function(durationSeconds, courseId, scheduleId) {
+    console.log('===== [WRAPPER] START COUNTDOWN WRAPPER CALLED =====');
+    console.log('[WRAPPER] startCountdownWrapper called - duration:', durationSeconds, 'courseId:', courseId, 'scheduleId:', scheduleId);
+    
+    if (typeof startCircleCountdown === 'function') {
+        console.log('[WRAPPER] startCircleCountdown found - calling it now');
+        console.log('[WRAPPER] Checking: typeof startCircleCountdown =', typeof startCircleCountdown);
+        try {
+            startCircleCountdown(durationSeconds, courseId, scheduleId);
+            console.log('[WRAPPER] startCircleCountdown called successfully');
+        } catch (err) {
+            console.error('[WRAPPER] Error calling startCircleCountdown:', err);
+        }
+    } else {
+        console.error('[WRAPPER] startCircleCountdown not yet available - will retry');
+        // Retry after short delay
+        setTimeout(() => {
+            console.log('[WRAPPER] Retrying startCircleCountdown after delay');
+            if (typeof startCircleCountdown === 'function') {
+                console.log('[WRAPPER] NOW found - calling startCircleCountdown');
+                try {
+                    startCircleCountdown(durationSeconds, courseId, scheduleId);
+                    console.log('[WRAPPER] Retry successful');
+                } catch (err) {
+                    console.error('[WRAPPER] Error on retry:', err);
+                }
+            } else {
+                console.error('[WRAPPER] startCircleCountdown STILL not available after retry');
+                alert('Timer function not ready. Please try again.');
+            }
+        }, 500);
+    }
+};
+
+window.openScannerWrapper = function(courseId, courseCode, courseName, section, scheduleId) {
+    console.log('[WRAPPER] openScannerWrapper called - courseId:', courseId);
+    
+    if (typeof window.openInstructorSchoolIDScanner === 'function') {
+        console.log('[WRAPPER] Calling openInstructorSchoolIDScanner directly');
+        window.openInstructorSchoolIDScanner(courseId, courseCode, courseName, section, scheduleId);
+    } else {
+        console.error('[WRAPPER] openInstructorSchoolIDScanner not yet available');
+        // Retry after short delay
+        setTimeout(() => {
+            console.log('[WRAPPER] Retrying openInstructorSchoolIDScanner after delay');
+            if (typeof window.openInstructorSchoolIDScanner === 'function') {
+                window.openInstructorSchoolIDScanner(courseId, courseCode, courseName, section, scheduleId);
+            } else {
+                console.error('[WRAPPER] openInstructorSchoolIDScanner still not available');
+                alert('Scanner not ready. Please try again.');
+            }
+        }, 500);
+    }
+};
+
+// Helper function to open scanner from button onclick
+function openInstructorSchoolIDScannerFromButton(button) {
+    console.log('[BUTTON CLICK] Camera button clicked directly');
+    if (!button) {
+        console.error('[BUTTON CLICK] Button element not found');
+        return false;
+    }
+    
+    const courseId = button.getAttribute('data-course-id');
+    const courseCode = button.getAttribute('data-course-code') || '';
+    const courseName = button.getAttribute('data-course-name') || '';
+    const section = button.getAttribute('data-section') || '';
+    const scheduleId = button.getAttribute('data-schedule-id') || '';
+    
+    console.log('[BUTTON CLICK] Course:', courseId, 'Schedule:', scheduleId);
+    
+    if (!courseId) {
+        alert('Course ID not found');
+        return false;
+    }
+    
+    console.log('[BUTTON CLICK] Calling openScannerWrapper');
+    window.openScannerWrapper(courseId, courseCode, courseName, section, scheduleId);
+    
+    return false;
+}
+
+// Single unified scan method that auto-detects QR or Biometric
+function startUnifiedScan(button) {
+    console.log('[UNIFIED SCAN] Starting auto-detect scan mode');
+    if (!button) {
+        console.error('[UNIFIED SCAN] Button not found');
+        return false;
+    }
+    // Open scanner with both capabilities - system auto-detects which input is used
+    openInstructorSchoolIDScannerFromButton(button);
+    
+    return false;
+}
+
+function switchScheduleWithLoading(event, courseId, scheduleId) {
+    event.preventDefault();
+    event.stopPropagation();
+    console.log('[SCHEDULE SWITCH] Switching to course:', courseId, 'schedule:', scheduleId);
+    
+    // Get the clicked item to check its status
+    const clickedItem = event.target.closest('.quick-pick-item');
+    const status = clickedItem ? clickedItem.getAttribute('data-status') : null;
+    const attendanceDate = clickedItem ? clickedItem.getAttribute('data-attendance-date') : null;
+    
+    console.log('[SCHEDULE SWITCH] Status:', status, 'Date:', attendanceDate);
+    
+    // Show loading overlay
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.id = 'schedule-loading-overlay';
+    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+    loadingOverlay.innerHTML = `
+        <div class="rainbow-spinner">
+            <img src="/static/img/attendance-logo.png" alt="Loading">
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+    console.log('[SCHEDULE SWITCH] Loading overlay shown');
+    
+    // If class is finished, redirect to attendance reports for that specific date
+    if (status === 'finished' && attendanceDate) {
+        console.log('[SCHEDULE SWITCH] Class finished - redirecting to attendance reports');
+        setTimeout(() => {
+            window.location.href = `/dashboard/instructor/attendance-reports/?course=${courseId}&date=${attendanceDate}`;
+        }, 300);
+    } else {
+        // Navigate to the schedule with query parameters (for non-finished classes)
+        const newUrl = `${window.location.pathname}?course=${courseId}&schedule=${scheduleId}`;
+        console.log('[SCHEDULE SWITCH] Navigating to monitoring panel:', newUrl);
+        
+        // Use history API for smooth transition
+        setTimeout(() => {
+            window.location.href = newUrl;
+        }, 300);
+    }
+    
+    return false;
+}
+
+function openPresentWindowDurationModal() {
+    const modal = document.getElementById('presentWindowDurationModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        document.getElementById('present-minutes-input').focus();
+    }
+}
+
+function closePresentWindowDurationModal() {
+    const modal = document.getElementById('presentWindowDurationModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function updatePresentTotalDisplay() {
+    const minutes = parseInt(document.getElementById('present-minutes-input').value) || 0;
+    const totalSeconds = minutes * 60;
+    document.getElementById('present-total-display').textContent = `${minutes} min`;
+}
+
+function confirmPresentWindowDuration() {
+    const minutes = parseInt(document.getElementById('present-minutes-input').value) || 0;
+    
+    if (minutes === 0) {
+        alert('Please set a duration greater than 0');
+        return;
+    }
+    
+    console.log('[TIMER SET] Confirming present window duration:', minutes, 'minutes');
+    
+    // Store the duration in seconds
+    window.presentWindowDuration = minutes * 60;
+    
+    // Store GLOBALLY so all classes share the same timer duration
+    localStorage.setItem('present_window_duration_global', minutes);
+    localStorage.setItem('present_window_visible_global', 'true');
+    console.log('[TIMER SET] Stored globally - duration:', minutes, 'visible: true');
+    
+    closePresentWindowDurationModal();
+    
+    // Show circle with estimation (Set button stays visible)
+    const container = document.getElementById('present-circle-container');
+    if (container) {
+        container.classList.remove('hidden');
+        console.log('[TIMER SET] Container shown');
+    }
+    
+    // Display estimated time in numeric display
+    const estimatedMinutes = Math.floor(window.presentWindowDuration / 60);
+    const estimatedSeconds = window.presentWindowDuration % 60;
+    const timerDisplay = document.getElementById('present-timer-display');
+    console.log('[TIMER SET] Setting display to:', estimatedMinutes, ':', estimatedSeconds);
+    if (timerDisplay) {
+        timerDisplay.querySelector('.text-2xl').textContent =
+        `${String(estimatedMinutes).padStart(2, '0')}:${String(estimatedSeconds).padStart(2, '0')}`;
+        timerDisplay.querySelector('.text-xs').textContent = 'remaining';
+        console.log('[TIMER SET] Display text updated');
+    }
+    
+    if (typeof showNotification === 'function') {
+        showNotification(`Timer set globally - Open attendance for any class to start`, 'success');
+    }
+}
+
+// Combined Control Modal Functions
+function openCombinedControlModal() {
+    console.log('[CONTROL MODAL] Opening combined control modal');
+    const modal = document.getElementById('combinedControlModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        
+        // Get current course info from the attendance button
+        const attendanceBtn = document.getElementById('attendance-control-btn');
+        if (attendanceBtn) {
+            const courseId = attendanceBtn.getAttribute('data-course-id');
+            const scheduleId = attendanceBtn.getAttribute('data-schedule-id');
+            console.log('[CONTROL MODAL] Found attendance button with courseId:', courseId, 'scheduleId:', scheduleId);
+            
+            window.currentCourseId = courseId;
+            window.currentScheduleId = scheduleId;
+            window.currentDayLabel = attendanceBtn.getAttribute('data-day-label');
+            window.currentAttendanceStatus = attendanceBtn.getAttribute('data-status') || 'closed';
+            
+            console.log('[CONTROL MODAL] Set window variables - courseId:', window.currentCourseId, 'scheduleId:', window.currentScheduleId);
+        } else {
+            console.warn('[CONTROL MODAL] Attendance button not found');
+        }
+        
+        // Load previously saved timer duration or use 15 as default
+        const savedDuration = localStorage.getItem('present_window_duration_global');
+        const timerInput = document.getElementById('present-minutes-input');
+        if (timerInput) {
+            timerInput.value = savedDuration || '15';
+        }
+        
+        if (timerInput) {
+            timerInput.focus();
+        }
+        
+        // Update timer preview
+        updateTimerPreview();
+    }
+}
+
+function closeCombinedControlModal() {
+    console.log('[CONTROL MODAL] Closing combined control modal');
+    const modal = document.getElementById('combinedControlModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function updateTimerPreview() {
+    const minutes = parseInt(document.getElementById('present-minutes-input').value) || 0;
+    const preview = document.getElementById('timer-preview');
+    if (preview) {
+        preview.textContent = `${String(minutes).padStart(2, '0')}:00`;
+    }
+}
+
+function selectAttendanceStatusCombined(status) {
+    console.log('[ATTENDANCE COMBINED] Selected status (UI ONLY):', status);
+    console.log('[ATTENDANCE COMBINED] Current courseId:', window.currentCourseId);
+    console.log('[ATTENDANCE COMBINED] Current scheduleId:', window.currentScheduleId);
+    
+    // Update local tracking
+    window.currentAttendanceStatus = status;
+    window.selectedAttendanceStatus = status;
+    
+    // Update visual state of buttons - highlight the selected one with strong ring effect
+    const buttons = document.querySelectorAll('.active-attendance-btn');
+    buttons.forEach(btn => {
+        if (btn.getAttribute('data-status') === status) {
+            // Apply active/selected state with prominent ring
+            btn.classList.add('ring-4', 'ring-offset-2', 'scale-105', 'font-bold');
+            btn.style.backgroundColor = btn.getAttribute('data-status') === 'closed' ? '#fee2e2' : 
+                                         btn.getAttribute('data-status') === 'open' ? '#dcfce7' : '#fef3c7';
+            if (status === 'closed') {
+                btn.classList.add('ring-red-600');
+                btn.style.borderColor = '#991b1b';
+            } else if (status === 'open') {
+                btn.classList.add('ring-green-600');
+                btn.style.borderColor = '#15803d';
+            } else if (status === 'postponed') {
+                btn.classList.add('ring-yellow-600');
+                btn.style.borderColor = '#a16207';
+            }
+        } else {
+            // Remove active state from other buttons
+            btn.classList.remove('ring-4', 'ring-offset-2', 'ring-red-600', 'ring-green-600', 'ring-yellow-600', 'scale-105', 'font-bold');
+            btn.style.backgroundColor = '';
+            btn.style.borderColor = '';
+        }
+    });
+    
+    console.log('[ATTENDANCE COMBINED] Button styling updated - user must click Confirm to apply changes');
+    // NOTE: API call is now handled by confirmControlAndClose() when user clicks Confirm button
+}
+
+function confirmControlAndClose() {
+    console.log('[CONFIRM] Button clicked - starting confirmation process');
+    
+    // Get the selected attendance status (now using ring-4 since we changed the visual effect)
+    const selectedButton = document.querySelector('.active-attendance-btn.ring-4');
+    const selectedStatus = selectedButton ? selectedButton.getAttribute('data-status') : null;
+    
+    // Fallback: if no ring-4, check for any button with selected styles
+    let finalStatus = selectedStatus;
+    if (!finalStatus) {
+        // Try to find button with scale-105 class as alternative indicator
+        const scaledButton = document.querySelector('.active-attendance-btn.scale-105');
+        if (scaledButton) {
+            finalStatus = scaledButton.getAttribute('data-status');
+            console.log('[CONFIRM] Found status from scale-105 button:', finalStatus);
+        }
+    }
+    
+    console.log('[CONFIRM] Selected status:', finalStatus);
+    console.log('[CONFIRM] Course ID:', window.currentCourseId);
+    console.log('[CONFIRM] Schedule ID:', window.currentScheduleId);
+    console.log('[CONFIRM] Day Label:', window.currentDayLabel);
+    
+    if (!finalStatus) {
+        alert('Please select an attendance status first');
+        return;
+    }
+    
+    if (!window.currentCourseId) {
+        alert('Please select a schedule first');
+        return;
+    }
+    
+    // Save timer settings to localStorage for auto-start when attendance opens
+    const minutesInput = document.getElementById('present-minutes-input');
+    if (minutesInput) {
+        const minutes = parseInt(minutesInput.value) || 0;
+        console.log('[CONFIRM] Saving timer duration:', minutes);
+        localStorage.setItem('present_window_duration_global', minutes);
+        localStorage.setItem('present_window_visible_global', 'true');
+    }
+    
+    // Close modal immediately
+    closeCombinedControlModal();
+    console.log('[CONFIRM] Modal closed');
+    
+    // Show loading overlay
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.id = 'confirm-loading-overlay';
+    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+    loadingOverlay.innerHTML = `
+        <div class="rainbow-spinner">
+            <img src="/static/img/attendance-logo.png" alt="Loading">
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+    console.log('[CONFIRM] Loading overlay shown');
+    
+    // Prepare API call
+    const courseId = window.currentCourseId;
+    const scheduleId = window.currentScheduleId || null;
+    const dayLabel = window.currentDayLabel || null;
+    const status = finalStatus;
+    
+    // Use the correct Django URL pattern
+    const apiUrl = `{% url "dashboard:instructor_update_attendance_status" 0 %}`.replace('0', courseId);
+    
+    console.log('[CONFIRM] API URL:', apiUrl);
+    console.log('[CONFIRM] Request body - status:', status, 'scheduleId:', scheduleId, 'day:', dayLabel);
+    
+    // Get CSRF token
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    
+    // Build request body with optional schedule_id and day
+    const requestBody = { status: status };
+    if (scheduleId) {
+        requestBody.schedule_id = scheduleId;
+    }
+    if (dayLabel) {
+        // Convert day label to short form (e.g., 'Monday' -> 'Mon')
+        const dayMap = {
+            'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 'Thursday': 'Thu',
+            'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'
+        };
+        requestBody.day = dayMap[dayLabel] || dayLabel;
+    }
+    
+    // Include present_duration if opening attendance
+    if (status === 'open' && minutesInput) {
+        const minutes = parseInt(minutesInput.value) || 0;
+        if (minutes > 0) {
+            requestBody.present_duration = minutes;
+        }
+    }
+    
+    // Function to remove loading overlay
+    function removeLoadingOverlay() {
+        const overlay = document.getElementById('confirm-loading-overlay');
+        if (overlay) {
+            overlay.remove();
+            console.log('[CONFIRM] Loading overlay removed');
+        }
+    }
+    
+    // Function to refresh page with context (only if needed)
+    function refreshPageWithContext() {
+        const newUrl = `${window.location.pathname}?course=${courseId}${scheduleId ? '&schedule=' + scheduleId : ''}`;
+        console.log('[CONFIRM] Refreshing to:', newUrl);
+        window.location.href = newUrl;
+    }
+    
+    // Make API call
+    console.log('[CONFIRM] Making API request...', requestBody);
+    fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+    })
+    .then(response => {
+        console.log('[CONFIRM] Response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log('[CONFIRM] API response:', data);
+        
+        if (data.success) {
+            console.log('[CONFIRM] API response successful, status:', status);
+            
+            // Auto-start countdown if attendance changed to 'open'
+            if (status === 'open') {
+                // Check for saved duration - multiple sources to ensure we get a value
+                let finalDuration = 0;
+                
+                // Priority 1: Check minutes input field first
+                const minutesInput = document.getElementById('present-minutes-input');
+                if (minutesInput && minutesInput.value) {
+                    finalDuration = parseInt(minutesInput.value) || 0;
+                    console.log('[CONFIRM] Got duration from input field:', finalDuration);
+                }
+                
+                // Priority 2: Check localStorage
+                if (!finalDuration) {
+                    const savedDuration = localStorage.getItem('present_window_duration_global');
+                    if (savedDuration) {
+                        finalDuration = parseInt(savedDuration) || 0;
+                        console.log('[CONFIRM] Got duration from localStorage:', finalDuration);
+                    }
+                }
+                
+                // Priority 3: Default fallback to 15 minutes if still no duration
+                if (!finalDuration) {
+                    finalDuration = 15;
+                    console.log('[CONFIRM] Using default duration:', finalDuration);
+                }
+                
+                console.log('[CONFIRM] Final duration to use:', finalDuration, 'minutes');
+                
+                if (finalDuration && parseInt(finalDuration) > 0) {
+                    // Store which course currently has active countdown
+                    localStorage.setItem('present_window_active_course', courseId);
+                    if (scheduleId) {
+                        localStorage.setItem('present_window_active_schedule', scheduleId);
+                    }
+                    localStorage.setItem('present_window_duration_global', finalDuration);
+                    
+                    // Auto-start the timer for this specific class immediately
+                    const timerDurationInSeconds = parseInt(finalDuration) * 60;
+                    window.presentWindowDuration = timerDurationInSeconds;
+                    console.log('===== [CONFIRM] AUTO-STARTING TIMER =====');
+                    console.log('[CONFIRM] Auto-starting countdown:', timerDurationInSeconds, 'seconds for course:', courseId, 'schedule:', scheduleId);
+                    console.log('[CONFIRM] Timer duration in minutes:', finalDuration);
+                    
+                    // Start the countdown immediately using wrapper function
+                    console.log('[CONFIRM] Calling window.startCountdownWrapper function...');
+                    console.log('[CONFIRM] window.startCountdownWrapper exists?', typeof window.startCountdownWrapper === 'function');
+                    try {
+                        window.startCountdownWrapper(timerDurationInSeconds, courseId, scheduleId);
+                        console.log('[CONFIRM] Countdown wrapper called successfully');
+                    } catch (err) {
+                        console.error('[CONFIRM] Error calling countdown wrapper:', err);
+                    }
+                    
+                    if (typeof showNotification === 'function') {
+                        showNotification('Attendance opened - Present window auto-started for this class!', 'success');
+                    }
+                } else {
+                    console.log('[CONFIRM] No timer set, just opening attendance');
+                    if (typeof showNotification === 'function') {
+                        showNotification('Attendance opened successfully!', 'success');
+                    }
+                }
+            } else {
+                // If status changed to closed or postponed, reset the timer
+                if (status === 'closed' || status === 'postponed') {
+                    console.log('[CONFIRM] Status changed to ' + status + ' - resetting timer');
+                    
+                    // Stop any running timers by clearing all countdown-related localStorage
+                    try {
+                        for (let i = localStorage.length - 1; i >= 0; i--) {
+                            const key = localStorage.key(i);
+                            if (key && (key.startsWith('present_window_started_') || 
+                                       key.startsWith('present_window_expiry_') || 
+                                       key.startsWith('present_window_start_time_'))) {
+                                localStorage.removeItem(key);
+                                console.log('[CONFIRM] Cleared localStorage key:', key);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[CONFIRM] Error clearing timer storage:', e);
+                    }
+                    
+                    // Hide timer container and reset display
+                    const timerContainer = document.getElementById('present-circle-container');
+                    if (timerContainer) {
+                        timerContainer.classList.add('hidden');
+                        console.log('[CONFIRM] Timer container hidden');
+                    }
+                    
+                    if (typeof showNotification === 'function') {
+                        showNotification(`Attendance status changed to ${status} - Timer reset`, 'info');
+                    }
+                } else {
+                    if (typeof showNotification === 'function') {
+                        showNotification(`Attendance status changed to ${status}`, 'success');
+                    }
+                }
+            }
+            
+            // Remove loading overlay after a short delay instead of refreshing
+            setTimeout(() => {
+                console.log('[CONFIRM] Removing loading overlay - updating DOM with new status');
+                removeLoadingOverlay();
+                
+                // Update the hidden attendance control button data-status attribute
+                const attendanceControlBtn = document.getElementById('attendance-control-btn');
+                if (attendanceControlBtn) {
+                    attendanceControlBtn.setAttribute('data-status', status);
+                    console.log('[CONFIRM] Updated attendance-control-btn data-status to:', status);
+                }
+                
+                // Update the status badge in the Monitoring header
+                // Find all status badge spans
+                const statusBadges = document.querySelectorAll('span.px-3.py-1\\.5.rounded-lg.text-xs.font-semibold.text-white');
+                statusBadges.forEach(badge => {
+                    // Check if this is the attendance status badge (contains ●)
+                    if (badge.textContent.includes('●')) {
+                        let newBadgeClass = '';
+                        let newBadgeText = '';
+                        
+                        if (status === 'open') {
+                            newBadgeClass = 'bg-green-500 shadow-sm';
+                            newBadgeText = '● Open';
+                        } else if (status === 'closed') {
+                            newBadgeClass = 'bg-red-500 shadow-sm';
+                            newBadgeText = '● Closed';
+                        } else if (status === 'postponed') {
+                            newBadgeClass = 'bg-yellow-500 shadow-sm';
+                            newBadgeText = '● Postponed';
+                        } else {
+                            newBadgeClass = 'bg-gray-500 shadow-sm';
+                            newBadgeText = '● —';
+                        }
+                        
+                        badge.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold text-white ' + newBadgeClass;
+                        badge.textContent = newBadgeText;
+                        console.log('[CONFIRM] Updated status badge to:', newBadgeText);
+                    }
+                });
+                
+                // Update any control button UI states
+                const statusDisplayBtn = document.getElementById('attendance-status-display');
+                if (statusDisplayBtn) {
+                    // Change the button color based on status
+                    const colorMap = {
+                        'open': '#10b981',    // green-500
+                        'closed': '#ef4444',  // red-500
+                        'postponed': '#eab308' // yellow-500
+                    };
+                    statusDisplayBtn.style.backgroundColor = colorMap[status] || '#6b7280';
+                    console.log('[CONFIRM] Updated control button color to:', colorMap[status]);
+                }
+                
+                // Update the present window visibility if status changed
+                const timerContainer = document.getElementById('present-circle-container');
+                if (timerContainer) {
+                    if (status === 'open') {
+                        timerContainer.classList.remove('hidden');
+                        console.log('[CONFIRM] Made timer container visible');
+                    } else if (status === 'closed' || status === 'postponed') {
+                        timerContainer.classList.add('hidden');
+                        console.log('[CONFIRM] Hid timer container');
+                    }
+                }
+                
+                // Stop any running countdown if status is not open
+                if (status === 'closed' || status === 'postponed') {
+                    console.log('[CONFIRM] Status changed to', status, '- stopping countdown');
+                    
+                    // Clear the countdown interval
+                    if (window.currentCountdownInterval) {
+                        clearInterval(window.currentCountdownInterval);
+                        window.currentCountdownInterval = null;
+                        console.log('[CONFIRM] Countdown interval cleared');
+                    }
+                    
+                    // Clear all countdown-related localStorage keys for this course
+                    try {
+                        for (let i = localStorage.length - 1; i >= 0; i--) {
+                            const key = localStorage.key(i);
+                            if (key && (key.includes('present_window_started_') || 
+                                       key.includes('present_window_expiry_') || 
+                                       key.includes('present_window_start_time_'))) {
+                                localStorage.removeItem(key);
+                                console.log('[CONFIRM] Cleared localStorage key:', key);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[CONFIRM] Error clearing countdown storage:', e);
+                    }
+                    
+                    // Update timer display to show stopped state
+                    const timerDisplay = document.getElementById('present-timer-display');
+                    if (timerDisplay) {
+                        const statusEl = timerDisplay.querySelector('.text-xs');
+                        if (statusEl) {
+                            statusEl.textContent = 'stopped';
+                            console.log('[CONFIRM] Updated timer display to stopped state');
+                        }
+                        
+                        // Reset timer duration to default (15 minutes) when closed/postponed
+                        const defaultDuration = 15 * 60; // 15 minutes in seconds
+                        window.presentWindowDuration = defaultDuration;
+                        localStorage.setItem('present_window_duration_global', 15);
+                        
+                        // Update display to show reset duration
+                        const timeEl = timerDisplay.querySelector('.text-2xl');
+                        if (timeEl) {
+                            timeEl.textContent = '15:00';
+                            console.log('[CONFIRM] Reset timer display to default 15:00');
+                        }
+                    }
+                }
+                
+                // Update camera button visibility based on status
+                const cameraButtonContainer = document.querySelector('.flex.items-center.justify-center.py-3');
+                if (cameraButtonContainer) {
+                    // Find the current button (either enabled or disabled)
+                    const currentButton = cameraButtonContainer.querySelector('button');
+                    
+                    if (status === 'open') {
+                        // Create enabled camera button
+                        const enabledButton = document.createElement('button');
+                        enabledButton.type = 'button';
+                        enabledButton.className = 'open-instructor-scanner px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition duration-150 shadow-md';
+                        enabledButton.setAttribute('data-course-id', courseId);
+                        
+                        // Get course details from the control button
+                        const attendanceControlBtn = document.getElementById('attendance-control-btn');
+                        if (attendanceControlBtn) {
+                            enabledButton.setAttribute('data-course-code', attendanceControlBtn.getAttribute('data-course-code') || '');
+                            enabledButton.setAttribute('data-course-name', attendanceControlBtn.getAttribute('data-course-name') || '');
+                            enabledButton.setAttribute('data-section', attendanceControlBtn.getAttribute('data-section') || '');
+                            enabledButton.setAttribute('data-schedule-id', scheduleId || '');
+                        }
+                        
+                        enabledButton.onclick = function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return openInstructorSchoolIDScannerFromButton(this);
+                        };
+                        enabledButton.innerHTML = '<i class="fas fa-camera text-lg"></i>';
+                        
+                        if (currentButton) {
+                            currentButton.replaceWith(enabledButton);
+                        }
+                        console.log('[CONFIRM] Camera button enabled');
+                    } else {
+                        // Create disabled camera button
+                        const disabledButton = document.createElement('button');
+                        disabledButton.disabled = true;
+                        disabledButton.type = 'button';
+                        disabledButton.className = 'px-4 py-3 bg-gray-400 text-white font-semibold rounded-lg cursor-not-allowed shadow-md opacity-60';
+                        disabledButton.innerHTML = '<i class="fas fa-lock text-lg"></i>';
+                        
+                        if (currentButton) {
+                            currentButton.replaceWith(disabledButton);
+                        }
+                        console.log('[CONFIRM] Camera button disabled');
+                    }
+                }
+                
+                console.log('[CONFIRM] DOM updates completed - status is now:', status);
+            }, 800);
+        } else {
+            removeLoadingOverlay();
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Error updating attendance status', 'error');
+            } else {
+                alert(data.message || 'Error updating attendance status');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('[CONFIRM] API error:', error);
+        removeLoadingOverlay();
+        if (typeof showNotification === 'function') {
+            showNotification('Error updating attendance status: ' + error.message, 'error');
+        } else {
+            alert('Error updating attendance status: ' + error.message);
+        }
+    });
+}
+
+// Keep these for backward compatibility
+function openAttendanceControlModal_deprecated() {
+    return openCombinedControlModal();
+}
+
+function closeAttendanceControlModal_deprecated() {
+    return closeCombinedControlModal();
+}
+
+function openAttendanceControlModal() {
+    openCombinedControlModal();
+}
+
+function closeAttendanceControlModal() {
+    closeCombinedControlModal();
+}
+
+function updateAttendanceButtonStyle(status) {
+    const btn = document.getElementById('attendance-control-btn');
+    const statusText = document.getElementById('attendance-status-text');
+    
+    if (!btn) {
+        console.error('[UPDATE STYLE] Could not find attendance-control-btn');
+        return;
+    }
+    
+    // Reset all classes
+    btn.classList.remove('bg-red-500', 'hover:bg-red-600', 'bg-green-500', 'hover:bg-green-600', 'bg-yellow-500', 'hover:bg-yellow-600');
+    
+    if (status === 'closed') {
+        btn.classList.add('bg-red-500', 'hover:bg-red-600');
+        btn.setAttribute('title', 'Attendance Status: Closed');
+    } else if (status === 'open') {
+        btn.classList.add('bg-green-500', 'hover:bg-green-600');
+        btn.setAttribute('title', 'Attendance Status: Open');
+    } else if (status === 'postponed') {
+        btn.classList.add('bg-yellow-500', 'hover:bg-yellow-600');
+        btn.setAttribute('title', 'Attendance Status: Postponed');
+    }
+    
+    btn.setAttribute('data-status', status);
+    console.log('[UPDATE STYLE] Button style updated to:', status);
+}
+
+function selectAttendanceStatus(status) {
+    console.log('[ATTENDANCE CLICK] Button clicked - status:', status);
+    
+    const btn = document.getElementById('attendance-control-btn');
+    console.log('[ATTENDANCE] Found button:', !!btn);
+    
+    if (!btn) {
+        console.error('[ATTENDANCE] ERROR: Could not find attendance-control-btn');
+        alert('Error: Button not found');
+        return;
+    }
+    
+    const courseId = btn.getAttribute('data-course-id');
+    const scheduleId = btn.getAttribute('data-schedule-id') || null;
+    
+    console.log('[ATTENDANCE] courseId:', courseId, 'scheduleId:', scheduleId);
+    
+    if (!courseId) {
+        console.error('[ATTENDANCE] ERROR: No course ID found');
+        alert('Course information not available');
+        return;
+    }
+    
+    console.log('[ATTENDANCE] Making API call to update status to:', status);
+    
+    // Make API call to update attendance status
+    fetch('{% url "dashboard:instructor_update_attendance_status" 0 %}'.replace('0', courseId), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({ 
+            status: status,
+            schedule_id: scheduleId 
+        })
+    }).then(r => {
+        console.log('[ATTENDANCE] Response received, status:', r.status);
+        return r.json();
+    }).then(data => {
+        console.log('[ATTENDANCE] Response data:', data);
+        
+        if (data.success) {
+            console.log('[ATTENDANCE] Success! Updating UI...');
+            updateAttendanceButtonStyle(status);
+            closeAttendanceControlModal();
+            
+            // Auto-start countdown if attendance changed to 'open' and global timer is set
+            if (status === 'open') {
+                const savedDuration = localStorage.getItem('present_window_duration_global');
+                const savedVisible = localStorage.getItem('present_window_visible_global');
+                
+                console.log('[ATTENDANCE OPEN] savedDuration:', savedDuration, 'savedVisible:', savedVisible);
+                
+                if (savedDuration && savedVisible === 'true') {
+                    // Store which course currently has active countdown (for tracking purposes)
+                    localStorage.setItem('present_window_active_course', courseId);
+                    
+                    // Auto-start the global timer for this class
+                    const timerDurationInSeconds = parseInt(savedDuration) * 60;
+                    window.presentWindowDuration = timerDurationInSeconds;
+                    console.log('[ATTENDANCE OPEN] Starting countdown:', timerDurationInSeconds, 'seconds');
+                    startCircleCountdown(timerDurationInSeconds);
+                    console.log('[ATTENDANCE] Auto-starting global timer for course', courseId, '-', savedDuration, 'minutes');
+                    if (typeof showNotification === 'function') {
+                        showNotification('Attendance opened - Present window auto-started for this class!', 'success');
+                    }
+                } else {
+                    console.log('[ATTENDANCE OPEN] No timer set, just opening attendance');
+                    if (typeof showNotification === 'function') {
+                        showNotification('Attendance opened - Set a present window duration first', 'info');
+                    }
+                }
+            } else {
+                console.log('[ATTENDANCE] Status changed to:', status);
+                if (typeof showNotification === 'function') {
+                    showNotification(`Attendance status changed to ${status}`, 'success');
+                }
+            }
+        } else {
+            console.error('[ATTENDANCE] API Error:', data.message);
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Error updating attendance status', 'error');
+            } else {
+                alert(data.message || 'Error updating attendance status');
+            }
+        }
+    }).catch(err => {
+        console.error('[ATTENDANCE] Network Error updating attendance status:', err);
+        if (typeof showNotification === 'function') {
+            showNotification('Error updating attendance status: ' + err.message, 'error');
+        }
+    });
+}
+</script>
+
 <style>
+    /* Attendance Status Display Button */
+    #attendance-status-display {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 8px 16px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        transition: all 0.15s ease !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        border: none !important;
+        min-width: 140px !important;
+    }
+
+    #attendance-status-display:hover {
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important;
+    }
+
+    #attendance-status-display i {
+        font-size: 16px !important;
+    }
+
+    #attendance-status-text {
+        display: inline !important;
+        font-weight: 600 !important;
+    }
+
     /* QR Code Image Styling - Ensure Perfect Display */
     .qr-code-image {
         display: block !important;
@@ -48,29 +975,359 @@
         position: absolute !important;
         top: 50% !important;
         left: 50% !important;
+    }
+    
+    /* Modal animations */
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: scale(0.95);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    .animate-fade-in {
+        animation: fadeIn 0.3s ease-out;
         transform: translate(-50%, -50%) !important;
     }
+
+    /* Mobile Responsive Styles for Portrait (320px to 479px) */
+    @media (max-width: 479px) {
+        /* Present Window Control Container */
+        .flex.items-center.justify-between.gap-6 {
+            flex-direction: column;
+            gap: 12px !important;
+            align-items: stretch !important;
+        }
+
+        /* Set Button */
+        #set-present-window-btn {
+            width: 100% !important;
+            justify-content: center !important;
+        }
+
+        /* Timer Display Container */
+        #present-circle-container {
+            min-height: 60px !important;
+            margin: 8px 0 !important;
+        }
+
+        /* Reset and Attendance Buttons Container */
+        .flex.items-center.gap-2 {
+            width: 100% !important;
+            flex-direction: column !important;
+            gap: 8px !important;
+        }
+
+        /* Reset Button */
+        #reset-present-duration {
+            width: 100% !important;
+            justify-content: center !important;
+        }
+
+        /* Attendance Control Button */
+        #attendance-status-display {
+            width: 100% !important;
+            justify-content: center !important;
+            min-width: unset !important;
+            padding: 10px 12px !important;
+            font-size: 12px !important;
+        }
+
+        /* Modal Responsiveness */
+        .bg-white.rounded-2xl.shadow-2xl.w-full {
+            margin: 12px !important;
+            max-height: 90vh !important;
+            overflow-y: auto !important;
+        }
+
+        .text-2xl.font-bold {
+            font-size: 18px !important;
+        }
+
+        .text-lg.font-bold {
+            font-size: 14px !important;
+        }
+    }
+
+    /* Extra Small Mobile (320px to 374px) */
+    @media (max-width: 374px) {
+        #set-present-window-btn,
+        #reset-present-duration,
+        #attendance-status-display {
+            padding: 8px 10px !important;
+            font-size: 11px !important;
+        }
+
+        #set-present-window-btn i,
+        #reset-present-duration i,
+        #attendance-status-display i {
+            font-size: 14px !important;
+        }
+
+        /* Tight container spacing */
+        .flex.items-center.justify-between.gap-6 {
+            gap: 8px !important;
+        }
+
+        .flex.items-center.gap-2 {
+            gap: 6px !important;
+        }
+
+        .bg-white.rounded-2xl.shadow.p-4 {
+            padding: 12px !important;
+        }
+    }
+
 </style>
 
 <div class="max-w-7xl mx-auto space-y-6">
+    <!-- Global Present Window Control (Outside Container) -->
     <div class="bg-white rounded-2xl shadow p-4 border border-gray-100">
-        <div class="flex items-center justify-between">
-            <h2 class="text-xl font-bold text-gray-900">My Classes</h2>
-            <a href="{% url 'dashboard:weekly_timetable' %}" class="text-xs text-indigo-600 font-semibold hover:underline">Go to Timetable</a>
+        <div class="flex items-center justify-between gap-6">
+            <!-- Set Timer & Attendance Control Button (Combined) -->
+            <button id="set-present-window-btn" type="button" onclick="openCombinedControlModal()" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition shadow-md flex items-center gap-2">
+                <i class="fas fa-cog"></i> Control
+            </button>
+            
+            <!-- Inline script to restore timer immediately on page load -->
+            <script>
+            (function() {
+                // Check for saved GLOBAL timer and modify the element BEFORE it renders
+                const savedDuration = localStorage.getItem('present_window_duration_global');
+                const savedVisible = localStorage.getItem('present_window_visible_global');
+                
+                if (savedDuration && savedVisible === 'true') {
+                    // Write CSS to force display before element is created
+                    const style = document.createElement('style');
+                    style.textContent = '#present-circle-container { display: flex !important; }';
+                    document.head.appendChild(style);
+                    console.log('[INLINE RESTORE] CSS override injected for global timer visibility');
+                }
+                
+                // On page load, restore timer from server state if attendance is open
+                document.addEventListener('DOMContentLoaded', function() {
+                    try {
+                        const attendanceControl = document.getElementById('attendance-control');
+                        if (!attendanceControl) {
+                            console.log('[TIMER RESTORE] No attendance control found');
+                            return;
+                        }
+                        
+                        const courseId = attendanceControl.getAttribute('data-course-id');
+                        const scheduleId = attendanceControl.getAttribute('data-schedule-id');
+                        const attendanceStatus = attendanceControl.getAttribute('data-status');
+                        
+                        console.log('[TIMER RESTORE] Page load - checking for active timer:', { courseId, scheduleId, attendanceStatus });
+                        
+                        // Get server-provided expiry from Django template
+                        const serverExpiryMs = parseInt('{{ instructor_present_expiry_ms|default:"0" }}' || '0');
+                        console.log('[TIMER RESTORE] Server expiry (ms):', serverExpiryMs, 'Current time (ms):', Date.now());
+                        
+                        // Only restore timer if attendance is currently open AND server provided valid expiry
+                        if (attendanceStatus === 'open' && serverExpiryMs && serverExpiryMs > Date.now()) {
+                            console.log('[TIMER RESTORE] Found active server timer - restoring countdown for', serverExpiryMs - Date.now(), 'ms');
+                            
+                            // Get the timer function (should be defined below)
+                            if (typeof window.getPresentKey === 'function' && typeof createOrUpdateTimer === 'function') {
+                                const key = getPresentKey(courseId, scheduleId);
+                                // Persist to localStorage and start countdown
+                                localStorage.setItem(key, String(serverExpiryMs));
+                                createOrUpdateTimer(key, serverExpiryMs);
+                                
+                                const activeDisplay = document.getElementById('active-window-display');
+                                if (activeDisplay) activeDisplay.classList.remove('hidden');
+                                
+                                const circleContainer = document.getElementById('present-circle-container');
+                                if (circleContainer) circleContainer.classList.remove('hidden');
+                                
+                                console.log('[TIMER RESTORE] Timer restoration successful');
+                            } else {
+                                console.warn('[TIMER RESTORE] Timer functions not yet available - will retry');
+                                // Retry after timer functions are loaded
+                                setTimeout(function() {
+                                    if (typeof window.getPresentKey === 'function' && typeof createOrUpdateTimer === 'function') {
+                                        const key = getPresentKey(courseId, scheduleId);
+                                        localStorage.setItem(key, String(serverExpiryMs));
+                                        createOrUpdateTimer(key, serverExpiryMs);
+                                        const activeDisplay = document.getElementById('active-window-display');
+                                        if (activeDisplay) activeDisplay.classList.remove('hidden');
+                                        const circleContainer = document.getElementById('present-circle-container');
+                                        if (circleContainer) circleContainer.classList.remove('hidden');
+                                        console.log('[TIMER RESTORE] Timer restoration successful (delayed)');
+                                    }
+                                }, 500);
+                            }
+                        } else if (attendanceStatus !== 'open') {
+                            console.log('[TIMER RESTORE] Attendance not open - timer will not start');
+                            // Hide timer if attendance is not open
+                            const circleContainer = document.getElementById('present-circle-container');
+                            if (circleContainer) circleContainer.classList.add('hidden');
+                        } else if (!serverExpiryMs || serverExpiryMs <= Date.now()) {
+                            console.log('[TIMER RESTORE] No active server timer or timer expired');
+                            const circleContainer = document.getElementById('present-circle-container');
+                            if (circleContainer) circleContainer.classList.add('hidden');
+                        }
+                    } catch (e) {
+                        console.warn('[TIMER RESTORE] Error during page load timer restore:', e);
+                    }
+                });
+            })();
+            </script>
+            
+            <!-- Display Numeric Time Display (Center) -->
+            <div id="present-circle-container" class="hidden flex flex-col items-center flex-1 justify-center px-2">
+                <div id="present-timer-display" class="text-center">
+                    <div class="text-2xl font-bold text-green-600">00:00</div>
+                    <div class="text-xs text-gray-600 mt-1">remaining</div>
+                </div>
+            </div>
+            
+            <!-- Inline script to update timer display text -->
+            <script>
+            (function() {
+                // Update display text after element is rendered
+                const savedDuration = localStorage.getItem('present_window_duration_global');
+                const savedVisible = localStorage.getItem('present_window_visible_global');
+                
+                if (savedDuration && savedVisible === 'true') {
+                    // Small delay to ensure element is in DOM
+                    setTimeout(function() {
+                        const minutes = Math.floor(savedDuration / 1);
+                        const timerDisplay = document.getElementById('present-timer-display');
+                        if (timerDisplay) {
+                            const timeEl = timerDisplay.querySelector('div:first-child');
+                            if (timeEl) {
+                                timeEl.textContent = String(minutes).padStart(2, '0') + ':00';
+                            }
+                            const statusEl = timerDisplay.querySelector('div:last-child');
+                            if (statusEl) {
+                                statusEl.textContent = 'remaining';
+                            }
+                            console.log('[INLINE RESTORE] Global timer display updated: ' + minutes + ' minutes');
+                        }
+                    }, 0);
+                }
+            })();
+            </script>
+            
+            <!-- Reset Button Only (Right) -->
+            <div class="flex items-center gap-2 hidden">
+                <button id="reset-present-duration" type="button" class="hidden px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition shadow-md flex items-center gap-2 pointer-events-none" style="display: none !important;">
+                    <i class="fas fa-times"></i> Reset
+                </button>
+            </div>
         </div>
-        <p class="text-sm text-gray-600 mt-1">Monitor today's classes and quickly jump to a course.</p>
     </div>
+    
+    <!-- Combined Control Modal (Timer + Attendance) -->
+    <div id="combinedControlModal" class="fixed inset-0 top-0 left-0 w-full h-full bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[9999] flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-white rounded-lg sm:rounded-2xl shadow-2xl w-full max-w-4xl p-4 sm:p-6 md:p-8 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-start mb-4 sm:mb-6">
+                <h3 class="text-lg sm:text-2xl font-bold flex items-center text-gray-900">
+                    <i class="fas fa-cog w-5 h-5 sm:w-6 sm:h-6 mr-2 text-indigo-600"></i> <span class="hidden sm:inline">Control Center</span><span class="sm:hidden">Control</span>
+                </h3>
+                <button type="button" onclick="closeCombinedControlModal()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75 flex-shrink-0">
+                    <i class="fas fa-times w-5 h-5 sm:w-6 sm:h-6"></i>
+                </button>
+            </div>
+            
+            <!-- Two Column Layout - Stacked on mobile, side-by-side on larger screens -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
+                <!-- LEFT: Timer Setting -->
+                <div class="border-b lg:border-b-0 lg:border-r lg:border-r-2 lg:border-gray-200 pb-4 lg:pb-0 lg:pr-4 sm:lg:pr-8">
+                    <h4 class="text-base sm:text-lg font-semibold text-indigo-600 mb-3 sm:mb-4 flex items-center">
+                        <i class="fas fa-hourglass-start w-4 h-4 sm:w-5 sm:h-5 mr-2"></i> <span class="hidden sm:inline">Set Present Window</span><span class="sm:hidden">Present Time</span>
+                    </h4>
+                    <div class="space-y-3 sm:space-y-4">
+                        <!-- Minutes Input -->
+                        <div>
+                            <label class="block text-xs sm:text-sm font-semibold text-gray-700 mb-2 sm:mb-3">Minutes</label>
+                            <input id="present-minutes-input" type="number" min="0" max="120" step="1" class="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-0 text-center text-base sm:text-lg font-semibold text-gray-900 transition">
+                        </div>
+                        
+                        <!-- Current Timer Display -->
+                        <div class="bg-indigo-50 p-3 sm:p-4 rounded-lg border border-indigo-200">
+                            <p class="text-xs text-indigo-700 font-semibold mb-2">Current Timer:</p>
+                            <p id="timer-preview" class="text-2xl sm:text-3xl font-bold text-indigo-600">00:00</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- RIGHT: Attendance Control -->
+                <div class="pt-4 lg:pt-0 lg:pl-4 sm:lg:pl-8">
+                    <h4 class="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+                        <i class="fas fa-door-open w-4 h-4 sm:w-5 sm:h-5 mr-2"></i> <span class="hidden sm:inline">Attendance Control</span><span class="sm:hidden">Attendance</span>
+                    </h4>
+                    
+                    <div class="space-y-2 sm:space-y-3">
+                        <!-- Closed Option -->
+                        <button id="btn-attendance-closed" type="button" onclick="selectAttendanceStatusCombined('closed')" title="Stop attendance - Students cannot scan" class="w-full px-3 sm:px-4 py-2 sm:py-3 bg-red-100 text-red-800 font-semibold text-sm sm:text-base rounded-lg hover:bg-red-300 transition duration-150 shadow-sm hover:shadow-md flex items-center gap-2 sm:gap-3 border-2 border-red-300 hover:border-red-500 active-attendance-btn" data-status="closed">
+                            <i class="fas fa-lock w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0"></i>
+                            <div class="text-left min-w-0">
+                                <div class="truncate">Closed</div>
+                                <div class="text-xs opacity-75 truncate hidden sm:block">Stop attendance</div>
+                            </div>
+                        </button>
+                        
+                        <!-- Open Option -->
+                        <button id="btn-attendance-open" type="button" onclick="selectAttendanceStatusCombined('open')" title="Open attendance - Students can scan and timer starts" class="w-full px-3 sm:px-4 py-2 sm:py-3 bg-green-100 text-green-800 font-semibold text-sm sm:text-base rounded-lg hover:bg-green-300 transition duration-150 shadow-sm hover:shadow-md flex items-center gap-2 sm:gap-3 border-2 border-green-300 hover:border-green-500 active-attendance-btn" data-status="open">
+                            <i class="fas fa-door-open w-4 h-4 sm:w-5 sm:h-5 text-green-600 flex-shrink-0"></i>
+                            <div class="text-left min-w-0">
+                                <div class="truncate">Open</div>
+                                <div class="text-xs opacity-75 truncate hidden sm:block">Start attendance</div>
+                            </div>
+                        </button>
+                        
+                        <!-- Postponed Option -->
+                        <button id="btn-attendance-postponed" type="button" onclick="selectAttendanceStatusCombined('postponed')" title="Postpone - Temporarily pause attendance" class="w-full px-3 sm:px-4 py-2 sm:py-3 bg-yellow-100 text-yellow-800 font-semibold text-sm sm:text-base rounded-lg hover:bg-yellow-300 transition duration-150 shadow-sm hover:shadow-md flex items-center gap-2 sm:gap-3 border-2 border-yellow-300 hover:border-yellow-500 active-attendance-btn" data-status="postponed">
+                            <i class="fas fa-clock w-4 h-4 sm:w-5 sm:h-5 text-yellow-600 flex-shrink-0"></i>
+                            <div class="text-left min-w-0">
+                                <div class="truncate">Postponed</div>
+                                <div class="text-xs opacity-75 truncate hidden sm:block">Pause attendance</div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Confirm Button at Bottom -->
+            <div class="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-200 flex justify-end gap-2 sm:gap-3">
+                <button type="button" onclick="closeCombinedControlModal()" class="px-4 sm:px-6 py-2 sm:py-3 bg-gray-300 text-gray-800 font-semibold text-sm sm:text-base rounded-lg hover:bg-gray-400 transition duration-150 shadow-md">
+                    <i class="fas fa-times"></i> <span class="hidden sm:inline">Cancel</span>
+                </button>
+                <button type="button" onclick="confirmControlAndClose()" class="px-6 sm:px-8 py-2 sm:py-3 bg-indigo-600 text-white font-semibold text-sm sm:text-base rounded-lg hover:bg-indigo-700 transition duration-150 shadow-md flex items-center gap-2">
+                    <i class="fas fa-check"></i> <span class="hidden sm:inline">Confirm</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Hidden button to store current course info for attendance API -->
+    <button id="attendance-control-btn" 
+            data-course-id="{{ focus_course.id }}"
+            data-schedule-id="{% if focus_course_next_entry and focus_course_next_entry.schedule_id %}{{ focus_course_next_entry.schedule_id }}{% endif %}"
+            data-day-label="{% if focus_course_next_entry and focus_course_next_entry.day_label %}{{ focus_course_next_entry.day_label }}{% endif %}"
+            data-status="{% if focus_course_next_entry and focus_course_next_entry.day_schedule_status %}{{ focus_course_next_entry.day_schedule_status }}{% else %}{{ focus_course.attendance_status|default:'closed' }}{% endif %}"
+            style="display: none;">
+    </button>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-5" style="align-items: start;">
         <div class="bg-white rounded-2xl shadow p-4 border border-gray-100 flex flex-col" style="position: relative; top: 0;">      
-            <h3 class="text-sm font-semibold text-gray-800 mb-3 flex-shrink-0">Quick Pick</h3>
+            <h3 class="text-sm font-semibold text-gray-800 mb-3 flex-shrink-0">My Schedule</h3>
             <div class="space-y-2 overflow-y-auto" style="height: calc(5 * 4.5rem); max-height: calc(5 * 4.5rem);">
                 {% if schedule_entries %}
                     {% for e in schedule_entries %}
-                          <a href="{% if e.status == 'finished' or e.status == 'ended' %}{% url 'dashboard:instructor_attendance_reports' %}?course={{ e.course_id }}&section={{ e.section }}&date={% if e.start_dt %}{{ e.start_dt|date:'Y-m-d' }}{% else %}{{ e.date_label }}{% endif %}{% else %}?course={{ e.course_id }}&schedule={{ e.schedule_id }}{% endif %}" 
+                          <a href="#" 
+                       onclick="return switchScheduleWithLoading(event, '{{ e.course_id }}', '{{ e.schedule_id }}')"
                        class="quick-pick-item flex items-center justify-between p-3 rounded-xl border transition border-gray-200 no-underline hover:no-underline flex-shrink-0 {% if focus_course_next_entry and focus_course_next_entry.schedule_id == e.schedule_id %}border-indigo-500 bg-indigo-50 shadow-md{% else %}hover:border-indigo-300 hover:bg-indigo-50/40{% endif %}"
                        data-course-id="{{ e.course_id }}"
-                       data-schedule-id="{{ e.schedule_id }}">
+                       data-schedule-id="{{ e.schedule_id }}"
+                       data-status="{{ e.status }}"
+                       data-attendance-date="{% if e.start_dt %}{{ e.start_dt|date:'Y-m-d' }}{% endif %}">
                         <div class="min-w-0">
                             {% if e.section %}
                             <p class="mb-1">
@@ -108,106 +1365,54 @@
                 <h3 class="text-sm font-semibold text-gray-800">Monitoring</h3>
                 <div class="flex items-center gap-2">
                     {% if focus_course %}
-                    <span class="px-2 py-1 rounded-lg text-xs font-semibold text-white" style="background-color: {{ focus_course.color|default:'#3C4770' }};">
-                        Section {{ focus_course.section|default:'—' }}
-                    </span>
-                    <a href="{% url 'dashboard:instructor_courses' %}?edit_course={{ focus_course.id }}" 
-                       class="px-3 py-1.5 bg-amber-600 text-white text-xs font-semibold rounded-lg hover:bg-amber-700 transition duration-150 shadow-sm flex items-center gap-1">
-                        <i class="fas fa-edit text-xs"></i> Edit
-                    </a>
+                    <!-- Attendance Status Badge -->
+                    {% with current_attendance=focus_course_next_entry.day_schedule_status|default:focus_course.attendance_status %}
+                        {% if current_attendance == 'open' %}
+                            <span class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-green-500 shadow-sm">● Open</span>
+                        {% elif current_attendance == 'closed' %}
+                            <span class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-500 shadow-sm">● Closed</span>
+                        {% elif current_attendance == 'postponed' %}
+                            <span class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-yellow-500 shadow-sm">● Postponed</span>
+                        {% else %}
+                            <span class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-gray-500 shadow-sm">● —</span>
+                        {% endif %}
+                    {% endwith %}
                     {% endif %}
                 </div>
             </div>
                 <div class="space-y-3 flex-1 overflow-y-auto" style="min-height: 0;">
                 {% if focus_course %}
-                <!-- Attendance Control Dropdown -->
-                <div class="flex items-center gap-2 mb-2">
-                    <label class="text-xs font-semibold text-gray-700">Attendance Control{% if focus_course_next_entry and focus_course_next_entry.day_label %}: {{ focus_course_next_entry.day_label }}{% endif %}:</label>
-                    <select id="attendance-control" 
-                            data-course-id="{{ focus_course.id }}"
-                            data-schedule-id="{% if focus_course_next_entry and focus_course_next_entry.schedule_id %}{{ focus_course_next_entry.schedule_id }}{% endif %}"
-                            data-day-label="{% if focus_course_next_entry and focus_course_next_entry.day_label %}{{ focus_course_next_entry.day_label }}{% endif %}"
-                            class="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                        {% if focus_course_next_entry and focus_course_next_entry.day_schedule_status %}
-                            <option value="closed" {% if focus_course_next_entry.day_schedule_status == 'closed' or not focus_course_next_entry.day_schedule_status %}selected{% endif %}>Closed Attendance</option>
-                            <option value="open" {% if focus_course_next_entry.day_schedule_status == 'open' %}selected{% endif %}>Open Attendance</option>
-                            <option value="postponed" {% if focus_course_next_entry.day_schedule_status == 'postponed' %}selected{% endif %}>Postponed</option>
-                        {% else %}
-                            <option value="closed" {% if focus_course.attendance_status == 'closed' or not focus_course.attendance_status %}selected{% endif %}>Closed Attendance</option>
-                            <option value="open" {% if focus_course.attendance_status == 'open' %}selected{% endif %}>Open Attendance</option>
-                            <option value="postponed" {% if focus_course.attendance_status == 'postponed' %}selected{% endif %}>Postponed</option>
-                        {% endif %}
-                    </select>
-                    <div class="ml-2 flex items-end gap-2">
-                        <div id="active-window-display" class="text-xs font-semibold text-indigo-600 min-w-12 text-center hidden">
-                            <div class="text-sm font-bold"><span id="window-time">—</span> mins</div>
-                        </div>
-                        <div>
-                            <label class="text-xs text-gray-600 block">Present window (min)</label>
-                            <input id="sidebarPresentDuration" type="number" min="1" step="1" class="w-16 px-2 py-1 text-xs border border-gray-300 rounded-lg" placeholder="e.g. 20" value="{% if focus_course_next_entry and focus_course_next_entry.attendance_present_duration %}{{ focus_course_next_entry.attendance_present_duration }}{% elif focus_course.attendance_present_duration %}{{ focus_course.attendance_present_duration }}{% endif %}">
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <button id="confirm-present-duration" type="button" class="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition duration-150 shadow-sm">Confirm</button>
-                            <button id="reset-present-duration" type="button" onclick="instructorResetPresentWindow(event)" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">Reset</button>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="p-3 rounded-xl border border-gray-200" style="background-color: {{ focus_course.color|default:'#3C4770' }};">
-                    <div class="flex items-center justify-between gap-3">
-                        <p class="text-xs text-white font-semibold">Room: {{ focus_course.room|default:'TBA' }}</p>
-                        {% if focus_course_next_entry %}
-                        <p class="text-[11px] text-white font-semibold whitespace-nowrap">{{ focus_course_next_entry.date_label }}</p>
-                        {% endif %}
-                    </div>
-                    <div class="flex items-center justify-between gap-3">
-                        <p class="text-xs text-white font-semibold">Semester: {{ focus_course.semester|default:'—' }} • SY: {{ focus_course.school_year|default:'—' }}</p>
-                        {% if focus_course_next_entry %}
-                        <p class="text-[11px] text-white font-semibold whitespace-nowrap">{{ focus_course_next_entry.time_label }}</p>
-                        {% endif %}
-                    </div>
-                </div>
                 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div class="p-4 rounded-xl border border-gray-200">
-                        <p class="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">STUDENT SCANNED</p>
+                        <p class="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">STUDENT ATTENDED</p>
                         <p id="student-scanned-count" class="text-2xl font-bold text-gray-900">{{ today_attendance_count|default:0 }}</p>
-                        <p class="text-xs text-gray-500 mt-1">Students attended today</p>
                     </div>
                     <div class="p-4 rounded-xl border border-gray-200">
                         <p class="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Total Enrolled</p>
                         <p class="text-2xl font-bold text-gray-900">{{ enrolled_students|length|default:0 }}</p>
-                        <p class="text-xs text-gray-500 mt-1">Students enrolled</p>
                     </div>
-                </div>                <div class="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                </div>                <div class="flex items-center justify-center py-3">
                     {% comment %} Determine effective attendance status: prefer schedule/day-specific status when available {% endcomment %}
                     {% with current_attendance=focus_course_next_entry.day_schedule_status|default:focus_course.attendance_status %}
-                    <div class="flex items-center justify-between mb-2">
-                        <div class="flex items-center gap-2">
-                            <i class="fas fa-camera text-blue-600"></i>
-                            <span class="text-xs font-semibold text-gray-700">Scan Student ID</span>
-                        </div>
                         {% if focus_course and current_attendance == 'open' %}
                             <button 
+                                type="button"
                                 data-course-id="{{ focus_course.id }}" 
                                 data-course-code="{{ focus_course.code|escapejs }}" 
                                 data-course-name="{{ focus_course.name|escapejs }}" 
                                 data-section="{{ focus_course.section }}"
                                 data-schedule-id="{% if focus_course_next_entry and focus_course_next_entry.schedule_id %}{{ focus_course_next_entry.schedule_id }}{% endif %}"
-                                class="open-instructor-scanner px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition duration-150 shadow-sm flex items-center gap-1">
-                                <i class="fas fa-camera text-xs"></i> Scan
+                                class="open-instructor-scanner px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition duration-150 shadow-md flex items-center gap-2"
+                                onclick="startUnifiedScan(this)">
+                                <i class="fas fa-id-card text-lg"></i>
+                                <span>Scan Student ID</span>
                             </button>
                         {% else %}
-                            <button disabled class="px-3 py-1.5 bg-gray-400 text-white text-xs font-semibold rounded-lg cursor-not-allowed shadow-sm flex items-center gap-1 opacity-60">
-                                <i class="fas fa-lock text-xs"></i> Scan
+                            <button disabled type="button" class="px-4 py-3 bg-gray-400 text-white font-semibold rounded-lg cursor-not-allowed shadow-md opacity-60">
+                                <i class="fas fa-lock text-lg"></i>
                             </button>
                         {% endif %}
-                    </div>
-                    {% if focus_course and current_attendance == 'open' %}
-                        <p class="text-[10px] text-gray-600 text-center">Open camera to scan student school ID for attendance</p>
-                    {% else %}
-                        <p class="text-[10px] text-yellow-600 text-center font-semibold">⚠️ Attendance is currently CLOSED. Open it to enable scanning.</p>
-                    {% endif %}
                     {% endwith %}
                 </div>
                 
@@ -305,6 +1510,8 @@
         </div>
     </div>
 </div>
+
+
 
 <!-- Instructor School ID Scanner Modal -->
 <div id="instructorSchoolIDScannerModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[9999] flex items-center justify-center p-4">
@@ -1163,22 +2370,6 @@ function confirmAttendanceStatusChange() {
                     if (data.updated_status === 'open') {
                         // enable scan elements for this course/schedule before reload
                         try { enableScanForCourse(courseId, requestBody.schedule_id || ''); } catch (e) { console.warn('enableScanForCourse failed', e); }
-
-                        // Update the small helper message in the Scan block so the UI reflects 'open' immediately
-                        try {
-                            const p3Blocks = Array.from(document.querySelectorAll('.p-3'));
-                            for (const b of p3Blocks) {
-                                if (b.textContent && b.textContent.includes('Scan Student ID')) {
-                                    // find the message paragraph (the small info/warning paragraph)
-                                    const msg = b.querySelector('p.text-[10px]');
-                                    if (msg) {
-                                        msg.textContent = 'Open camera to scan student school ID for attendance';
-                                        msg.className = 'text-[10px] text-gray-600 text-center';
-                                    }
-                                    break;
-                                }
-                            }
-                        } catch (e) { console.warn('Failed to update Scan block message', e); }
                     }
                 } catch (e) { console.warn('Error while attempting to enable scan button', e); }
                 // Reload after a short delay to show updated status
@@ -1209,7 +2400,10 @@ function confirmAttendanceStatusChange() {
     }
 }
 
-// Instructor School ID Scanner
+// Instructor School ID Scanner - WRAP IN SCRIPT TAG
+</script>
+<script>
+// Instructor School ID Scanner Functions (now properly in script tag)
 let instructorSchoolIDScanner = null;
 
 window.openInstructorSchoolIDScanner = function(courseId, courseCode, courseName, section, scheduleId) {
@@ -1661,8 +2855,10 @@ window.closeStudentsListModal = function() {
         console.error('Error closing Students List modal:', error);
     }
 };
+</script>
 
-// Quick Pick Active State Management
+<script>
+// My Schedule Active State Management - Auto-select first class on page load
 (function() {
     // Get the current schedule ID from URL (not just course ID)
     const urlParams = new URLSearchParams(window.location.search);
@@ -1698,6 +2894,18 @@ window.closeStudentsListModal = function() {
                 item.classList.add('hover:border-indigo-300', 'hover:bg-indigo-50/40');
             }
         });
+    } else {
+        // Auto-select and auto-click first class schedule if no URL parameters
+        const quickPickItems = document.querySelectorAll('.quick-pick-item');
+        if (quickPickItems.length > 0) {
+            const firstItem = quickPickItems[0];
+            firstItem.classList.add('border-indigo-500', 'bg-indigo-50', 'shadow-md');
+            firstItem.classList.remove('hover:border-indigo-300', 'hover:bg-indigo-50/40');
+            // Auto-click the first item to load it
+            setTimeout(function() {
+                firstItem.click();
+            }, 100);
+        }
     }
     
     // Add click handlers to maintain active state
@@ -1712,6 +2920,12 @@ window.closeStudentsListModal = function() {
             // Add active state to clicked item only
             this.classList.add('border-indigo-500', 'bg-indigo-50', 'shadow-md');
             this.classList.remove('hover:border-indigo-300', 'hover:bg-indigo-50/40');
+            
+            // Restore timer display after schedule switch using global function
+            setTimeout(function() {
+                console.log('[SCHEDULE CLICK] Restoring timer display after schedule switch');
+                restoreTimerDisplay();
+            }, 100);
         });
     });
 })();
@@ -1719,13 +2933,71 @@ window.closeStudentsListModal = function() {
 // Attach event listeners to replace inline onclick/onchange handlers (ensures functions are available)
 document.addEventListener('DOMContentLoaded', function() {
     try {
+        // Add event listener to update timer preview when minutes input changes
+        const minutesInput = document.getElementById('present-minutes-input');
+        if (minutesInput) {
+            minutesInput.addEventListener('input', function() {
+                updateTimerPreview();
+            });
+        }
+        
+        // Add click handlers to schedule items (quick-pick-items) to capture which schedule was clicked
+        const scheduleItems = document.querySelectorAll('.quick-pick-item');
+        scheduleItems.forEach(item => {
+            item.addEventListener('click', function(e) {
+                console.log('[SCHEDULE SELECT] Schedule item clicked');
+                
+                // Extract course and schedule data
+                const courseId = this.getAttribute('data-course-id');
+                const scheduleId = this.getAttribute('data-schedule-id');
+                
+                console.log('[SCHEDULE SELECT] CourseId:', courseId, 'ScheduleId:', scheduleId);
+                
+                // Update the hidden attendance button with the current schedule context
+                const attendanceBtn = document.getElementById('attendance-control-btn');
+                if (attendanceBtn) {
+                    attendanceBtn.setAttribute('data-course-id', courseId);
+                    attendanceBtn.setAttribute('data-schedule-id', scheduleId || '');
+                    
+                    // Get status from the page data if available
+                    // Look for monitoring section that has current status for this schedule
+                    const monitoringSection = document.querySelector('[data-focus-course-id="' + courseId + '"]');
+                    let status = 'closed'; // default to closed status
+                    let dayLabel = '';
+                    
+                    // Try to find status from the monitoring display or course data
+                    const courseEl = document.querySelector('[data-course-id="' + courseId + '"][data-schedule-id="' + scheduleId + '"]');
+                    if (courseEl) {
+                        const foundStatus = courseEl.getAttribute('data-status');
+                        if (foundStatus) status = foundStatus;
+                        const foundDay = courseEl.getAttribute('data-day-label');
+                        if (foundDay) dayLabel = foundDay;
+                    }
+                    
+                    attendanceBtn.setAttribute('data-status', status);
+                    if (dayLabel) attendanceBtn.setAttribute('data-day-label', dayLabel);
+                    
+                    console.log('[SCHEDULE SELECT] Updated attendance button - courseId:', courseId, 'scheduleId:', scheduleId, 'status:', status);
+                }
+                
+                // Store in window for modal functions to use
+                window.currentCourseId = courseId;
+                window.currentScheduleId = scheduleId;
+                
+                console.log('[SCHEDULE SELECT] Stored in window:', { courseId, scheduleId });
+            });
+        });
+        
         // Initialize active present window display if value exists
         const inputVal = document.getElementById('sidebarPresentDuration')?.value;
         if (inputVal && inputVal > 0) {
             const activeDisplay = document.getElementById('active-window-display');
             const windowTime = document.getElementById('window-time');
             if (activeDisplay && windowTime) {
-                windowTime.textContent = inputVal;
+                // Convert minutes to MM:SS format
+                const mins = Math.floor(inputVal / 60);
+                const secs = inputVal % 60;
+                windowTime.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
                 activeDisplay.classList.remove('hidden');
             }
         }
@@ -1804,33 +3076,86 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
-        // Attach listener to scanner buttons
-        document.querySelectorAll('.open-instructor-scanner').forEach(function(btn) {
-            if (btn.dataset.listenerAttached === 'true') return;
-            btn.addEventListener('click', function(e) {
-                let courseId = btn.getAttribute('data-course-id');
-                const courseCode = btn.getAttribute('data-course-code');
-                const courseName = btn.getAttribute('data-course-name');
-                const section = btn.getAttribute('data-section');
-                const scannerScheduleId = btn.getAttribute('data-schedule-id');
-                
-                // Extract numeric course ID if it contains composite key like "73_F_20251212"
-                if (courseId && courseId.includes('_')) {
-                    courseId = courseId.split('_')[0];
+        // Attach listener to scanner buttons with robust error handling
+        const attachScannerListeners = function() {
+            document.querySelectorAll('.open-instructor-scanner').forEach(function(btn) {
+                if (btn.dataset.listenerAttached === 'true') {
+                    console.log('[CAMERA BUTTON] Listener already attached to button:', btn.getAttribute('data-course-id'));
+                    return;
                 }
                 
-                // Store course/schedule IDs globally for Early/Late buttons
-                window.lastScannedCourseId = courseId;
-                window.lastScannedScheduleId = scannerScheduleId;
+                btn.addEventListener('click', function(e) {
+                    console.log('[CAMERA BUTTON] Click event fired');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    let courseId = btn.getAttribute('data-course-id');
+                    const courseCode = btn.getAttribute('data-course-code') || '';
+                    const courseName = btn.getAttribute('data-course-name') || '';
+                    const section = btn.getAttribute('data-section') || '';
+                    const scannerScheduleId = btn.getAttribute('data-schedule-id') || '';
+                    
+                    console.log('[CAMERA BUTTON] Button data - courseId:', courseId, 'courseCode:', courseCode, 'scheduleId:', scannerScheduleId);
+                    
+                    // Validate course ID
+                    if (!courseId) {
+                        console.error('[CAMERA BUTTON] No courseId found in button attributes');
+                        alert('Course ID not found. Please select a class first.');
+                        return false;
+                    }
+                    
+                    // Extract numeric course ID if it contains composite key like "73_F_20251212"
+                    if (courseId && courseId.includes('_')) {
+                        courseId = courseId.split('_')[0];
+                    }
+                    
+                    // Store course/schedule IDs globally for Early/Late buttons
+                    window.lastScannedCourseId = courseId;
+                    window.lastScannedScheduleId = scannerScheduleId;
+                    
+                    console.log('[CAMERA BUTTON] Opening scanner with courseId:', courseId, 'courseCode:', courseCode);
+                    
+                    // Check if scanner function exists
+                    if (typeof window.openInstructorSchoolIDScanner === 'function') {
+                        console.log('[CAMERA BUTTON] openInstructorSchoolIDScanner found, calling now...');
+                        try {
+                            window.openInstructorSchoolIDScanner(courseId, courseCode, courseName, section, scannerScheduleId);
+                            console.log('[CAMERA BUTTON] Scanner opened successfully');
+                        } catch (err) {
+                            console.error('[CAMERA BUTTON] Error calling scanner function:', err);
+                            alert('Error opening scanner: ' + err.message);
+                        }
+                    } else {
+                        console.warn('[CAMERA BUTTON] openInstructorSchoolIDScanner NOT defined');
+                        alert('Scanner not yet available. Please wait a moment and try again.');
+                    }
+                    
+                    return false;
+                }, false);
                 
-                if (typeof window.openInstructorSchoolIDScanner === 'function') {
-                    window.openInstructorSchoolIDScanner(courseId, courseCode, courseName, section, scannerScheduleId);
-                } else {
-                    console.warn('openInstructorSchoolIDScanner not defined yet');
-                }
+                btn.dataset.listenerAttached = 'true';
+                console.log('[CAMERA BUTTON] Listener attached to course:', btn.getAttribute('data-course-id'));
             });
-            btn.dataset.listenerAttached = 'true';
-        });
+        };
+        
+        // Attach listeners immediately
+        console.log('[CAMERA BUTTON] Attaching listeners on page load');
+        attachScannerListeners();
+        
+        // Re-check and attach after a slight delay to catch dynamically added buttons
+        setTimeout(() => {
+            console.log('[CAMERA BUTTON] Checking for new buttons after 500ms');
+            attachScannerListeners();
+        }, 500);
+        
+        // Re-attach listeners for dynamically added buttons
+        if (typeof MutationObserver !== 'undefined') {
+            const observer = new MutationObserver(() => {
+                console.log('[CAMERA BUTTON] DOM mutation detected, re-attaching listeners');
+                attachScannerListeners();
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
         
         // Attach listener to Present Duration confirm button — show modal instead of prompt
         const confirmPresentBtn = document.getElementById('confirm-present-duration');
@@ -1842,6 +3167,23 @@ document.addEventListener('DOMContentLoaded', function() {
                     alert('Please enter a valid present window duration (minimum 1 minute)');
                     return;
                 }
+                
+                // Get course ID - try attendance-control first, then fallback to first course link
+                let courseId = document.getElementById('attendance-control')?.getAttribute('data-course-id') || '';
+                if (!courseId) {
+                    // Try to get first course from the schedule list
+                    const firstCourseLink = document.querySelector('a[onclick*="loadCourse"]');
+                    if (firstCourseLink) {
+                        const match = firstCourseLink.getAttribute('onclick')?.match(/loadCourse\((\d+)/);
+                        if (match && match[1]) courseId = match[1];
+                    }
+                }
+                
+                if (!courseId) {
+                    alert('Please select a class first or wait for the page to load');
+                    return;
+                }
+                
                 // Ensure attendance is OPEN before showing modal
                 const currentControl = document.getElementById('attendance-control');
                 const currentStatus = currentControl ? currentControl.value : null;
@@ -1889,7 +3231,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         }).then(r => r.json()).then(data => {
                             if (data.success) {
                                 const activeDisplay = document.getElementById('active-window-display'); if (activeDisplay) activeDisplay.classList.remove('hidden');
-                                if (typeof showNotification === 'function') showNotification('Present window updated to ' + inputVal + ' minutes', 'success');
+                                if (typeof showNotification === 'function') showNotification('Present window set to ' + inputVal + ' minutes for ALL your classes', 'success');
                                 try {
                                     // Keep full course/schedule identifiers to ensure schedule-specific keys
                                     const keyCourseId = courseId;
@@ -2135,56 +3477,82 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch (e) { console.warn('Reset attach fallback failed', e); }
 });
 </script>
-{% endblock %}
 
 <script>
 // Inline handlers used by Reset buttons to guarantee click handling
 function instructorResetPresentWindow(e) {
     try {
         e && e.preventDefault();
-        // Determine course/schedule with multiple fallbacks so reset works even if inputs are missing
-        const attendanceControl = document.getElementById('attendance-control');
-        let courseId = attendanceControl?.getAttribute('data-course-id') || '';
-        let scheduleId = attendanceControl?.getAttribute('data-schedule-id') || '';
-        // fallback to hidden inputs if present
-        if (!courseId) courseId = document.getElementById('reset-present-course-id')?.value || '';
-        if (!scheduleId) scheduleId = document.getElementById('reset-present-schedule-id')?.value || '';
-        // final fallback: template-provided focus_course id
-        if (!courseId) courseId = '{{ focus_course.id }}' || '';
-        if (!scheduleId) scheduleId = scheduleId || 'none';
-        // show modal if available
-        const modal = document.getElementById('resetPresentModal');
-        if (modal) {
-            try { document.getElementById('reset-present-course-id').value = courseId; } catch(e) {}
-            try { document.getElementById('reset-present-schedule-id').value = scheduleId; } catch(e) {}
-            modal.classList.remove('hidden');
+        // Get course ID
+        let courseId = document.getElementById('attendance-control-btn')?.getAttribute('data-course-id') || '';
+        if (!courseId) {
+            const firstCourseLink = document.querySelector('a[onclick*="loadCourse"]');
+            if (firstCourseLink) {
+                const match = firstCourseLink.getAttribute('onclick')?.match(/loadCourse\((\d+)/);
+                if (match && match[1]) courseId = match[1];
+            }
+        }
+        
+        if (!courseId) {
+            alert('Please select a class first or wait for the page to load');
             return;
         }
-        // Quick fallback: perform reset immediately
-        if (!confirm('Reset present window for this schedule?')) return;
-        const key = getPresentKey(courseId, scheduleId);
+        
+        if (!confirm('Reset the present window for this class?')) return;
+        
         fetch('{% url "dashboard:instructor_update_attendance_status" 0 %}'.replace('0', courseId), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': '{{ csrf_token }}'
             },
-            body: JSON.stringify({ status: 'open', present_duration: 0, schedule_id: scheduleId || null })
+            body: JSON.stringify({ status: 'open', present_duration: 0 })
         }).then(r => r.json()).then(data => {
             if (data.success) {
-                stopPresentCountdownForKey(key);
-                try {
-                    for (let i = localStorage.length - 1; i >= 0; i--) {
-                        const k = localStorage.key(i);
-                        if (k && k.startsWith(`present_window_expiry_${courseId}_`)) localStorage.removeItem(k);
+                // Clear the PER-COURSE countdown state (but keep global duration)
+                localStorage.removeItem(`present_window_started_${courseId}`);
+                localStorage.removeItem(`present_window_start_time_${courseId}`);
+                localStorage.removeItem(`present_window_expiry_time_${courseId}`);
+                console.log('[RESET] Cleared countdown state for course', courseId);
+                
+                // Clear input field
+                const input = document.getElementById('sidebarPresentDuration');
+                if (input) input.value = '';
+                
+                // Hide active window display and circle
+                const activeDisplay = document.getElementById('active-window-display');
+                if (activeDisplay) activeDisplay.classList.add('hidden');
+                
+                document.getElementById('present-circle-container').classList.add('hidden');
+                document.getElementById('reset-present-duration').classList.add('hidden');
+                
+                if (typeof showNotification === 'function') {
+                    showNotification('Present window countdown stopped for this class', 'success');
+                } else {
+                    alert('Present window countdown stopped for this class');
+                }
+                
+                // Stop all active countdowns
+                if (window.presentCountdownTimers) {
+                    for (const key in window.presentCountdownTimers) {
+                        stopPresentCountdownForKey(key);
                     }
-                } catch (e) { console.warn('localStorage cleanup failed', e); }
-                const activeDisplay = document.getElementById('active-window-display'); if (activeDisplay) activeDisplay.classList.add('hidden');
-                if (typeof showNotification === 'function') showNotification('Present window reset for this schedule', 'success');
+                }
             } else {
-                if (typeof showNotification === 'function') showNotification(data.message || 'Error resetting present window', 'error'); else alert(data.message || 'Error resetting present window');
+                if (typeof showNotification === 'function') {
+                    showNotification(data.message || 'Error resetting present window', 'error');
+                } else {
+                    alert(data.message || 'Error resetting present window');
+                }
             }
-        }).catch(err => { console.error('Error resetting present window:', err); if (typeof showNotification === 'function') showNotification('Error resetting present window', 'error'); else alert('Error resetting present window'); });
+        }).catch(err => {
+            console.error('Error resetting present window:', err);
+            if (typeof showNotification === 'function') {
+                showNotification('Error resetting present window', 'error');
+            } else {
+                alert('Error resetting present window');
+            }
+        });
     } catch (err) { console.error('instructorResetPresentWindow error', err); }
 }
 
@@ -2222,5 +3590,439 @@ function instructorResetPresentWindowConfirm(e) {
         }).catch(err => { console.error('Error resetting present window:', err); if (typeof showNotification === 'function') showNotification('Error resetting present window', 'error'); else alert('Error resetting present window'); });
     } catch (err) { console.error('instructorResetPresentWindowConfirm error', err); }
 }
+
+function instructorResetPresentWindowConfirm(e) {
+    try {
+        e && e.preventDefault();
+        // Accept course/schedule from hidden inputs or fall back to template value so confirm works even if initial setup missing
+        let courseId = document.getElementById('reset-present-course-id')?.value || '';
+        let scheduleId = document.getElementById('reset-present-schedule-id')?.value || '';
+        if (!courseId) courseId = '{{ focus_course.id }}' || '';
+        if (!scheduleId) scheduleId = 'none';
+        const key = getPresentKey(courseId, scheduleId);
+        fetch('{% url "dashboard:instructor_update_attendance_status" 0 %}'.replace('0', courseId), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ status: 'open', present_duration: 0, schedule_id: scheduleId || null })
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                stopPresentCountdownForKey(key);
+                try {
+                    for (let i = localStorage.length - 1; i >= 0; i--) {
+                        const k = localStorage.key(i);
+                        if (k && k.startsWith(`present_window_expiry_${courseId}_`)) localStorage.removeItem(k);
+                    }
+                } catch (e) { console.warn('localStorage cleanup failed', e); }
+                const activeDisplay = document.getElementById('active-window-display'); if (activeDisplay) activeDisplay.classList.add('hidden');
+                if (typeof showNotification === 'function') showNotification('Present window reset for this schedule', 'success');
+                const modal = document.getElementById('resetPresentModal'); if (modal) modal.classList.add('hidden');
+            } else {
+                if (typeof showNotification === 'function') showNotification(data.message || 'Error resetting present window', 'error'); else alert(data.message || 'Error resetting present window');
+            }
+        }).catch(err => { console.error('Error resetting present window:', err); if (typeof showNotification === 'function') showNotification('Error resetting present window', 'error'); else alert('Error resetting present window'); });
+    } catch (err) { console.error('instructorResetPresentWindowConfirm error', err); }
+}
+
+function startPresentWindowCountdown() {
+    if (!window.presentWindowDuration) {
+        alert('Please set a duration first');
+        return;
+    }
+    
+    const attendanceControl = document.getElementById('attendance-control');
+    let courseId = attendanceControl?.getAttribute('data-course-id') || '';
+    if (!courseId) {
+        const firstCourseLink = document.querySelector('a[onclick*="loadCourse"]');
+        if (firstCourseLink) {
+            const match = firstCourseLink.getAttribute('onclick')?.match(/loadCourse\((\d+)/);
+            if (match && match[1]) courseId = match[1];
+        }
+    }
+    
+    if (!courseId) {
+        alert('Please select a class first');
+        return;
+    }
+    
+    // Start the countdown with the stored duration (in minutes for API)
+    const durationMinutes = Math.ceil(window.presentWindowDuration / 60);
+    
+    fetch('{% url "dashboard:instructor_update_attendance_status" 0 %}'.replace('0', courseId), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({ status: 'open', present_duration: durationMinutes })
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            startCircleCountdown(window.presentWindowDuration);
+            if (typeof showNotification === 'function') {
+                showNotification('Present window started!', 'success');
+            }
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification(data.message || 'Error starting present window', 'error');
+            }
+        }
+    }).catch(err => {
+        console.error('Error starting present window:', err);
+        if (typeof showNotification === 'function') {
+            showNotification('Error starting present window', 'error');
+        }
+    });
+}
+
+function startCircleCountdownForSchedule(durationSeconds, courseId, scheduleId) {
+    console.log('[COUNTDOWN SCHEDULE] Starting countdown for courseId:', courseId, 'scheduleId:', scheduleId, 'duration:', durationSeconds);
+    
+    if (!courseId || !scheduleId) {
+        console.error('[COUNTDOWN SCHEDULE] Missing courseId or scheduleId');
+        return;
+    }
+    
+    // Show timer display container (reset button is now hidden)
+    const timerContainer = document.getElementById('present-circle-container');
+    if (timerContainer) {
+        timerContainer.classList.remove('hidden');
+    }
+    // Reset button is no longer shown - removed per user request
+    
+    // Save countdown state PER-COURSE-SCHEDULE (which specific class currently has countdown active)
+    const startTime = Date.now();
+    const key = `present_window_started_${courseId}_${scheduleId}`;
+    const expiryKey = `present_window_expiry_${courseId}_${scheduleId}`;
+    const expiry = startTime + (durationSeconds * 1000);
+    
+    localStorage.setItem(key, 'true');
+    localStorage.setItem(`present_window_start_time_${courseId}_${scheduleId}`, startTime);
+    localStorage.setItem(expiryKey, expiry);
+    localStorage.setItem('present_window_active_course', courseId);
+    localStorage.setItem('present_window_active_schedule', scheduleId);
+    console.log('[COUNTDOWN SCHEDULE] Stored state in localStorage for', key);
+    
+    let remainingSeconds = durationSeconds;
+    const timerDisplay = document.getElementById('present-timer-display');
+    
+    function updateDisplay() {
+        const minutes = Math.floor(remainingSeconds / 60);
+        const seconds = remainingSeconds % 60;
+        
+        const timerEl = document.getElementById('present-timer-display');
+        if (timerEl) {
+            const displayEl = timerEl.querySelector('.text-2xl');
+            const statusEl = timerEl.querySelector('.text-xs');
+            if (displayEl) displayEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            if (statusEl) statusEl.textContent = 'active';
+        }
+    }
+    
+    updateDisplay();
+    
+    const interval = setInterval(() => {
+        remainingSeconds--;
+        updateDisplay();
+        
+        if (remainingSeconds <= 0) {
+            clearInterval(interval);
+            // Change status to expired
+            const timerEl = document.getElementById('present-timer-display');
+            if (timerEl) {
+                const statusEl = timerEl.querySelector('.text-xs');
+                if (statusEl) statusEl.textContent = 'expired';
+            }
+            
+            // Update localStorage to mark as expired for this schedule
+            localStorage.setItem(key, 'false');
+            console.log('[COUNTDOWN SCHEDULE] Expired for courseId:', courseId, 'scheduleId:', scheduleId);
+            
+            if (typeof showNotification === 'function') {
+                showNotification('Present window expired', 'info');
+            }
+        }
+    }, 1000);
+}
+
+function startCircleCountdown(durationSeconds, courseId, scheduleId) {
+    console.log('===== [COUNTDOWN] STARTING COUNTDOWN =====');
+    console.log('[COUNTDOWN] Called with - durationSeconds:', durationSeconds, 'courseId:', courseId, 'scheduleId:', scheduleId);
+    
+    // Get current course ID if not provided
+    if (!courseId) {
+        const attendanceBtn = document.getElementById('attendance-control-btn');
+        courseId = attendanceBtn ? attendanceBtn.getAttribute('data-course-id') : null;
+        console.log('[COUNTDOWN] Got courseId from button:', courseId);
+    }
+    
+    // Get schedule ID if not provided
+    if (!scheduleId) {
+        const attendanceBtn = document.getElementById('attendance-control-btn');
+        scheduleId = attendanceBtn ? attendanceBtn.getAttribute('data-schedule-id') : null;
+        console.log('[COUNTDOWN] Got scheduleId from button:', scheduleId);
+    }
+    
+    if (!courseId) {
+        console.error('[COUNTDOWN] Course ID not available - cannot start countdown');
+        return;
+    }
+    
+    console.log('[COUNTDOWN] Using courseId:', courseId, 'scheduleId:', scheduleId);
+    
+    // Build unique key for this specific course/schedule combination
+    const countdownKey = `present_window_started_${courseId}_${scheduleId || 'none'}`;
+    const expiryKey = `present_window_expiry_${courseId}_${scheduleId || 'none'}`;
+    
+    console.log('[COUNTDOWN] Keys will be:', countdownKey, expiryKey);
+    
+    // Show timer display container and reset button
+    console.log('[COUNTDOWN] Finding timer container...');
+    const timerContainer = document.getElementById('present-circle-container');
+    console.log('[COUNTDOWN] Container element found:', !!timerContainer);
+    if (timerContainer) {
+        console.log('[COUNTDOWN] Current classes on container:', timerContainer.className);
+        timerContainer.classList.remove('hidden');
+        console.log('[COUNTDOWN] After removing hidden, classes:', timerContainer.className);
+        console.log('[COUNTDOWN] Timer container is now visible');
+    } else {
+        console.error('[COUNTDOWN] CRITICAL ERROR: Timer container element not found!');
+    }
+    
+    // Reset button is now hidden - removed per user request
+    
+    // Save countdown state PER-COURSE-SCHEDULE
+    const startTime = Date.now();
+    localStorage.setItem(countdownKey, 'true');
+    localStorage.setItem(`present_window_start_time_${courseId}_${scheduleId || 'none'}`, startTime);
+    localStorage.setItem(expiryKey, startTime + (durationSeconds * 1000));
+    localStorage.setItem('present_window_active_course', courseId);
+    if (scheduleId) {
+        localStorage.setItem('present_window_active_schedule', scheduleId);
+    }
+    console.log('[COUNTDOWN] Stored in localStorage - key:', countdownKey, 'value: true');
+    console.log('[COUNTDOWN] Stored in localStorage - expiryKey:', expiryKey, 'expiry:', startTime + (durationSeconds * 1000));
+    console.log('[COUNTDOWN] Started for course', courseId, 'schedule', scheduleId, '- duration:', durationSeconds, 'seconds');
+    
+    let remainingSeconds = durationSeconds;
+    const totalSeconds = durationSeconds;
+    const timerDisplay = document.getElementById('present-timer-display');
+    
+    // Store the interval ID so we can clear any previous intervals
+    if (window.currentCountdownInterval) {
+        clearInterval(window.currentCountdownInterval);
+        console.log('[COUNTDOWN] Cleared previous countdown interval');
+    }
+    
+    function updateDisplay() {
+        const minutes = Math.floor(remainingSeconds / 60);
+        const seconds = remainingSeconds % 60;
+        const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        
+        const displayEl = document.getElementById('present-timer-display');
+        if (displayEl) {
+            const timeEl = displayEl.querySelector('.text-2xl');
+            const statusEl = displayEl.querySelector('.text-xs');
+            if (timeEl) {
+                const newText = timeStr;
+                if (timeEl.textContent !== newText) {
+                    timeEl.textContent = newText;
+                    console.log('[COUNTDOWN DISPLAY] Updated to:', timeStr);
+                }
+            }
+            if (statusEl) {
+                statusEl.textContent = 'active';
+            }
+        } else {
+            console.error('[COUNTDOWN DISPLAY] Timer display element not found!');
+        }
+    }
+    
+    updateDisplay();
+    
+    window.currentCountdownInterval = setInterval(() => {
+        remainingSeconds--;
+        updateDisplay();
+        
+        if (remainingSeconds <= 0) {
+            clearInterval(window.currentCountdownInterval);
+            // Keep display visible but hide reset button
+            // Change status to expired
+            const timerEl = document.getElementById('present-timer-display');
+            if (timerEl) {
+                const statusEl = timerEl.querySelector('.text-xs');
+                if (statusEl) statusEl.textContent = 'expired';
+            }
+            
+            // Update localStorage to mark as expired for this course/schedule
+            localStorage.setItem(countdownKey, 'false');
+            console.log('[COUNTDOWN] Expired for course', courseId, 'schedule', scheduleId);
+            
+            if (typeof showNotification === 'function') {
+                showNotification('Present window expired', 'info');
+            }
+        }
+    }, 1000);
+}
+
+// Global restoration function that can be called anytime - timer is global, countdown state is per-course
+function restoreTimerDisplay() {
+    try {
+        console.log('[TIMER] Restoring global timer from localStorage...');
+        const savedDuration = localStorage.getItem('present_window_duration_global');
+        const savedVisible = localStorage.getItem('present_window_visible_global');
+        const activeCourseId = localStorage.getItem('present_window_active_course');
+        const activeScheduleId = localStorage.getItem('present_window_active_schedule');
+        
+        // Get current course ID from attendance button
+        const attendanceBtn = document.getElementById('attendance-control-btn');
+        const currentCourseId = attendanceBtn ? attendanceBtn.getAttribute('data-course-id') : null;
+        const currentScheduleId = attendanceBtn ? attendanceBtn.getAttribute('data-schedule-id') : null;
+        
+        // Build correct key for this course/schedule combination
+        const scheduleKey = currentScheduleId || 'none';
+        const savedStarted = localStorage.getItem(`present_window_started_${currentCourseId}_${scheduleKey}`);
+        const savedStartTime = localStorage.getItem(`present_window_start_time_${currentCourseId}_${scheduleKey}`);
+        const savedExpiryTime = localStorage.getItem(`present_window_expiry_${currentCourseId}_${scheduleKey}`);
+        
+        console.log('[TIMER] Duration:', savedDuration, 'visible:', savedVisible, 'activeCourse:', activeCourseId, 'activeSchedule:', activeScheduleId, 'currentCourse:', currentCourseId, 'currentSchedule:', currentScheduleId);
+        console.log('[TIMER] Checking for keys: started=', savedStarted, 'startTime=', savedStartTime, 'expiry=', savedExpiryTime);
+        
+        if (savedDuration && savedVisible === 'true') {
+            // Restore the global duration
+            window.presentWindowDuration = parseInt(savedDuration) * 60;
+            console.log('[TIMER] Saved duration found:', savedDuration, 'minutes =', window.presentWindowDuration, 'seconds');
+            
+            // Inject CSS to force display (overrides Tailwind hidden class)
+            if (!document.getElementById('timer-display-override')) {
+                const style = document.createElement('style');
+                style.id = 'timer-display-override';
+                style.textContent = '#present-circle-container { display: flex !important; }';
+                document.head.appendChild(style);
+                console.log('[TIMER] CSS override injected');
+            }
+            
+            // Show the timer container - using multiple methods to ensure visibility
+            const circleContainer = document.getElementById('present-circle-container');
+            console.log('[TIMER] Container found:', !!circleContainer);
+            if (circleContainer) {
+                // Remove hidden class
+                circleContainer.classList.remove('hidden');
+                // Also set display style as backup
+                circleContainer.style.display = 'flex';
+                console.log('[TIMER] Container displayed');
+                
+                // Reset button is now hidden - removed per user request
+                
+                // Update display text
+                const estimatedMinutes = Math.floor(window.presentWindowDuration / 60);
+                const estimatedSeconds = window.presentWindowDuration % 60;
+                const timerDisplay = document.getElementById('present-timer-display');
+                
+                if (timerDisplay) {
+                    const timeElement = timerDisplay.querySelector('div:first-child');
+                    const statusElement = timerDisplay.querySelector('div:last-child');
+                    
+                    if (timeElement) {
+                        timeElement.textContent = `${String(estimatedMinutes).padStart(2, '0')}:${String(estimatedSeconds).padStart(2, '0')}`;
+                        console.log('[TIMER] Display text set to:', timeElement.textContent);
+                    }
+                    
+                    if (statusElement) {
+                        statusElement.textContent = 'active';
+                        console.log('[TIMER] Status set to active');
+                    }
+                }
+            }
+            
+            // If countdown was active for THIS course, resume it
+            console.log('[TIMER] Checking if countdown is still active - savedStarted:', savedStarted, 'savedStartTime:', savedStartTime, 'savedExpiryTime:', savedExpiryTime);
+            if (currentCourseId && savedStarted === 'true' && savedStartTime && savedExpiryTime) {
+                console.log('[TIMER] Resuming active countdown for course', currentCourseId, 'schedule', currentScheduleId);
+                const startTime = parseInt(savedStartTime);
+                const expiryTime = parseInt(savedExpiryTime);
+                const now = Date.now();
+                const remainingMs = expiryTime - now;
+                
+                console.log('[TIMER] Expiry:', expiryTime, 'Now:', now, 'RemainingMs:', remainingMs);
+                
+                if (remainingMs > 0) {
+                    const remainingSeconds = Math.ceil(remainingMs / 1000);
+                    console.log('[TIMER] Timer still valid, resuming with', remainingSeconds, 'seconds remaining');
+                    startCircleCountdown(remainingSeconds, currentCourseId, currentScheduleId);
+                    console.log('[TIMER] Countdown resumed');
+                } else {
+                    console.log('[TIMER] Timer has expired');
+                    // Clear the started flag so it doesn't try to resume again
+                    localStorage.removeItem(`present_window_started_${currentCourseId}_${scheduleKey}`);
+                    localStorage.setItem('present_window_visible_global', 'false');
+                }
+            } else {
+                console.log('[TIMER] No active countdown to resume');
+            }
+        } else {
+            console.log('[TIMER] No saved timer data (duration:', savedDuration, ', visible:', savedVisible, ')');
+
+            console.log('[TIMER] No saved global timer found or visible flag not set');
+        }
+    } catch(e) {
+        console.error('[TIMER] Error restoring timer:', e);
+    }
+}
+
+// Attach event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Restore timer immediately
+    restoreTimerDisplay();
+    
+    // Double-check after delay
+    setTimeout(restoreTimerDisplay, 100);
+    setTimeout(restoreTimerDisplay, 500);
+    
+    const resetBtn = document.getElementById('reset-present-duration');
+    const minutesInput = document.getElementById('present-minutes-input');
+
+    
+    if (resetBtn) {
+        resetBtn.addEventListener('click', instructorResetPresentWindow);
+    }
+    
+    // Update total display when inputs change
+    if (minutesInput) {
+        minutesInput.addEventListener('input', updatePresentTotalDisplay);
+    }
+    
+    // Close modal when clicking outside
+    const modal = document.getElementById('presentWindowDurationModal');
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closePresentWindowDurationModal();
+            }
+        });
+    }
+    
+    // Close attendance control modal when clicking outside
+    const attendanceModal = document.getElementById('attendanceControlModal');
+    if (attendanceModal) {
+        attendanceModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeAttendanceControlModal();
+            }
+        });
+    }
+    
+    // Initialize attendance control button styling
+    const attendanceBtn = document.getElementById('attendance-control-btn');
+    if (attendanceBtn) {
+        const status = attendanceBtn.getAttribute('data-status') || 'closed';
+        updateAttendanceButtonStyle(status);
+    }
+    
+    // Initialize present total display
+    updatePresentTotalDisplay();
+});
 </script>
+{% endblock %}
 

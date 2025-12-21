@@ -98,34 +98,10 @@
         border-radius: 1.25rem; /* match rounded-2xl */
         animation: glowPulse 2.2s ease-in-out infinite;
         pointer-events: none;
+
     }
     
-    /* Twinkling star overlay (replacing previous background animation) */
-    @keyframes twinkle {
-        0%, 45%, 55%, 100% {
-            opacity: 0.1;
-            transform: scale(0.9);
-        }
-        50% {
-            opacity: 1.0;
-            transform: scale(1.1);
-        }
-    }
-    .multi-stars-field {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        overflow: hidden;
-        border-radius: 1rem; /* close to rounded-2xl */
-        mix-blend-mode: screen;
-    }
-    .star-dot {
-        position: absolute;
-        background-color: #ffffff;
-        border-radius: 50%;
-        box-shadow: 0 0 5px #a0c3ff, 0 0 10px #ffffff;
-        animation: twinkle linear infinite;
-    }
+    /* Twinkling star overlay - REMOVED */
     
     /* Course Card Block Styling - Enhanced */
     .course-card-block {
@@ -410,34 +386,15 @@
                 <div class="relative z-10">
                     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div class="flex items-center gap-4 min-w-0 flex-1">
-                            {% if program.icon %}
-                            <div class="w-16 h-16 rounded-full border-4 border-white shadow-lg overflow-hidden bg-white/10">
-                                <img src="{{ program.icon.url }}" alt="{{ program.code }}" class="w-full h-full object-cover">
-                            </div>
-                            {% else %}
+                            <!-- Instructor's Department and Program Setup -->
                             <div class="w-16 h-16 rounded-full border-4 border-white shadow-lg flex items-center justify-center bg-white/10">
-                                <i class="fas fa-graduation-cap text-2xl text-white"></i>
+                                <i class="fas fa-chalkboard-teacher text-2xl text-white"></i>
                             </div>
-                            {% endif %}
                             <div class="min-w-0">
-                                <h1 class="program-title font-bold text-white drop-shadow-lg" title="{{ program.name }}">
-                                    {{ program.name }}
+                                <h1 class="program-title font-bold text-white drop-shadow-lg" title="My Courses">
+                                    My Courses
                                 </h1>
-                                <p class="program-code-label text-white/80 font-semibold mt-1">{{ program.code }}</p>
-                                {% if program.department %}
-                                <div class="program-subtitle text-white/85 font-medium flex items-center gap-2 mt-2">
-                                    {% if department and department.icon %}
-                            <div class="w-8 h-8 rounded-full border-2 border-white/70 shadow overflow-hidden bg-white/10 flex-shrink-0 flex items-center justify-center">
-                                        <img src="{{ department.icon.url }}" alt="{{ department.name }}" class="w-full h-full object-cover">
-                                    </div>
-                                    {% else %}
-                                    <div class="w-8 h-8 rounded-full border-2 border-white/60 shadow flex items-center justify-center bg-white/10 text-xs">
-                                        <i class="fas fa-building text-white"></i>
-                                    </div>
-                                    {% endif %}
-                            <span class="leading-none">{{ program.department }}</span>
-                                </div>
-                                {% endif %}
+                                <p class="program-code-label text-white/80 font-semibold mt-1">Course Management</p>
                             </div>
                         </div>
                         
@@ -558,7 +515,6 @@
                                                                 <div class="absolute bottom-0 left-0 w-20 h-20 bg-white rounded-full -ml-10 -mb-10"></div>
                                                             </div>
                                                             {% if course.sibling_sections and course.sibling_sections|length > 1 %}
-                                                            <div class="multi-stars-field" data-star-count="60"></div>
                                                             {% endif %}
                                                             <div class="relative z-10 text-center px-4">
                                                                 <h3 class="text-lg font-bold text-white mb-1 leading-tight" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
@@ -614,8 +570,7 @@
                         </div>
                         
                         {% if course.sibling_sections and course.sibling_sections|length > 1 %}
-                        <!-- Twinkling star overlay -->
-                        <div class="multi-stars-field" data-star-count="60"></div>
+                        <!-- Twinkling star overlay - REMOVED -->
                         {% endif %}
                         
                         <!-- Course Name with Better Typography -->
@@ -704,9 +659,6 @@
                         <i class="fas fa-trash"></i>
                         <span>Delete this section</span>
                     </button>
-                    <a href="#" id="toggleOtherProgramsBtn" onclick="toggleOtherPrograms(); return false;" class="text-blue-600 hover:text-blue-800 text-sm font-medium transition duration-150 cursor-pointer hover:font-semibold hidden" title="Add course to other departments/programs">
-                        Add course to other program
-                    </a>
                     <button onclick="closeCourseModal(true)" class="text-gray-400 hover:text-gray-600 transition-transform duration-200 hover:rotate-90" title="Close and clear saved data">
                         <i class="fas fa-times text-2xl"></i>
                     </button>
@@ -716,50 +668,6 @@
                 {% csrf_token %}
                 <input type="hidden" name="program" id="program" value="{{ program.id }}">
                 <input type="hidden" name="course_id" id="course_id" value="">
-                
-                <!-- Auto-filled Program & Department Info (Default - shown when not adding to other programs) -->
-                <div id="defaultProgramInfo" class="bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded-lg mb-0 form-section-card">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-sm font-medium text-indigo-800 mb-1">
-                                <i class="fas fa-info-circle mr-2"></i>Program & Department (Auto-filled)
-                            </p>
-                            <p class="text-sm text-indigo-700">
-                                <strong>Program:</strong> {{ program.code }} - {{ program.name }}
-                                {% if program.department %}
-                                <br><strong>Department:</strong> {{ program.department }}
-                                {% endif %}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Department & Program Selection (Hidden by default - shown when adding to other programs) -->
-                <div id="otherProgramsSection" class="hidden bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg mb-0 form-section-card">
-                    <h3 class="text-sm font-semibold text-blue-800 mb-3 flex items-center">
-                        <i class="fas fa-building mr-2"></i>Select Department & Program
-                    </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label for="department" class="block text-sm font-medium text-blue-900 mb-2">Department <span class="text-red-500">*</span></label>
-                            <select id="department" class="w-full px-4 py-2.5 border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" onchange="loadProgramsByDepartment()">
-                                <option value="">Select Department</option>
-                            </select>
-                            <p class="text-xs text-blue-700 mt-2">Departments are loaded from your school. Choose one to see its programs.</p>
-                        </div>
-                        <div>
-                            <label for="program_select" class="block text-sm font-medium text-blue-900 mb-2">Program <span class="text-red-500">*</span></label>
-                            <select id="program_select" class="w-full px-4 py-2.5 border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" disabled>
-                                <option value="">Select Department First</option>
-                            </select>
-                            <p class="text-xs text-blue-700 mt-2">After selecting a program, all course details below will be saved under that program.</p>
-                        </div>
-                    </div>
-                    <div class="mt-4 text-xs text-blue-800 bg-white/60 rounded-xl p-3 border border-blue-100">
-                        <p class="font-semibold">Tip:</p>
-                        <p class="mt-1">Use this mode when you need to add a course for another department/program that is still part of your school.</p>
-                    </div>
-                </div>
                 
                 <!-- Course Information -->
                 <div class="bg-white p-5 rounded-xl border border-gray-200 form-section-card">
@@ -1171,6 +1079,44 @@
                 </div>
             </div>
             <p class="text-sm text-gray-600 text-center">Students can scan this QR code to mark attendance</p>
+            
+            <!-- Biometric Registration Section -->
+            <div class="mt-6 pt-6 border-t border-gray-200">
+                <div class="flex items-center justify-between mb-4">
+                    <h4 class="text-lg font-semibold text-gray-800 flex items-center">
+                        <i class="fas fa-fingerprint w-5 h-5 mr-2 text-blue-600"></i> Biometric Registration
+                    </h4>
+                    <span id="biometricStatusBadge" class="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
+                        Not Active
+                    </span>
+                </div>
+                <p class="text-sm text-gray-600 mb-4">Students can also register their fingerprint for attendance scanning</p>
+                
+                <div class="space-y-3">
+                    <!-- Biometric Status Check -->
+                    <div id="biometricStatusContainer" class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p class="text-sm text-blue-700 mb-3">
+                            <i class="fas fa-info-circle mr-2"></i>
+                            <span id="biometricStatusText">Loading biometric status...</span>
+                        </p>
+                        <button 
+                            type="button"
+                            onclick="checkBiometricStatus()"
+                            class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition duration-150 shadow-sm">
+                            <i class="fas fa-sync-alt mr-2"></i> Check Biometric Status
+                        </button>
+                    </div>
+                    
+                    <!-- Biometric Registration Button -->
+                    <button 
+                        type="button"
+                        onclick="openBiometricRegistration()"
+                        class="w-full px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-semibold rounded-lg transition duration-150 shadow-md">
+                        <i class="fas fa-fingerprint mr-2"></i> Register Student Biometric
+                    </button>
+                </div>
+            </div>
+            
             <div class="flex justify-end pt-4 border-t border-gray-100">
                 <button onclick="closeQRCodeModal()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
                     Close
@@ -1700,9 +1646,10 @@ function toggleOtherPrograms() {
         // Keep blue color for clickability
         
         // Load departments if not already loaded
-        if (departmentsData.length === 0) {
-            loadDepartmentsAndPrograms();
-        }
+        // Commented out - Department & Program selection section has been removed
+        // if (departmentsData.length === 0) {
+        //     loadDepartmentsAndPrograms();
+        // }
     } else {
         // Show default, hide other programs section
         defaultInfo.classList.remove('hidden');
@@ -2677,7 +2624,8 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Ensure all required fields are present
             // Section is optional - students will fill it during enrollment
-            const requiredFields = ['code', 'name', 'program', 'year_level', 'school_year'];
+            // Program is now optional - users can add courses without specifying a program
+            const requiredFields = ['code', 'name', 'year_level', 'school_year'];
             
             // Only require days/start_time/end_time if NOT using day schedules
             if (!isDaySchedulesMode) {
@@ -2913,68 +2861,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Generate twinkling stars for multi-section course cards
-    (function initStars() {
-        const STAR_COUNT_DEFAULT = 60;
-        const EDGE_BIAS_CHANCE = 0.7; // 70% near edges
-        const EDGE_ZONE = 0.12; // 12% of width/height
-        
-        function createStar(container) {
-            const rect = container.getBoundingClientRect();
-            const width = rect.width || container.clientWidth || 200;
-            const height = rect.height || container.clientHeight || 140;
-            
-            const star = document.createElement('div');
-            star.className = 'star-dot';
-            
-            // Size: 1px to 4px
-            const size = Math.random() * 3 + 1;
-            star.style.width = `${size}px`;
-            star.style.height = `${size}px`;
-            
-            // Edge-biased position
-            let x, y;
-            if (Math.random() < EDGE_BIAS_CHANCE) {
-                // Choose axis: 0 vertical edges, 1 horizontal edges
-                if (Math.floor(Math.random() * 2) === 0) {
-                    // Top or bottom band
-                    const band = Math.random() < 0.5 ? EDGE_ZONE : (1 - EDGE_ZONE);
-                    y = band * height + (Math.random() - 0.5) * EDGE_ZONE * height;
-                    y = Math.max(0, Math.min(height, y));
-                    x = Math.random() * width;
-                } else {
-                    // Left or right band
-                    const band = Math.random() < 0.5 ? EDGE_ZONE : (1 - EDGE_ZONE);
-                    x = band * width + (Math.random() - 0.5) * EDGE_ZONE * width;
-                    x = Math.max(0, Math.min(width, x));
-                    y = Math.random() * height;
-                }
-            } else {
-                // Uniform placement
-                x = Math.random() * width;
-                y = Math.random() * height;
-            }
-            star.style.left = `${x}px`;
-            star.style.top = `${y}px`;
-            
-            // Duration: 2s to 6s
-            const duration = Math.random() * 4 + 2;
-            star.style.animationDuration = `${duration}s`;
-            // Negative delay to desync
-            const delay = Math.random() * duration * -1;
-            star.style.animationDelay = `${delay}s`;
-            
-            container.appendChild(star);
-        }
-        
-        document.querySelectorAll('.multi-stars-field').forEach(field => {
-            const countAttr = parseInt(field.getAttribute('data-star-count') || `${STAR_COUNT_DEFAULT}`, 10);
-            const count = isNaN(countAttr) ? STAR_COUNT_DEFAULT : Math.max(20, Math.min(150, countAttr));
-            for (let i = 0; i < count; i++) {
-                createStar(field);
-            }
-        });
-    })();
+    // Twinkling stars initialization - REMOVED
+    
 });
 
 function resetFieldsForNextSection() {
@@ -3934,71 +3822,13 @@ function toggleSemesterFolder(folderId) {
                 icon.style.transition = 'transform 0.3s ease';
             }
             
-            // Reinitialize stars for multi-section courses when folder opens
-            setTimeout(() => {
-                const starFields = folder.querySelectorAll('.multi-stars-field:not([data-stars-initialized])');
-                if (starFields.length > 0 && typeof initStars === 'function') {
-                    initStars();
-                } else {
-                    // Fallback: manually create stars
-                    starFields.forEach(field => {
-                        if (field.hasAttribute('data-stars-initialized')) return;
-                        field.setAttribute('data-stars-initialized', 'true');
-                        const STAR_COUNT_DEFAULT = 60;
-                        const countAttr = parseInt(field.getAttribute('data-star-count') || `${STAR_COUNT_DEFAULT}`, 10);
-                        const count = isNaN(countAttr) ? STAR_COUNT_DEFAULT : Math.max(20, Math.min(150, countAttr));
-                        
-                        function createStar() {
-                            const rect = field.getBoundingClientRect();
-                            const width = rect.width || field.clientWidth || 200;
-                            const height = rect.height || field.clientHeight || 128;
-                            
-                            const star = document.createElement('div');
-                            star.className = 'star-dot';
-                            const size = Math.random() * 3 + 1;
-                            star.style.width = `${size}px`;
-                            star.style.height = `${size}px`;
-                            
-                            let x, y;
-                            if (Math.random() < 0.7) {
-                                if (Math.floor(Math.random() * 2) === 0) {
-                                    const band = Math.random() < 0.5 ? 0.12 : 0.88;
-                                    y = band * height + (Math.random() - 0.5) * 0.12 * height;
-                                    y = Math.max(0, Math.min(height, y));
-                                    x = Math.random() * width;
-                                } else {
-                                    const band = Math.random() < 0.5 ? 0.12 : 0.88;
-                                    x = band * width + (Math.random() - 0.5) * 0.12 * width;
-                                    x = Math.max(0, Math.min(width, x));
-                                    y = Math.random() * height;
-                                }
-                            } else {
-                                x = Math.random() * width;
-                                y = Math.random() * height;
-                            }
-                            star.style.left = `${x}px`;
-                            star.style.top = `${y}px`;
-                            const duration = Math.random() * 4 + 2;
-                            star.style.animationDuration = `${duration}s`;
-                            const delay = Math.random() * duration * -1;
-                            star.style.animationDelay = `${delay}s`;
-                            field.appendChild(star);
-                        }
-                        
-                        for (let i = 0; i < count; i++) {
-                            createStar();
-                        }
-                    });
+            // Apply gradients to course cards
+            folder.querySelectorAll('.course-card-block[data-gradient]').forEach(el => {
+                const grad = el.getAttribute('data-gradient');
+                if (grad && grad.includes('linear-gradient')) {
+                    el.style.background = grad;
                 }
-                
-                // Apply gradients to course cards
-                folder.querySelectorAll('.course-card-block[data-gradient]').forEach(el => {
-                    const grad = el.getAttribute('data-gradient');
-                    if (grad && grad.includes('linear-gradient')) {
-                        el.style.background = grad;
-                    }
-                });
-            }, 100);
+            });
         } else {
             folder.style.display = 'none';
             if (icon) {
@@ -4275,6 +4105,9 @@ window.showQRCodeModal = function(courseId, courseCode, courseName) {
         modalCourseName.textContent = courseName;
         modalCourseCode.textContent = courseCode;
         
+        // Store course ID for biometric operations
+        modalImage.dataset.courseId = courseId;
+        
         // Get QR code URL - use the same URL as the small image
         const smallImage = document.getElementById(`qr-code-img-${courseId}`);
         let qrCodeUrl = '';
@@ -4293,6 +4126,9 @@ window.showQRCodeModal = function(courseId, courseCode, courseName) {
         // Set image source
         modalImage.src = qrCodeUrl;
         modalImage.alt = `QR Code for ${courseCode} - ${courseName}`;
+        
+        // Reset biometric status
+        checkBiometricStatus();
         
         // Show modal
         modal.classList.remove('hidden');
@@ -4314,6 +4150,78 @@ window.closeQRCodeModal = function() {
     }
 };
 
+// Check biometric registration status
+window.checkBiometricStatus = function() {
+    const courseId = document.getElementById('qrCodeModalImage').dataset.courseId;
+    if (!courseId) {
+        showNotification('Course ID not found', 'error');
+        return;
+    }
+    
+    const statusContainer = document.getElementById('biometricStatusContainer');
+    const statusText = document.getElementById('biometricStatusText');
+    
+    statusContainer.classList.add('bg-yellow-50', 'border-yellow-200');
+    statusContainer.classList.remove('bg-blue-50', 'border-blue-200');
+    statusText.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Checking status...';
+    
+    fetch(`/instructor/check-biometric-registration/?course_id=${courseId}`, {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        const badge = document.getElementById('biometricStatusBadge');
+        
+        if (data.is_registered) {
+            statusContainer.classList.add('bg-green-50', 'border-green-200');
+            statusContainer.classList.remove('bg-yellow-50', 'border-yellow-200');
+            statusText.innerHTML = '<i class="fas fa-check-circle mr-2 text-green-600"></i><span class="text-green-700">Biometric already registered</span>';
+            badge.textContent = 'Active';
+            badge.className = 'px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium';
+        } else {
+            statusContainer.classList.add('bg-yellow-50', 'border-yellow-200');
+            statusContainer.classList.remove('bg-blue-50', 'border-blue-200', 'bg-green-50', 'border-green-200');
+            statusText.innerHTML = '<i class="fas fa-exclamation-circle mr-2 text-yellow-600"></i><span class="text-yellow-700">Biometric not registered yet</span>';
+            badge.textContent = 'Not Registered';
+            badge.className = 'px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium';
+        }
+        showNotification('Status checked successfully', 'success');
+    })
+    .catch(error => {
+        console.error('Error checking biometric status:', error);
+        statusText.innerHTML = '<i class="fas fa-exclamation-triangle mr-2 text-red-600"></i><span class="text-red-700">Error checking status</span>';
+        showNotification('Error checking biometric status', 'error');
+    });
+};
+
+// Open biometric registration
+window.openBiometricRegistration = function() {
+    const courseId = document.getElementById('qrCodeModalImage').dataset.courseId;
+    const courseName = document.getElementById('qrCodeModalCourseName').textContent;
+    
+    if (!courseId) {
+        showNotification('Course ID not found', 'error');
+        return;
+    }
+    
+    // Store course info for biometric registration
+    window.biometricRegistrationData = {
+        courseId: courseId,
+        courseName: courseName
+    };
+    
+    // Open biometric registration modal
+    if (document.getElementById('biometricRegistrationModal')) {
+        document.getElementById('biometricRegistrationModal').classList.remove('hidden');
+        closeQRCodeModal();
+    } else {
+        showNotification('Biometric registration interface not available', 'error');
+    }
+};
+
 // View course details
 function viewCourseDetails(courseId) {
     closeCourseFormIfOpen();
@@ -4322,18 +4230,6 @@ function viewCourseDetails(courseId) {
         try {
             const content = document.getElementById('courseDetailContent');
             const courseColor = course.color || '#3C4770';
-            
-            // Format program display: "CODE - Name" or just code/name if one is missing
-            let programDisplay = 'N/A';
-            if (course.program_code && course.program_name) {
-                programDisplay = `${course.program_code} - ${course.program_name}`;
-            } else if (course.program_code) {
-                programDisplay = course.program_code;
-            } else if (course.program_name) {
-                programDisplay = course.program_name;
-            } else if (course.program) {
-                programDisplay = course.program;
-            }
             
             // Build section switcher if siblings exist
             const hasSiblings = Array.isArray(course.sibling_sections) && course.sibling_sections.length > 1;
@@ -4355,9 +4251,6 @@ function viewCourseDetails(courseId) {
                 <div class="space-y-4">
                     <div class="p-4 rounded-lg border-l-4" style="background: linear-gradient(90deg, ${courseColor}15 0%, #FFFFFF 100%); border-left-color: ${courseColor};">
                         <h3 class="text-xl font-bold text-gray-900 mb-2" style="color: ${courseColor};">${course.code} - ${course.name}</h3>
-                        <p class="text-sm text-gray-600 font-medium">
-                            <strong>Program:</strong> ${programDisplay}
-                        </p>
                     </div>
                     ${sectionSwitcherHtml}
                     <div class="grid grid-cols-2 gap-4">
@@ -4367,33 +4260,6 @@ function viewCourseDetails(courseId) {
                         <div><strong>Section:</strong> ${(course.section || 'N/A').toUpperCase()}</div>
                         <div><strong>Students:</strong> ${typeof course.student_count !== 'undefined' ? course.student_count : '0'}</div>
                     </div>
-                    ${course.enrollment_code ? `
-                    <div class="border-t pt-4 mt-4">
-                        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
-                            <div class="mb-3">
-                                <label class="block text-sm font-semibold text-yellow-800 mb-2">Enrollment Status</label>
-                                <select id="enrollmentStatusSelect-${course.id}" 
-                                        data-previous-value="${course.enrollment_status || 'open'}"
-                                        onfocus="this.dataset.previousValue = this.value"
-                                        onchange="updateEnrollmentStatus(${course.id}, this.value)"
-                                        class="w-full px-3 py-2 text-sm border border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 bg-white">
-                                    <option value="open" ${course.enrollment_status === 'open' || !course.enrollment_status ? 'selected' : ''}>Open for Enrollment</option>
-                                    <option value="closed" ${course.enrollment_status === 'closed' ? 'selected' : ''}>Closed Enrollment</option>
-                                </select>
-                            </div>
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-sm font-semibold text-yellow-800 mb-1">Enrollment Code</p>
-                                    <p class="text-2xl font-bold text-yellow-900 font-mono tracking-widest">${course.enrollment_code || 'Not generated'}</p>
-                                    <p class="text-xs text-yellow-700 mt-1">Share this code with your students for enrollment</p>
-                                </div>
-                                <button onclick="copyEnrollmentCode('${course.enrollment_code || ''}')" class="px-4 py-2 bg-yellow-600 text-white text-sm font-semibold rounded-lg hover:bg-yellow-700 transition">
-                                    <i class="fas fa-copy mr-2"></i> Copy Code
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    ` : ''}
                     <div class="border-t pt-4">
                         <h4 class="font-semibold mb-2">Schedule</h4>
                         ${course.has_day_schedules && course.day_schedules && course.day_schedules.length > 0 && course.is_per_day_schedule ? `

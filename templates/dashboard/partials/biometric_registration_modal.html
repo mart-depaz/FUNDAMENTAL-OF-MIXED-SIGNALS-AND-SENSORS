@@ -1,0 +1,351 @@
+<!-- Biometric Registration Modal -->
+<!-- This modal allows instructors to register or students to scan biometric for attendance -->
+
+<div class="modal fade" id="biometricRegistrationModal" tabindex="-1" role="dialog" aria-labelledby="biometricRegistrationTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="biometricRegistrationTitle">
+                    <i class="fas fa-fingerprint"></i> Biometric Registration
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            
+            <div class="modal-body">
+                <!-- Tab Navigation -->
+                <ul class="nav nav-tabs mb-3" id="biometricTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="register-tab" data-bs-toggle="tab" data-bs-target="#registerPane" 
+                                type="button" role="tab" aria-controls="registerPane" aria-selected="true">
+                            <i class="fas fa-plus-circle"></i> Register Fingerprint
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="scan-tab" data-bs-toggle="tab" data-bs-target="#scanPane" 
+                                type="button" role="tab" aria-controls="scanPane" aria-selected="false">
+                            <i class="fas fa-hand-fist"></i> Scan Attendance
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="info-tab" data-bs-toggle="tab" data-bs-target="#infoPane" 
+                                type="button" role="tab" aria-controls="infoPane" aria-selected="false">
+                            <i class="fas fa-info-circle"></i> Instructions
+                        </button>
+                    </li>
+                </ul>
+                
+                <!-- Tab Content -->
+                <div class="tab-content" id="biometricTabContent">
+                    
+                    <!-- Register Fingerprint Tab -->
+                    <div class="tab-pane fade show active" id="registerPane" role="tabpanel" aria-labelledby="register-tab">
+                        <form id="biometricRegisterForm">
+                            <div class="form-group mb-3">
+                                <label for="biometricCourseSelect" class="form-label">Select Course</label>
+                                <select class="form-select" id="biometricCourseSelect" required>
+                                    <option value="">-- Select a course --</option>
+                                </select>
+                                <small class="text-muted">Choose the course where you want to register your fingerprint</small>
+                            </div>
+                            
+                            <div class="card border-info mb-3">
+                                <div class="card-body text-center">
+                                    <div id="biometricRegisterStatus" class="alert alert-info mb-3" style="display:none;">
+                                        <strong>Status:</strong> <span id="registerStatusText"></span>
+                                    </div>
+                                    
+                                    <div class="biometric-visual mb-3">
+                                        <div id="fingerprintCircle" style="width: 150px; height: 150px; margin: 0 auto; border: 3px dashed #ccc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px; color: #ccc;">
+                                            <i class="fas fa-fingerprint"></i>
+                                        </div>
+                                    </div>
+                                    
+                                    <p class="text-muted mb-3">
+                                        Place your finger on the ESP32 fingerprint sensor<br>
+                                        <small>You will need to scan twice for confirmation</small>
+                                    </p>
+                                    
+                                    <button type="button" class="btn btn-primary" id="startBiometricRegisterBtn">
+                                        <i class="fas fa-play"></i> Start Registration
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div id="biometricRegisterProgress" style="display:none;">
+                                <div class="progress mb-3">
+                                    <div id="registerProgressBar" class="progress-bar" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                                <p id="registerProgressText" class="text-center text-muted"></p>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Scan Attendance Tab -->
+                    <div class="tab-pane fade" id="scanPane" role="tabpanel" aria-labelledby="scan-tab">
+                        <form id="biometricScanForm">
+                            <div class="form-group mb-3">
+                                <label for="scanCourseSelect" class="form-label">Select Course</label>
+                                <select class="form-select" id="scanCourseSelect" required>
+                                    <option value="">-- Select a course --</option>
+                                </select>
+                            </div>
+                            
+                            <div class="card border-success mb-3">
+                                <div class="card-body text-center">
+                                    <div id="biometricScanStatus" class="alert alert-info mb-3" style="display:none;">
+                                        <strong>Status:</strong> <span id="scanStatusText"></span>
+                                    </div>
+                                    
+                                    <div class="biometric-visual mb-3">
+                                        <div id="scanFingerprintCircle" style="width: 150px; height: 150px; margin: 0 auto; border: 3px solid #28a745; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px; color: #28a745;">
+                                            <i class="fas fa-fingerprint"></i>
+                                        </div>
+                                    </div>
+                                    
+                                    <p class="text-muted mb-3">
+                                        Place your finger on the sensor to mark attendance<br>
+                                        <small>Make sure your fingerprint is already registered for this course</small>
+                                    </p>
+                                    
+                                    <button type="button" class="btn btn-success" id="startBiometricScanBtn">
+                                        <i class="fas fa-hand-fist"></i> Start Scan
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div id="biometricScanProgress" style="display:none;">
+                                <div class="progress mb-3">
+                                    <div id="scanProgressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                                <p id="scanProgressText" class="text-center text-muted"></p>
+                            </div>
+                            
+                            <div id="scanResultsDiv" style="display:none;" class="mt-3">
+                                <div id="scanResultAlert" class="alert" role="alert">
+                                    <strong id="scanResultTitle"></strong>
+                                    <p id="scanResultMessage"></p>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Instructions Tab -->
+                    <div class="tab-pane fade" id="infoPane" role="tabpanel" aria-labelledby="info-tab">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6><i class="fas fa-list"></i> Biometric Attendance System - Instructions</h6>
+                                
+                                <hr>
+                                
+                                <h7 class="text-primary"><strong>Step 1: Register Your Fingerprint</strong></h7>
+                                <ol>
+                                    <li>Go to the "Register Fingerprint" tab</li>
+                                    <li>Select the course where you want to register</li>
+                                    <li>Click "Start Registration"</li>
+                                    <li>Place your finger on the ESP32 fingerprint sensor</li>
+                                    <li>Follow the on-screen instructions to complete the scan</li>
+                                    <li>You may be asked to scan twice for confirmation</li>
+                                </ol>
+                                
+                                <hr>
+                                
+                                <h7 class="text-success"><strong>Step 2: Mark Attendance Using Biometric</strong></h7>
+                                <ol>
+                                    <li>Go to the "Scan Attendance" tab</li>
+                                    <li>Select the course</li>
+                                    <li>Click "Start Scan"</li>
+                                    <li>Place your finger on the sensor</li>
+                                    <li>Wait for the system to verify your fingerprint</li>
+                                    <li>Your attendance will be marked automatically</li>
+                                </ol>
+                                
+                                <hr>
+                                
+                                <div class="alert alert-info">
+                                    <strong><i class="fas fa-lightbulb"></i> Tips:</strong>
+                                    <ul>
+                                        <li>Keep your finger clean and dry for best results</li>
+                                        <li>Place your entire fingertip on the sensor</li>
+                                        <li>Make sure there's good lighting in the area</li>
+                                        <li>If scan fails, try again with a different finger or adjust the angle</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="alert alert-warning">
+                                    <strong><i class="fas fa-exclamation-triangle"></i> Important:</strong>
+                                    <ul>
+                                        <li>Your biometric data is encrypted and securely stored</li>
+                                        <li>You can only register one fingerprint per course</li>
+                                        <li>If you change your fingerprint, ask your instructor to re-register you</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="biometricModalSubmitBtn" style="display:none;">Submit</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize biometric modal functionality
+    const biometricModal = document.getElementById('biometricRegistrationModal');
+    if (!biometricModal) return;
+    
+    // Populate course selects
+    function populateCourseSelects() {
+        const courseSelects = document.querySelectorAll('#biometricCourseSelect, #scanCourseSelect');
+        
+        courseSelects.forEach(select => {
+            // Clear existing options except the first one
+            while (select.options.length > 1) {
+                select.remove(1);
+            }
+            
+            // Get enrolled courses from the page (if available)
+            const enrolledCourses = window.enrolledCourses || [];
+            enrolledCourses.forEach(course => {
+                const option = document.createElement('option');
+                option.value = course.id;
+                option.textContent = `${course.code} - ${course.name}`;
+                select.appendChild(option);
+            });
+        });
+    }
+    
+    populateCourseSelects();
+    
+    // Register Fingerprint Button
+    document.getElementById('startBiometricRegisterBtn')?.addEventListener('click', function() {
+        const courseId = document.getElementById('biometricCourseSelect').value;
+        if (!courseId) {
+            alert('Please select a course');
+            return;
+        }
+        
+        startBiometricRegistration(courseId);
+    });
+    
+    // Start Biometric Scan Button
+    document.getElementById('startBiometricScanBtn')?.addEventListener('click', function() {
+        const courseId = document.getElementById('scanCourseSelect').value;
+        if (!courseId) {
+            alert('Please select a course');
+            return;
+        }
+        
+        startBiometricScan(courseId);
+    });
+});
+
+function startBiometricRegistration(courseId) {
+    const status = document.getElementById('biometricRegisterStatus');
+    const statusText = document.getElementById('registerStatusText');
+    const progress = document.getElementById('biometricRegisterProgress');
+    const progressBar = document.getElementById('registerProgressBar');
+    const progressText = document.getElementById('registerProgressText');
+    
+    status.style.display = 'block';
+    progress.style.display = 'block';
+    
+    statusText.textContent = 'Waiting for fingerprint scan...';
+    progressBar.style.width = '33%';
+    progressText.textContent = 'Step 1/3: Place your finger on the sensor...';
+    
+    // Simulate registration process (in real implementation, this would connect to ESP32)
+    setTimeout(() => {
+        progressBar.style.width = '66%';
+        progressText.textContent = 'Step 2/3: Remove your finger and place it again for confirmation...';
+        
+        setTimeout(() => {
+            progressBar.style.width = '100%';
+            progressText.textContent = 'Step 3/3: Fingerprint registered successfully!';
+            statusText.innerHTML = '<i class="fas fa-check-circle text-success"></i> Registration complete!';
+            
+            // Submit registration
+            submitBiometricRegistration(courseId);
+        }, 2000);
+    }, 3000);
+}
+
+function startBiometricScan(courseId) {
+    const status = document.getElementById('biometricScanStatus');
+    const statusText = document.getElementById('scanStatusText');
+    const progress = document.getElementById('biometricScanProgress');
+    const progressBar = document.getElementById('scanProgressBar');
+    const progressText = document.getElementById('scanProgressText');
+    
+    status.style.display = 'block';
+    progress.style.display = 'block';
+    
+    statusText.textContent = 'Scanning fingerprint...';
+    progressBar.style.width = '50%';
+    progressText.textContent = 'Comparing with registered fingerprint...';
+    
+    // Simulate scan process
+    setTimeout(() => {
+        progressBar.style.width = '100%';
+        progressText.textContent = 'Scan complete!';
+        
+        // In real implementation, this would call the API to record attendance
+        recordBiometricAttendance(courseId);
+    }, 3000);
+}
+
+function submitBiometricRegistration(courseId) {
+    // In real implementation, submit to API
+    console.log('Registration submitted for course:', courseId);
+}
+
+function recordBiometricAttendance(courseId) {
+    const resultDiv = document.getElementById('scanResultsDiv');
+    const resultAlert = document.getElementById('scanResultAlert');
+    const resultTitle = document.getElementById('scanResultTitle');
+    const resultMessage = document.getElementById('scanResultMessage');
+    
+    resultDiv.style.display = 'block';
+    resultAlert.classList.remove('alert-danger', 'alert-warning', 'alert-success', 'alert-info');
+    resultAlert.classList.add('alert-success');
+    
+    resultTitle.textContent = '✓ Attendance Recorded';
+    resultMessage.textContent = 'Your attendance has been successfully marked via biometric scan.';
+    
+    console.log('Attendance recorded for course:', courseId);
+}
+</script>
+
+<style>
+.biometric-visual {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+.modal-body .nav-tabs .nav-link {
+    border-bottom: 2px solid transparent;
+    transition: all 0.3s ease;
+}
+
+.modal-body .nav-tabs .nav-link:hover {
+    border-color: #0d6efd;
+    color: #0d6efd;
+}
+
+.modal-body .nav-tabs .nav-link.active {
+    border-bottom-color: #0d6efd;
+}
+</style>

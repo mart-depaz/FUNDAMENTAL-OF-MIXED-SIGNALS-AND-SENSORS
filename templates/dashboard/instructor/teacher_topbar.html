@@ -59,39 +59,275 @@
             box-shadow: none !important;
         }
 
-        /* Layout grid to mimic admin topbar spacing */
+        /* Simplify header layout - flexbox instead of grid */
         #teacher-top-bar .max-w-full > .flex {
-            display: grid !important;
-            grid-template-columns: 44px 1fr minmax(90px, 1fr) !important;
+            display: flex !important;
             align-items: center !important;
+            justify-content: space-between !important;
             gap: 0.5rem !important;
+            width: 100% !important;
+            height: 56px !important;
+            padding: 0 !important;
         }
+
+        /* Hide brand text on mobile */
         #teacher-top-bar .topbar-brand-text { display: none !important; }
-        #teacher-top-bar .topbar-brand span:first-child { height: 28px !important; width: 28px !important; min-width:28px !important; }
-        #teacher-top-bar .topbar-brand img { height: 24px !important; width: 24px !important; }
-        #teacher-top-bar .flex-1 { justify-self: center !important; text-align: center !important; min-width: 0 !important; max-width: calc(100% - 100px) !important; }
-        #teacher-top-bar .flex-1 { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
-        #teacher-top-bar .header-right { justify-self: end !important; display: flex; align-items: center; gap: 0.4rem; min-width: 92px !important; max-width: 110px !important; }
-        #teacher-top-bar .flex.items-center.justify-between { height: 3.75rem !important; }
-        /* Force header to remain fixed and independent across pages/tabs */
+        
+        /* Logo sizing */
+        #teacher-top-bar .topbar-brand span:first-child { 
+            height: 28px !important; 
+            width: 28px !important; 
+            min-width: 28px !important;
+            flex-shrink: 0 !important;
+        }
+        #teacher-top-bar .topbar-brand img { 
+            height: 24px !important; 
+            width: 24px !important; 
+        }
+
+        /* School name - center */
+        #teacher-top-bar .flex-1 { 
+            text-align: center !important; 
+            min-width: 0 !important; 
+            max-width: 100% !important;
+            overflow: hidden !important; 
+            text-overflow: ellipsis !important; 
+            white-space: nowrap !important;
+            font-size: 0.7rem !important;
+            flex: 1 !important;
+        }
+
+        /* Profile section - right side */
+        #teacher-top-bar .flex.items-center.space-x-2.sm\\:space-x-3 {
+            display: flex !important;
+            align-items: center !important;
+            gap: 0.3rem !important;
+            flex-shrink: 0 !important;
+        }
+
+        /* Profile button - show name and avatar */
+        #teacher-top-bar .flex.items-center.space-x-2.sm\\:space-x-3 button {
+            padding: 0.3rem 0.4rem !important;
+            font-size: 0.6rem !important;
+            gap: 0.2rem !important;
+            white-space: nowrap !important;
+            display: flex !important;
+            align-items: center !important;
+            background: rgba(255, 255, 255, 0.1) !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            border-radius: 0.5rem !important;
+            cursor: pointer !important;
+            color: white !important;
+            max-width: 100px !important;
+        }
+
+        /* Show profile name text - OVERRIDE the 600px hide */
+        #teacher-top-bar .flex.items-center.space-x-2.sm\\:space-x-3 button span:first-child {
+            display: inline-block !important;
+            font-size: 0.6rem !important;
+            max-width: 70px !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+        }
+
+        /* Profile avatar */
+        #teacher-top-bar #topbar-profile-picture,
+        #teacher-top-bar #topbar-profile-placeholder {
+            width: 28px !important;
+            height: 28px !important;
+            flex-shrink: 0 !important;
+        }
+
+        /* Hide chevron icon */
+        #teacher-top-bar .flex.items-center.space-x-2.sm\\:space-x-3 button i.fa-chevron-down {
+            display: none !important;
+        }
+
+        /* Profile dropdown - positioned absolutely below button */
+        #teacher-top-bar .relative {
+            position: relative !important;
+        }
+
+        #teacher-top-bar #profile-dropdown {
+            position: absolute !important;
+            right: 0 !important;
+            top: 100% !important;
+            max-width: 140px !important;
+            z-index: 9999 !important;
+            width: max-content !important;
+            background: white !important;
+            border: 1px solid #e5e7eb !important;
+            border-radius: 0.375rem !important;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+            margin-top: 0.25rem !important;
+        }
+
+        #teacher-top-bar #profile-dropdown a,
+        #teacher-top-bar #profile-dropdown button {
+            display: block !important;
+            width: 100% !important;
+            text-align: left !important;
+            padding: 0.5rem 0.75rem !important;
+            font-size: 0.7rem !important;
+            border: none !important;
+            background: white !important;
+            cursor: pointer !important;
+            color: #1f2937 !important;
+            transition: background 0.15s !important;
+        }
+
+        #teacher-top-bar #profile-dropdown a:hover,
+        #teacher-top-bar #profile-dropdown button:hover {
+            background: #f3f4f6 !important;
+        }
+
+        /* Topbar fixed positioning */
         #teacher-top-bar {
             position: fixed !important;
             top: 0 !important;
             left: 0 !important;
             right: 0 !important;
             z-index: 99990 !important;
-            will-change: transform;
-            transform: none !important;
+            height: 56px !important;
+        }
+    }
+
+    /* ========================================
+       ULTRA SMALL MOBILE PORTRAIT (320px - 479px)
+       ======================================== */
+    @media (max-width: 479px) {
+        /* Simplify header layout - flexbox instead of grid */
+        #teacher-top-bar .max-w-full > .flex {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 0.5rem !important;
+            width: 100% !important;
+            height: 56px !important;
+            padding: 0 !important;
         }
 
-        /* Ensure the hamburger stays inside the header layout (not floating) */
-        #teacher-top-bar .mobile-sidebar-toggle,
-        #teacher-top-bar #mobile-sidebar-toggle {
+        /* Hide brand text on mobile */
+        #teacher-top-bar .topbar-brand-text { display: none !important; }
+        
+        /* Logo sizing */
+        #teacher-top-bar .topbar-brand span:first-child { 
+            height: 28px !important; 
+            width: 28px !important; 
+            min-width: 28px !important;
+            flex-shrink: 0 !important;
+        }
+        #teacher-top-bar .topbar-brand img { 
+            height: 24px !important; 
+            width: 24px !important; 
+        }
+
+        /* School name - center */
+        #teacher-top-bar .flex-1 { 
+            text-align: center !important; 
+            min-width: 0 !important; 
+            max-width: 100% !important;
+            overflow: hidden !important; 
+            text-overflow: ellipsis !important; 
+            white-space: nowrap !important;
+            font-size: 0.7rem !important;
+            flex: 1 !important;
+        }
+
+        /* Profile section - right side */
+        #teacher-top-bar .flex.items-center.space-x-2.sm\\:space-x-3 {
+            display: flex !important;
+            align-items: center !important;
+            gap: 0.3rem !important;
+            flex-shrink: 0 !important;
+        }
+
+        /* Profile button - show name and avatar */
+        #teacher-top-bar .flex.items-center.space-x-2.sm\\:space-x-3 button {
+            padding: 0.3rem 0.4rem !important;
+            font-size: 0.6rem !important;
+            gap: 0.2rem !important;
+            white-space: nowrap !important;
+            display: flex !important;
+            align-items: center !important;
+            background: rgba(255, 255, 255, 0.1) !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            border-radius: 0.5rem !important;
+            cursor: pointer !important;
+            color: white !important;
+            max-width: 100px !important;
+        }
+
+        /* Show profile name text on small screens */
+        #teacher-top-bar .flex.items-center.space-x-2.sm\\:space-x-3 button span:first-child {
+            display: inline-block !important;
+            font-size: 0.6rem !important;
+            max-width: 70px !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+        }
+
+        /* Profile avatar */
+        #teacher-top-bar #topbar-profile-picture,
+        #teacher-top-bar #topbar-profile-placeholder {
+            width: 28px !important;
+            height: 28px !important;
+            flex-shrink: 0 !important;
+        }
+
+        /* Hide chevron icon */
+        #teacher-top-bar .flex.items-center.space-x-2.sm\\:space-x-3 button i.fa-chevron-down {
+            display: none !important;
+        }
+
+        /* Profile dropdown - positioned absolutely below button */
+        #teacher-top-bar .relative {
             position: relative !important;
-            left: auto !important;
-            top: auto !important;
-            margin: 0 !important;
-            transform: none !important;
+        }
+
+        #teacher-top-bar #profile-dropdown {
+            position: absolute !important;
+            right: 0 !important;
+            top: 100% !important;
+            max-width: 140px !important;
+            z-index: 9999 !important;
+            width: max-content !important;
+            background: white !important;
+            border: 1px solid #e5e7eb !important;
+            border-radius: 0.375rem !important;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+            margin-top: 0.25rem !important;
+        }
+
+        #teacher-top-bar #profile-dropdown a,
+        #teacher-top-bar #profile-dropdown button {
+            display: block !important;
+            width: 100% !important;
+            text-align: left !important;
+            padding: 0.5rem 0.75rem !important;
+            font-size: 0.7rem !important;
+            border: none !important;
+            background: white !important;
+            cursor: pointer !important;
+            color: #1f2937 !important;
+            transition: background 0.15s !important;
+        }
+
+        #teacher-top-bar #profile-dropdown a:hover,
+        #teacher-top-bar #profile-dropdown button:hover {
+            background: #f3f4f6 !important;
+        }
+
+        /* Topbar fixed positioning */
+        #teacher-top-bar {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 99990 !important;
+            height: 56px !important;
         }
     }
 </style>
@@ -106,7 +342,7 @@
             
             <!-- Left Section: Attendance System Branding -->
             <div class="flex items-center">
-                <a href="{% url 'dashboard:teacher_dashboard' %}" class="topbar-brand text-xl sm:text-2xl font-bold text-white select-none flex items-center hover:opacity-90 transition duration-150 cursor-pointer space-x-3">
+                <a href="{% url 'dashboard:teacher_dashboard' %}" data-dashboard-action="true" class="topbar-brand text-xl sm:text-2xl font-bold text-white select-none flex items-center hover:opacity-90 transition duration-150 cursor-pointer space-x-3">
                     <span class="inline-flex items-center justify-center h-11 w-11 sm:h-13 sm:w-13 rounded-full bg-white/10 border border-white/30 shadow-md overflow-hidden">
                         <img src="{% static 'img/attendance-logo.png' %}" alt="Attendance System logo" class="h-10 w-10 sm:h-12 sm:w-12 object-contain">
                     </span>
@@ -114,21 +350,8 @@
                 </a>
             </div>
             
-            <!-- Center Section: School Name with Profile Picture on Left -->
-            {% if school_admin and school_admin.school_name %}
-            <div class="flex-1 flex justify-center items-center space-x-2">
-                {% if school_admin.profile_picture %}
-                <img id="topbar-center-profile-picture" src="{{ school_admin.profile_picture.url }}?v={{ school_admin.id }}" alt="Profile" class="h-6 w-6 rounded-full object-cover border-2 border-white flex-shrink-0">
-                {% else %}
-                <div id="topbar-center-profile-placeholder" class="h-6 w-6 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0" style="background: rgba(190, 129, 153, 0.3);">
-                    {{ school_admin.username|first|upper|default:"A" }}
-                </div>
-                {% endif %}
-                <span class="text-sm text-white font-medium truncate max-w-xs sm:max-w-md">
-                    {{ school_admin.school_name }}
-                </span>
-            </div>
-            {% elif user.school_name %}
+            <!-- Center Section: School Name -->
+            {% if user.school_name %}
             <div class="flex-1 flex justify-center items-center space-x-2">
                 <span class="text-sm text-white font-medium truncate max-w-xs sm:max-w-md">
                     {{ user.school_name }}
@@ -159,7 +382,7 @@
                         <a href="#" id="profile-dropdown-link" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors">
                             <i class="fas fa-user mr-2 w-4"></i> Profile
                         </a>
-                        <a href="{% url 'logout' %}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors">
+                        <a href="javascript:void(0)" onclick="showLogoutLoadingModal('{% url 'logout' %}')" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors cursor-pointer">
                             <i class="fas fa-sign-out-alt mr-2 w-4"></i> Logout
                         </a>
                     </div>
@@ -227,7 +450,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <style>
 /* Mobile: position main under fixed header for instructor pages */
 @media (max-width: 600px) {
-    :root { --teacher-header-offset: 64px; }
+    :root { --teacher-header-offset: 56px; }
     /* Make header independent by using body padding instead of absolutely positioning main
        This ensures pages without a specific #main-content id still flow correctly below header */
     body {
@@ -821,6 +1044,52 @@ document.head.appendChild(style);
     // also call once on load to ensure correct offset
     document.addEventListener('DOMContentLoaded', function(){ setTimeout(safeAdjust, 80); });
 })();
+
+// Add loading effect to dashboard action links
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('[TOPBAR] Initializing loading effects for topbar links');
+    
+    // Find all links with data-dashboard-action attribute or links in the topbar
+    const topbarLinks = document.querySelectorAll('a[data-dashboard-action="true"]');
+    
+    topbarLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            const href = this.getAttribute('href');
+            
+            // Only show loading if it's a valid link
+            if (href && href !== '#' && href !== window.location.pathname) {
+                // Show loading overlay
+                const loadingOverlay = document.createElement('div');
+                loadingOverlay.id = 'topbar-loading-overlay';
+                loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+                loadingOverlay.innerHTML = `
+                    <div class="rainbow-spinner">
+                        <img src="/static/img/attendance-logo.png" alt="Loading">
+                    </div>
+                `;
+                document.body.appendChild(loadingOverlay);
+                console.log('[TOPBAR] Loading overlay shown for:', href);
+            }
+        });
+    });
+
+    // Logout loading animation
+    function showLogoutLoadingModal(url) {
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+        loadingOverlay.innerHTML = `
+            <div class="rainbow-spinner">
+                <img src="/static/img/attendance-logo.png" alt="Loading">
+            </div>
+        `;
+        document.body.appendChild(loadingOverlay);
+        setTimeout(() => {
+            window.location.href = url;
+        }, 300);
+    }
+
+    window.showLogoutLoadingModal = showLogoutLoadingModal;
+});
 </script>
 
 

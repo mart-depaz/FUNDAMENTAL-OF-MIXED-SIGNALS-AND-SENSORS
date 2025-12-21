@@ -45,6 +45,8 @@ urlpatterns = [
     path('notifications/delete-all/', views.delete_all_notifications_view, name='delete_all_notifications'),
     path('teacher/profile/update/', views.teacher_update_profile_view, name='teacher_update_profile'),
     path('student/profile/update/', views.student_update_profile_view, name='student_update_profile'),
+    path('api/get-user-profile/', views.get_user_profile, name='get_user_profile'),
+    path('api/get-custom-password/', views.get_custom_password_view, name='get_custom_password'),
     path('students/', views.students_view, name='students'),
     path('weekly-timetable/', views.weekly_timetable_view, name='weekly_timetable'),
     # Instructor: My Classes (monitoring)
@@ -59,6 +61,22 @@ urlpatterns = [
     path('instructor/register-student-qr-code/', views.instructor_register_student_qr_code_view, name='instructor_register_student_qr_code'),
     # Student self-register QR (students can register their own QR codes to their enrolled course)
     path('student/register-qr-code/', views.student_register_qr_code_view, name='student_register_qr_code'),
+    path('student/register-qr-code-with-instructor/', views.student_register_qr_code_with_instructor_view, name='student_register_qr_code_with_instructor'),
+    path('student/get-registration-instructors/', views.student_get_registration_instructors_view, name='student_get_registration_instructors'),
+    # Biometric registration and verification endpoints
+    path('instructor/register-student-biometric/', views.instructor_register_student_biometric_view, name='instructor_register_student_biometric'),
+    path('student/register-biometric/', views.student_register_biometric_view, name='student_register_biometric'),
+    path('student/verify-biometric/', views.student_verify_biometric_view, name='student_verify_biometric'),
+    path('instructor/check-biometric-registration/', views.instructor_check_biometric_registration_view, name='instructor_check_biometric_registration'),
+    path('api/biometric/enroll/', views.api_biometric_enroll_view, name='api_biometric_enroll'),
+    path('api/biometric/verify/', views.api_biometric_verify_view, name='api_biometric_verify'),
+    path('api/biometric/scan-attendance/', views.api_biometric_scan_attendance_view, name='api_biometric_scan_attendance'),
+    path('api/instructor/courses/', views.api_get_instructor_courses_view, name='api_get_instructor_courses'),
+    path('api/student/enrolled-courses/', views.api_get_student_enrolled_courses_view, name='api_get_student_enrolled_courses'),
+    # Instructor enable/disable registration for courses
+    path('instructor/check-registration-status/', views.check_course_registration_status, name='check_course_registration_status'),
+    path('instructor/enable-course-registration/', views.enable_course_registration, name='enable_course_registration'),
+    path('instructor/disable-course-registration/', views.disable_course_registration, name='disable_course_registration'),
     # Instructor trash management
     path('instructor/trash/', views.instructor_trash_view, name='instructor_trash'),
     path('instructor/courses/<int:course_id>/restore/', views.instructor_restore_course_view, name='instructor_restore_course'),
@@ -125,4 +143,15 @@ urlpatterns = [
     path('admin-dashboard/users/<int:user_id>/permanent-delete/', admin_views.admin_permanent_delete_user_view, name='admin_permanent_delete_user'),
     path('admin-dashboard/trash/restore-all/', admin_views.admin_restore_all_trash_view, name='admin_restore_all_trash'),
     path('admin-dashboard/trash/delete-all/', admin_views.admin_delete_all_trash_view, name='admin_delete_all_trash'),
+    # API endpoints for move students
+    path('api/get-course-enrollments/', views.get_course_enrollments_view, name='api_get_course_enrollments'),
+    path('api/get-course-sections/', views.get_course_sections_view, name='api_get_course_sections'),
+    path('api/move-students-to-section/', views.move_students_to_section_view, name='api_move_students_to_section'),
+    
+    # Health check endpoint for Arduino connectivity
+    path('api/health-check/', views.api_health_check, name='api_health_check'),
+    
+    # WebSocket broadcast API endpoints
+    path('api/broadcast-scan-update/', views.api_broadcast_scan_update, name='api_broadcast_scan_update'),
+    path('api/broadcast-enrollment-complete/', views.api_broadcast_enrollment_complete, name='api_broadcast_enrollment_complete'),
 ]

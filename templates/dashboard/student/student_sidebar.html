@@ -77,6 +77,56 @@
     #sidebar button:active {
         text-decoration: none !important;
     }
+
+    /* Rainbow Loading Spinner */
+    .rainbow-spinner {
+        position: relative;
+        width: 120px;
+        height: 120px;
+    }
+
+    .rainbow-spinner::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: conic-gradient(
+            from 0deg,
+            #FF0000, #FF7F00, #FFFF00, #00FF00, #0000FF, #4B0082, #9400D3, #FF0000
+        );
+        animation: rainbowSpin 2s linear infinite;
+        padding: 4px;
+    }
+
+    .rainbow-spinner::after {
+        content: '';
+        position: absolute;
+        inset: 4px;
+        border-radius: 50%;
+        background: white;
+        z-index: 10;
+    }
+
+    .rainbow-spinner img {
+        position: absolute;
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+        object-fit: contain;
+        z-index: 11;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+
+    @keyframes rainbowSpin {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
 </style>
 <!-- Mobile Overlay -->
 <div id="sidebar-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
@@ -154,7 +204,7 @@
                 {% endif %}
             </div>
         </button>
-        <a href="{% url 'logout' %}" class="flex items-center w-full px-4 py-3 rounded-xl transition duration-150 shadow-md hover:bg-white/20" style="color: rgba(255, 255, 255, 0.9); background: rgba(190, 129, 153, 0.2);">
+        <a href="javascript:void(0)" onclick="showLogoutLoadingModal('{% url 'logout' %}')" class="flex items-center w-full px-4 py-3 rounded-xl transition duration-150 shadow-md hover:bg-white/20" style="color: rgba(255, 255, 255, 0.9); background: rgba(190, 129, 153, 0.2);">
             <i class="fas fa-sign-out-alt w-5 h-5 mr-3"></i>
             <span class="font-medium">Logout</span>
         </a>
@@ -197,9 +247,26 @@
             }
         });
         
-        // Handle clicks to maintain active state
+        // Handle clicks to maintain active state and show loading
         sidebarLinks.forEach(link => {
             link.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                
+                // Show loading if it's a valid link (not #)
+                if (href && href !== '#') {
+                    // Show loading overlay
+                    const loadingOverlay = document.createElement('div');
+                    loadingOverlay.id = 'sidebar-loading-overlay';
+                    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+                    loadingOverlay.innerHTML = `
+                        <div class="rainbow-spinner">
+                            <img src="/static/img/attendance-logo.png" alt="Loading">
+                        </div>
+                    `;
+                    document.body.appendChild(loadingOverlay);
+                    console.log('[SIDEBAR] Loading overlay shown for:', href);
+                }
+                
                 // Remove active state from all links
                 sidebarLinks.forEach(l => {
                     removeActiveStyle(l);
@@ -277,29 +344,40 @@
 
             <!-- Profile Details -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Department Input -->
+                <div class="bg-gray-50 p-4 rounded-xl">
+                    <label class="block text-sm font-medium text-gray-500 mb-1">DEPARTMENT</label>
+                    <p id="profile-department-display" class="text-lg font-semibold text-gray-900" style="text-transform: uppercase;">{{ user.department|default:"Not Assigned" }}</p>
+                    <input type="text" name="department" id="profile-department-input" value="" class="w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-semibold text-lg" style="display: none; text-transform: uppercase;" placeholder="Enter Department">
+                </div>
+                
                 <div class="bg-gray-50 p-4 rounded-xl">
                     <label class="block text-sm font-medium text-gray-500 mb-1">ID Number</label>
                     <p class="text-lg font-semibold text-gray-900 font-mono">{{ user.school_id|default:"Not Set" }}</p>
                 </div>
                 
+                <!-- Program Input -->
                 <div class="bg-gray-50 p-4 rounded-xl">
-                    <label class="block text-sm font-medium text-gray-500 mb-1">School Name</label>
-                    <p class="text-lg font-semibold text-gray-900">{{ user.school_name|default:"Not Assigned" }}</p>
+                    <label class="block text-sm font-medium text-gray-500 mb-1">PROGRAM</label>
+                    <p id="profile-program-display" class="text-lg font-semibold text-gray-900" style="text-transform: uppercase;">
+                        {% if user.program_text %}
+                            {{ user.program_text }}
+                        {% elif user.program %}
+                            {% if user.program.code %}{{ user.program.code }} - {% endif %}{{ user.program.name }}
+                        {% else %}
+                            Not Assigned
+                        {% endif %}
+                    </p>
+                    <input type="text" name="program" id="profile-program-input" value="" class="w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-semibold text-lg" style="display: none; text-transform: uppercase;" placeholder="Enter Program" data-program-code="{% if user.program %}{{ user.program.code }}{% endif %}" data-program-name="{% if user.program %}{{ user.program.name }}{% endif %}">
                 </div>
                 
-                {% if user.department %}
+                <!-- Account Status -->
                 <div class="bg-gray-50 p-4 rounded-xl">
-                    <label class="block text-sm font-medium text-gray-500 mb-1">Department</label>
-                    <p class="text-lg font-semibold text-gray-900">{{ user.department }}</p>
+                    <label class="block text-sm font-medium text-gray-500 mb-1">Account Status</label>
+                    <p class="text-lg font-semibold text-green-600">
+                        <i class="fas fa-check-circle mr-1"></i>Active
+                    </p>
                 </div>
-                {% endif %}
-                
-                {% if user.program %}
-                <div class="bg-gray-50 p-4 rounded-xl">
-                    <label class="block text-sm font-medium text-gray-500 mb-1">Program</label>
-                    <p class="text-lg font-semibold text-gray-900">{{ user.program.code }} - {{ user.program.name }}</p>
-                </div>
-                {% endif %}
                 
                 {% if user.year_level %}
                 <div class="bg-gray-50 p-4 rounded-xl">
@@ -316,9 +394,6 @@
                 {% endif %}
                 
                 <div class="bg-gray-50 p-4 rounded-xl">
-                    <label class="block text-sm font-medium text-gray-500 mb-1">Account Status</label>
-                    <p class="text-lg font-semibold text-green-600">
-                        <i class="fas fa-check-circle mr-1"></i>Active
                     </p>
                 </div>
                 
@@ -427,7 +502,7 @@
                 <button type="button" id="profile-cancel-btn" onclick="cancelProfileEdit()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 hover:shadow-md transition duration-150 hidden">
                     Cancel
                 </button>
-                <button type="submit" id="profile-save-btn" class="px-5 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg transform hover:scale-105 hidden" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                <button type="submit" id="profile-save-btn" class="px-5 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg transform hover:scale-105 hidden" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';" onclick="showProfileLoadingAnimation()">
                     <i class="fas fa-save mr-2"></i>Save Changes
                 </button>
             </div>
@@ -510,6 +585,25 @@
             nameInput.style.display = 'block';
         }
         
+        // Make department editable - keep current value
+        const departmentDisplay = document.getElementById('profile-department-display');
+        const departmentInput = document.getElementById('profile-department-input');
+        if (departmentDisplay && departmentInput) {
+            departmentInput.value = departmentDisplay.textContent.trim();  // Keep the current value
+            departmentDisplay.style.display = 'none';
+            departmentInput.style.display = 'block';
+            departmentInput.focus();
+        }
+        
+        // Make program editable - keep current value
+        const programDisplay = document.getElementById('profile-program-display');
+        const programInput = document.getElementById('profile-program-input');
+        if (programDisplay && programInput) {
+            programInput.value = programDisplay.textContent.trim();  // Keep the current value
+            programDisplay.style.display = 'none';
+            programInput.style.display = 'block';
+        }
+        
         // Enable password button
         const changePasswordBtn = document.getElementById('profile-change-password-btn');
         const passwordHint = document.getElementById('profile-password-hint');
@@ -529,6 +623,85 @@
         if (editBtn) editBtn.classList.add('hidden');
         if (cancelBtn) cancelBtn.classList.remove('hidden');
         if (saveBtn) saveBtn.classList.remove('hidden');
+    }
+    
+    function cancelProfileEdit() {
+        // Hide profile picture upload button
+        const pictureLabel = document.getElementById('profile-picture-edit-label');
+        if (pictureLabel) {
+            pictureLabel.classList.add('hidden');
+        }
+        
+        // Reset profile picture input
+        const pictureInput = document.getElementById('profile_picture_input');
+        if (pictureInput) {
+            pictureInput.value = '';
+        }
+        
+        // Reset name field
+        const nameDisplay = document.getElementById('profile-name-display');
+        const nameInput = document.getElementById('profile-name-input');
+        if (nameDisplay && nameInput) {
+            const originalValue = nameDisplay.getAttribute('data-original-value');
+            nameInput.value = originalValue || '';
+            nameDisplay.style.display = 'block';
+            nameInput.style.display = 'none';
+        }
+        
+        // Reset department field - revert to display mode
+        const departmentDisplay = document.getElementById('profile-department-display');
+        const departmentInput = document.getElementById('profile-department-input');
+        if (departmentDisplay && departmentInput) {
+            departmentInput.value = '';  // Clear input when canceling
+            departmentDisplay.style.display = 'block';
+            departmentInput.style.display = 'none';
+        }
+        
+        // Reset program field - revert to display mode
+        const programDisplay = document.getElementById('profile-program-display');
+        const programInput = document.getElementById('profile-program-input');
+        if (programDisplay && programInput) {
+            programInput.value = '';  // Clear input when canceling
+            programDisplay.style.display = 'block';
+            programInput.style.display = 'none';
+        }
+        
+        // Reset password section
+        const passwordSection = document.getElementById('profile-password-section');
+        const changePasswordBtn = document.getElementById('profile-change-password-btn');
+        const passwordHint = document.getElementById('profile-password-hint');
+        const passwordBtnText = document.getElementById('profile-password-btn-text');
+        const hasCustomPassword = '{{ user.custom_password|yesno:"true,false" }}' === 'True';
+        
+        if (passwordSection && changePasswordBtn) {
+            passwordSection.style.display = 'none';
+            if (passwordBtnText) {
+                passwordBtnText.textContent = hasCustomPassword ? 'Change Password' : 'Add Password';
+            }
+            changePasswordBtn.classList.remove('text-gray-600', 'border-gray-300', 'hover:bg-gray-50');
+            changePasswordBtn.classList.add('text-blue-600', 'border-blue-300', 'hover:bg-blue-50');
+            changePasswordBtn.disabled = true;
+            changePasswordBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            // Clear password fields
+            const currentPassword = document.getElementById('profile-current-password');
+            const newPassword = document.getElementById('profile-new-password');
+            const confirmPassword = document.getElementById('profile-confirm-password');
+            if (currentPassword) currentPassword.value = '';
+            if (newPassword) newPassword.value = '';
+            if (confirmPassword) confirmPassword.value = '';
+        }
+        if (passwordHint) {
+            passwordHint.style.display = 'block';
+        }
+        
+        // Show/hide buttons
+        const editBtn = document.getElementById('profile-edit-btn');
+        const cancelBtn = document.getElementById('profile-cancel-btn');
+        const saveBtn = document.getElementById('profile-save-btn');
+        
+        if (editBtn) editBtn.classList.remove('hidden');
+        if (cancelBtn) cancelBtn.classList.add('hidden');
+        if (saveBtn) saveBtn.classList.add('hidden');
     }
     
     function togglePasswordFieldVisibility(fieldId, toggleIconId) {
@@ -875,11 +1048,7 @@
                 }
                 
                 if (data.success) {
-                    if (typeof showNotification === 'function') {
-                        showNotification(data.message || 'Profile updated successfully!', 'success');
-                    } else {
-                        alert(data.message || 'Profile updated successfully!');
-                    }
+                    // No notification needed - loading animation will be visible
                     
                     // Update profile picture in topbar and sidebar if provided
                     if (data.profile_picture_url) {
@@ -890,6 +1059,47 @@
                         if (profilePreview && profilePreview.src && profilePreview.src.startsWith('data:')) {
                             updateTopBarProfilePicture(profilePreview.src);
                         }
+                    }
+                    
+                    // Update display values with uppercase formatting using response data
+                    const departmentDisplay = document.getElementById('profile-department-display');
+                    const programDisplay = document.getElementById('profile-program-display');
+                    const programInput = document.getElementById('profile-program-input');
+                    
+                    if (departmentDisplay && data.department) {
+                        const deptValue = data.department.toUpperCase();
+                        departmentDisplay.textContent = deptValue;
+                        departmentDisplay.style.textTransform = 'uppercase';
+                    }
+                    
+                    if (programDisplay && data.program) {
+                        const progValue = data.program.toUpperCase();
+                        programDisplay.textContent = progValue;
+                        programDisplay.style.textTransform = 'uppercase';
+                        console.log('Updated program display to:', progValue);
+                    }
+                    
+                    // Update program input data attributes for next cancel/edit
+                    if (programInput && data.program && data.program !== 'NOT ASSIGNED') {
+                        // Parse the program string to extract code and name
+                        if (data.program.includes(' - ')) {
+                            const parts = data.program.split(' - ');
+                            const code = parts[0].trim().toUpperCase();
+                            const name = parts.slice(1).join(' - ').trim().toUpperCase();
+                            programInput.setAttribute('data-program-code', code);
+                            programInput.setAttribute('data-program-name', name);
+                            programInput.value = `${code} - ${name}`;
+                            console.log('Program data attributes updated - code:', code, 'name:', name);
+                        } else {
+                            programInput.setAttribute('data-program-code', '');
+                            programInput.setAttribute('data-program-name', data.program.toUpperCase());
+                            programInput.value = data.program.toUpperCase();
+                        }
+                    } else if (programInput) {
+                        // Clear attributes if "NOT ASSIGNED"
+                        programInput.setAttribute('data-program-code', '');
+                        programInput.setAttribute('data-program-name', '');
+                        programInput.value = 'NOT ASSIGNED';
                     }
                     
                     cancelProfileEdit();
@@ -933,5 +1143,36 @@
             }
         });
     }
+
+    // Logout loading animation
+    function showLogoutLoadingModal(url) {
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+        loadingOverlay.innerHTML = `
+            <div class="rainbow-spinner">
+                <img src="/static/img/attendance-logo.png" alt="Loading">
+            </div>
+        `;
+        document.body.appendChild(loadingOverlay);
+        setTimeout(() => {
+            window.location.href = url;
+        }, 300);
+    }
+
+    window.showLogoutLoadingModal = showLogoutLoadingModal;
+
+    // Profile save loading animation
+    function showProfileLoadingAnimation() {
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+        loadingOverlay.innerHTML = `
+            <div class="rainbow-spinner">
+                <img src="/static/img/attendance-logo.png" alt="Loading">
+            </div>
+        `;
+        document.body.appendChild(loadingOverlay);
+    }
+
+    window.showProfileLoadingAnimation = showProfileLoadingAnimation;
 </script>
 

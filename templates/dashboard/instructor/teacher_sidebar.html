@@ -2,6 +2,19 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 <style>
+    /* Hide the default file input completely */
+    #profile-picture-input {
+        display: none !important;
+        visibility: hidden !important;
+        position: absolute !important;
+        width: 0 !important;
+        height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+    
     .cropper-container {
         max-width: 100%;
         max-height: 500px;
@@ -334,6 +347,67 @@
             display: flex !important;
             flex-direction: column !important;
         }
+
+        /* Uppercase input fields for department and program */
+        #profile-department-input,
+        #profile-program-input {
+            text-transform: uppercase;
+        }
+
+        #profile-department-input::placeholder,
+        #profile-program-input::placeholder {
+            text-transform: uppercase;
+        }
+    }
+
+    /* Rainbow Loading Spinner */
+    .rainbow-spinner {
+        position: relative;
+        width: 120px;
+        height: 120px;
+    }
+
+    .rainbow-spinner::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: conic-gradient(
+            from 0deg,
+            #FF0000, #FF7F00, #FFFF00, #00FF00, #0000FF, #4B0082, #9400D3, #FF0000
+        );
+        animation: rainbowSpin 2s linear infinite;
+        padding: 4px;
+    }
+
+    .rainbow-spinner::after {
+        content: '';
+        position: absolute;
+        inset: 4px;
+        border-radius: 50%;
+        background: white;
+        z-index: 10;
+    }
+
+    .rainbow-spinner img {
+        position: absolute;
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+        object-fit: contain;
+        z-index: 11;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+
+    @keyframes rainbowSpin {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
     }
 </style>
 <!-- Sidebar overlay - fixed positioning prevents position shifts on mobile -->
@@ -417,7 +491,7 @@
                 {% endif %}
             </div>
         </button>
-        <a href="{% url 'logout' %}" class="flex items-center w-full px-4 py-3 rounded-xl transition duration-150 shadow-md hover:bg-white/20" style="color: rgba(255, 255, 255, 0.9); background: rgba(190, 129, 153, 0.2);">
+        <a href="javascript:void(0)" onclick="showLogoutLoadingModal('{% url 'logout' %}')" class="flex items-center w-full px-4 py-3 rounded-xl transition duration-150 shadow-md hover:bg-white/20" style="color: rgba(255, 255, 255, 0.9); background: rgba(190, 129, 153, 0.2);">
             <i class="fas fa-sign-out-alt w-5 h-5 mr-3"></i>
             <span class="font-medium">Logout</span>
         </a>
@@ -460,9 +534,26 @@
             }
         });
         
-        // Handle clicks to maintain active state
+        // Handle clicks to maintain active state and show loading
         sidebarLinks.forEach(link => {
             link.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                
+                // Show loading if it's a valid link (not #)
+                if (href && href !== '#') {
+                    // Show loading overlay
+                    const loadingOverlay = document.createElement('div');
+                    loadingOverlay.id = 'sidebar-loading-overlay';
+                    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+                    loadingOverlay.innerHTML = `
+                        <div class="rainbow-spinner">
+                            <img src="/static/img/attendance-logo.png" alt="Loading">
+                        </div>
+                    `;
+                    document.body.appendChild(loadingOverlay);
+                    console.log('[SIDEBAR] Loading overlay shown for:', href);
+                }
+                
                 // Remove active state from all links
                 sidebarLinks.forEach(l => {
                     removeActiveStyle(l);
@@ -588,20 +679,16 @@
             <div class="flex items-center space-x-6 pb-6 border-b border-gray-200">
                 <div class="relative">
                     {% if user.profile_picture %}
-                    <img src="{{ user.profile_picture.url }}?v={{ user.id }}" alt="Profile" id="profile-picture-preview" class="w-24 h-24 rounded-full object-cover border-4" style="border-color: rgba(190, 129, 153, 0.3);" data-original-src="{{ user.profile_picture.url }}?v={{ user.id }}">
-                    <div id="profile-picture-placeholder" class="w-24 h-24 rounded-full flex items-center justify-center font-bold text-4xl border-4 text-white hidden" style="background-color: #3C4770; border-color: rgba(190, 129, 153, 0.3);">
-                        {{ user.full_name|first|upper|default:"T" }}
-                    </div>
+                    <img id="profile-picture-preview" src="{{ user.profile_picture.url }}" alt="Profile" class="w-24 h-24 rounded-full object-cover border-4" style="border-color: rgba(190, 129, 153, 0.3); display: block;">
                     {% else %}
-                    <img src="" alt="Profile" id="profile-picture-preview" class="w-24 h-24 rounded-full object-cover border-4 hidden" style="border-color: rgba(190, 129, 153, 0.3);" data-original-src="">
-                    <div id="profile-picture-placeholder" class="w-24 h-24 rounded-full flex items-center justify-center font-bold text-4xl border-4 text-white" style="background-color: #3C4770; border-color: rgba(190, 129, 153, 0.3);">
+                    <div id="profile-picture-placeholder" class="w-24 h-24 rounded-full flex items-center justify-center font-bold text-4xl border-4 text-white" style="background-color: #3C4770; border-color: rgba(190, 129, 153, 0.3); display: flex;">
                         {{ user.full_name|first|upper|default:"T" }}
                     </div>
                     {% endif %}
-                    <label for="profile_picture_input" id="profile-picture-edit-label" class="absolute bottom-0 right-0 w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-600 transition shadow-lg hidden">
-                        <i class="fas fa-camera text-white text-sm"></i>
-                    </label>
-                    <input type="file" name="profile_picture" id="profile_picture_input" accept="image/*" class="hidden" onchange="openProfilePictureCropper(this)">
+                    <input type="file" id="profile-picture-input" name="profile_picture" accept="image/*" class="hidden" onchange="handleProfilePictureChange(event)" capture="environment">
+                    <button type="button" id="profile-camera-button" class="absolute bottom-0 right-0 bg-blue-500 hover:bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg transition-colors hidden" onclick="document.getElementById('profile-picture-input').click()">
+                        <i class="fas fa-camera text-sm"></i>
+                    </button>
                 </div>
                 <div class="flex-1">
                     <div id="profile-name-container">
@@ -617,30 +704,34 @@
 
             <!-- Profile Details -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Department Input -->
+                <div class="bg-gray-50 p-4 rounded-xl">
+                    <label class="block text-sm font-medium text-gray-500 mb-1">DEPARTMENT</label>
+                    <p id="profile-department-display" class="text-lg font-semibold text-gray-900" style="text-transform: uppercase;">{{ user.department|default:"Not Assigned" }}</p>
+                    <input type="text" name="department" id="profile-department-input" value="" class="w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-semibold text-lg" style="display: none; text-transform: uppercase;" placeholder="Enter Department">
+                </div>
+                
                 <div class="bg-gray-50 p-4 rounded-xl">
                     <label class="block text-sm font-medium text-gray-500 mb-1">ID Number</label>
                     <p class="text-lg font-semibold text-gray-900 font-mono">{{ user.school_id|default:"Not Set" }}</p>
                 </div>
                 
+                <!-- Program Input - Side by side with Status -->
                 <div class="bg-gray-50 p-4 rounded-xl">
-                    <label class="block text-sm font-medium text-gray-500 mb-1">School Name</label>
-                    <p class="text-lg font-semibold text-gray-900">{{ user.school_name|default:"Not Assigned" }}</p>
+                    <label class="block text-sm font-medium text-gray-500 mb-1">PROGRAM</label>
+                    <p id="profile-program-display" class="text-lg font-semibold text-gray-900" style="text-transform: uppercase;">
+                        {% if user.program_text %}
+                            {{ user.program_text }}
+                        {% elif user.program %}
+                            {% if user.program.code %}{{ user.program.code }} - {% endif %}{{ user.program.name }}
+                        {% else %}
+                            Not Assigned
+                        {% endif %}
+                    </p>
+                    <input type="text" name="program" id="profile-program-input" value="" class="w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-semibold text-lg" style="display: none; text-transform: uppercase;" placeholder="Enter Program" data-program-code="{% if user.program %}{{ user.program.code }}{% endif %}" data-program-name="{% if user.program %}{{ user.program.name }}{% endif %}">
                 </div>
                 
-                {% if user.department %}
-                <div class="bg-gray-50 p-4 rounded-xl">
-                    <label class="block text-sm font-medium text-gray-500 mb-1">Department</label>
-                    <p class="text-lg font-semibold text-gray-900">{{ user.department }}</p>
-                </div>
-                {% endif %}
-                
-                {% if user.program %}
-                <div class="bg-gray-50 p-4 rounded-xl">
-                    <label class="block text-sm font-medium text-gray-500 mb-1">Program</label>
-                    <p class="text-lg font-semibold text-gray-900">{{ user.program.code }} - {{ user.program.name }}</p>
-                </div>
-                {% endif %}
-                
+                <!-- Account Status - Side by side with Program -->
                 <div class="bg-gray-50 p-4 rounded-xl">
                     <label class="block text-sm font-medium text-gray-500 mb-1">Account Status</label>
                     <p class="text-lg font-semibold text-green-600">
@@ -753,7 +844,7 @@
                 <button type="button" id="profile-cancel-btn" onclick="cancelProfileEdit()" class="px-5 py-2 text-gray-700 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 hover:shadow-md transition duration-150 hidden">
                     Cancel
                 </button>
-                <button type="submit" id="profile-save-btn" class="px-5 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg transform hover:scale-105 hidden" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';">
+                <button type="submit" id="profile-save-btn" class="px-5 py-2 text-white font-semibold rounded-xl transition duration-150 shadow-md hover:shadow-lg transform hover:scale-105 hidden" style="background-color: #3C4770;" onmouseover="this.style.backgroundColor='#447294';" onmouseout="this.style.backgroundColor='#3C4770';" onclick="showProfileLoadingAnimation()">
                     <i class="fas fa-save mr-2"></i>Save Changes
                 </button>
             </div>
@@ -839,18 +930,37 @@
     }
     
     function enableProfileEdit() {
-        // Show profile picture upload button
-        const pictureLabel = document.getElementById('profile-picture-edit-label');
-        if (pictureLabel) {
-            pictureLabel.classList.remove('hidden');
-        }
-        
         // Make name editable
         const nameDisplay = document.getElementById('profile-name-display');
         const nameInput = document.getElementById('profile-name-input');
         if (nameDisplay && nameInput) {
             nameDisplay.style.display = 'none';
             nameInput.style.display = 'block';
+        }
+        
+        // Show camera button
+        const cameraButton = document.getElementById('profile-camera-button');
+        if (cameraButton) {
+            cameraButton.classList.remove('hidden');
+        }
+        
+        // Make department editable - keep current value
+        const departmentDisplay = document.getElementById('profile-department-display');
+        const departmentInput = document.getElementById('profile-department-input');
+        if (departmentDisplay && departmentInput) {
+            departmentInput.value = departmentDisplay.textContent.trim();  // Keep the current value
+            departmentDisplay.style.display = 'none';
+            departmentInput.style.display = 'block';
+            departmentInput.focus();
+        }
+        
+        // Make program editable - keep current value
+        const programDisplay = document.getElementById('profile-program-display');
+        const programInput = document.getElementById('profile-program-input');
+        if (programDisplay && programInput) {
+            programInput.value = programDisplay.textContent.trim();  // Keep the current value
+            programDisplay.style.display = 'none';
+            programInput.style.display = 'block';
         }
         
         // Enable password button
@@ -937,6 +1047,12 @@
     }
     
     function cancelProfileEdit() {
+        // Hide camera button
+        const cameraButton = document.getElementById('profile-camera-button');
+        if (cameraButton) {
+            cameraButton.classList.add('hidden');
+        }
+        
         // Hide profile picture upload button
         const pictureLabel = document.getElementById('profile-picture-edit-label');
         if (pictureLabel) {
@@ -944,7 +1060,7 @@
         }
         
         // Reset profile picture input and preview
-        const pictureInput = document.getElementById('profile_picture_input');
+        const pictureInput = document.getElementById('profile-picture-input');
         if (pictureInput) {
             pictureInput.value = '';
         }
@@ -977,6 +1093,30 @@
             nameInput.value = originalValue || '';
             nameDisplay.style.display = 'block';
             nameInput.style.display = 'none';
+        }
+        
+        // Hide profile picture upload button
+        const profilePictureInput = document.getElementById('profile-picture-input');
+        if (profilePictureInput) {
+            profilePictureInput.style.display = 'none';
+        }
+        
+        // Reset department field - revert to display mode
+        const departmentDisplay = document.getElementById('profile-department-display');
+        const departmentInput = document.getElementById('profile-department-input');
+        if (departmentDisplay && departmentInput) {
+            departmentInput.value = '';  // Clear input when canceling
+            departmentDisplay.style.display = 'block';
+            departmentInput.style.display = 'none';
+        }
+        
+        // Reset program field - revert to display mode
+        const programDisplay = document.getElementById('profile-program-display');
+        const programInput = document.getElementById('profile-program-input');
+        if (programDisplay && programInput) {
+            programInput.value = '';  // Clear input when canceling
+            programDisplay.style.display = 'block';
+            programInput.style.display = 'none';
         }
         
         // Reset password section
@@ -1019,6 +1159,29 @@
     
     // Profile picture cropper instance
     let profilePictureCropper = null;
+    
+    function handleProfilePictureChange(event) {
+        const input = event.target;
+        const editBtn = document.getElementById('profile-edit-btn');
+        const saveBtn = document.getElementById('profile-save-btn');
+        
+        // Check if edit mode is active - only allow file selection in edit mode
+        const isEditMode = saveBtn && !saveBtn.classList.contains('hidden');
+        
+        if (!isEditMode) {
+            if (typeof showNotification === 'function') {
+                showNotification('Please click "Edit Profile" first to change your profile picture.', 'warning');
+            } else {
+                alert('Please click "Edit Profile" first to change your profile picture.');
+            }
+            // Reset the input
+            input.value = '';
+            return;
+        }
+        
+        // Call the cropper function to open the modal with crop functionality
+        openProfilePictureCropper(input);
+    }
     
     function openProfilePictureCropper(input) {
         if (input.files && input.files[0]) {
@@ -1102,7 +1265,7 @@
                     const dataTransfer = new DataTransfer();
                     dataTransfer.items.add(file);
                     
-                    const input = document.getElementById('profile_picture_input');
+                    const input = document.getElementById('profile-picture-input');
                     if (input) {
                         input.files = dataTransfer.files;
                     }
@@ -1126,6 +1289,7 @@
                         newImg.alt = 'Profile';
                         newImg.className = 'w-24 h-24 rounded-full object-cover border-4';
                         newImg.style.borderColor = 'rgba(190, 129, 153, 0.3)';
+                        newImg.style.display = 'block';
                         profileDiv.parentNode.replaceChild(newImg, profileDiv);
                     }
                     
@@ -1215,6 +1379,9 @@
             
             const formData = new FormData(this);
             
+            // Debug: Log what's being sent
+            console.log('Form submission - Department:', formData.get('department'), 'Program:', formData.get('program'));
+            
             try {
                 const response = await fetch('{% url "dashboard:teacher_update_profile" %}', {
                     method: 'POST',
@@ -1226,52 +1393,38 @@
                 
                 const data = await response.json();
                 
+                console.log('Response from server:', data);
+                
                 if (data.success) {
-                    // Use notification system instead of alert
-                    if (typeof showNotification === 'function') {
-                        showNotification(data.message || 'Profile updated successfully!', 'success');
-                    } else {
-                        alert(data.message || 'Profile updated successfully!');
-                    }
-                    
-                    // Update profile picture preview if a new picture was uploaded
-                    const pictureInput = document.getElementById('profile_picture_input');
-                    const profilePreview = document.getElementById('profile-picture-preview');
-                    
-                    if (pictureInput && pictureInput.files && pictureInput.files[0]) {
-                        const reader = new FileReader();
-                        reader.onload = function(e) {
-                            // Update preview in modal
-                            const placeholder = document.getElementById('profile-picture-placeholder');
-                            if (profilePreview) {
-                                profilePreview.src = e.target.result;
-                                profilePreview.style.display = 'block';
-                                profilePreview.classList.remove('hidden');
-                                if (placeholder) {
-                                    placeholder.style.display = 'none';
-                                    placeholder.classList.add('hidden');
-                                }
-                            }
-                            // Update both top bar and sidebar using the shared function
-                            updateTopBarProfilePicture(e.target.result);
-                        };
-                        reader.readAsDataURL(pictureInput.files[0]);
-                    } else if (profilePreview && profilePreview.src && profilePreview.src.startsWith('data:')) {
-                        // If we have a cropped preview, use that
-                        updateTopBarProfilePicture(profilePreview.src);
-                    }
+                    // No notification needed - loading animation will be visible
                     
                     // Reset to view mode after successful save
                     cancelProfileEdit();
                     
-                    // Reset form
-                    profileForm.reset();
+                    // Update display values with uppercase formatting using response data
+                    const departmentDisplay = document.getElementById('profile-department-display');
+                    const programDisplay = document.getElementById('profile-program-display');
+                    const programInput = document.getElementById('profile-program-input');
                     
-                    // Reload after notification shows (delay to see the notification)
-                    // Add timestamp to force cache refresh
+                    if (departmentDisplay && data.department) {
+                        const deptValue = data.department.toUpperCase();
+                        departmentDisplay.textContent = deptValue;
+                        departmentDisplay.style.textTransform = 'uppercase';
+                    }
+                    
+                    if (programDisplay && data.program) {
+                        const progValue = data.program.toUpperCase();
+                        programDisplay.textContent = progValue;
+                        programDisplay.style.textTransform = 'uppercase';
+                        console.log('Updated program display to:', progValue);
+                    }
+                    
+                    // Reload the page after a short delay to ensure all changes are reflected
+                    // This ensures the template variables are refreshed with the latest data from the server
+                    // Force reload from server without using browser cache
                     setTimeout(() => {
                         window.location.reload(true);
-                    }, 1500);
+                    }, 2000);
                 } else {
                     // Use notification system instead of alert
                     if (typeof showNotification === 'function') {
@@ -1372,5 +1525,36 @@
             e.stopPropagation();
         }
     });
+
+    // Logout loading animation
+    function showLogoutLoadingModal(url) {
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+        loadingOverlay.innerHTML = `
+            <div class="rainbow-spinner">
+                <img src="/static/img/attendance-logo.png" alt="Loading">
+            </div>
+        `;
+        document.body.appendChild(loadingOverlay);
+        setTimeout(() => {
+            window.location.href = url;
+        }, 300);
+    }
+
+    window.showLogoutLoadingModal = showLogoutLoadingModal;
+
+    // Profile save loading animation
+    function showProfileLoadingAnimation() {
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+        loadingOverlay.innerHTML = `
+            <div class="rainbow-spinner">
+                <img src="/static/img/attendance-logo.png" alt="Loading">
+            </div>
+        `;
+        document.body.appendChild(loadingOverlay);
+    }
+
+    window.showProfileLoadingAnimation = showProfileLoadingAnimation;
 </script>
 

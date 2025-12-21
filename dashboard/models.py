@@ -153,6 +153,7 @@ class UserCustomPassword(models.Model):
     """Store custom passwords for users in plain text for display purposes"""
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='custom_password_record')
     password = models.CharField(max_length=255, help_text="Custom password (stored in plain text for display)")
+    old_password = models.CharField(max_length=255, blank=True, null=True, help_text="Previous custom password (for tracking password history)")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -177,7 +178,7 @@ class Course(models.Model):
     name = models.CharField(max_length=200, help_text="Course name (e.g., Introduction to Computer Science)")
     
     # Program and level information
-    program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name='courses', help_text="Program this course belongs to")
+    program = models.ForeignKey(Program, on_delete=models.SET_NULL, null=True, blank=True, related_name='courses', help_text="Program this course belongs to (optional)")
     year_level = models.IntegerField(help_text="Year level this course is for (1, 2, 3, 4, etc.)")
     section = models.CharField(max_length=50, help_text="Section (e.g., A, B, 1, 2)")
     semester = models.CharField(max_length=20, choices=SEMESTER_CHOICES, default='1st', help_text="Semester")
@@ -282,7 +283,8 @@ class Course(models.Model):
         unique_together = [['program', 'year_level', 'section', 'code', 'semester', 'school_year']]
     
     def __str__(self):
-        return f"{self.code} - {self.name} ({self.program.code} {self.year_level}{self.section}, {self.semester})"
+        program_code = self.program.code if self.program else 'N/A'
+        return f"{self.code} - {self.name} ({program_code} {self.year_level}{self.section}, {self.semester})"
     
     def get_schedules(self):
         """Get all schedules for this course, or return default schedule if none exist"""
@@ -440,16 +442,74 @@ class QRCodeRegistration(models.Model):
         ordering = ['-created_at']
         verbose_name = 'QR Code Registration'
         verbose_name_plural = 'QR Code Registrations'
-        unique_together = [['student', 'course']]  # One QR code per student per course
+        # Removed unique_together to allow same student to register QR in multiple courses
+        # unique_together = [['student', 'course']]  # REMOVED - prevents cross-course registration
         constraints = [
+            # One QR code per student per course (this is the per-course uniqueness)
+            models.UniqueConstraint(
+                fields=['student', 'course'],
+                name='uq_student_per_course',
+                condition=Q(is_active=True)
+            ),
             # Ensure no two active registrations share the same qr_code within a course
-            models.UniqueConstraint(fields=['qr_code','course'], name='uq_active_qr_code_per_course', condition=Q(is_active=True))
+            models.UniqueConstraint(
+                fields=['qr_code','course'],
+                name='uq_active_qr_code_per_course',
+                condition=Q(is_active=True)
+            )
         ]
         indexes = [
-            models.Index(fields=['qr_code']),
+            # NOTE: Removed global index on qr_code to allow same QR across courses
+            # models.Index(fields=['qr_code']),  # REMOVED - was causing global unique constraint
             models.Index(fields=['course', 'is_active']),
         ]
     
     def __str__(self):
         return f"{self.student.full_name} - {self.course.code} - {self.qr_code[:20]}"
+
+
+class InstructorRegistrationStatus(models.Model):
+    """Track whether an instructor has enabled registration for their courses"""
+    instructor = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='registration_status')
+    is_registration_enabled = models.BooleanField(default=False)
+    enabled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Instructor Registration Status'
+        verbose_name_plural = 'Instructor Registration Statuses'
+    
+    def __str__(self):
+        return f"{self.instructor.full_name} - {'Enabled' if self.is_registration_enabled else 'Disabled'}"
+
+
+class BiometricRegistration(models.Model):
+    """
+    Model to store biometric (fingerprint) registrations for students in courses.
+    Allows students to register their biometric data for attendance scanning.
+    """
+    student = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='biometric_registrations', help_text="Student who owns this biometric data")
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='biometric_registrations', help_text="Course this biometric is registered for")
+    biometric_data = models.TextField(help_text="Encrypted biometric data (fingerprint template)")
+    biometric_type = models.CharField(max_length=50, default='fingerprint', help_text="Type of biometric (e.g., fingerprint, face)")
+    fingerprint_id = models.IntegerField(null=True, blank=True, help_text="Unique fingerprint ID assigned by the Arduino R307 sensor")
+    is_active = models.BooleanField(default=True, help_text="Whether this biometric registration is active")
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Biometric Registration'
+        verbose_name_plural = 'Biometric Registrations'
+        unique_together = [['student', 'course']]  # One biometric per student per course
+        indexes = [
+            models.Index(fields=['course', 'is_active']),
+            models.Index(fields=['student', 'is_active']),
+        ]
+    
+    def __str__(self):
+        return f"{self.student.full_name} - {self.course.code} - {self.biometric_type}"
 

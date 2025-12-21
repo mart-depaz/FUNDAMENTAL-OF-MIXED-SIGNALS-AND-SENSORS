@@ -25,27 +25,52 @@ class CustomUser(AbstractUser):
     year_level = models.IntegerField(null=True, blank=True, help_text="Year level (1, 2, 3, 4, etc.)")
     section = models.CharField(max_length=50, blank=True, null=True, help_text="Section (e.g., A, B, 1, 2)")
     department = models.CharField(max_length=200, blank=True, null=True, help_text="Department")
+    program_text = models.CharField(max_length=300, blank=True, null=True, help_text="User-entered program/major text (for free-text entry)")
     profile_picture = models.ImageField(upload_to='profile_pictures/', blank=True, null=True, help_text="Profile picture")
     deleted_at = models.DateTimeField(null=True, blank=True, help_text="Soft delete timestamp - item will be permanently deleted after 30 days")
     custom_password = models.CharField(max_length=128, blank=True, null=True, help_text="User's custom password (hashed)")
     otp_code = models.CharField(max_length=6, blank=True, null=True, help_text="OTP code for password reset")
     otp_expires_at = models.DateTimeField(null=True, blank=True, help_text="OTP expiration timestamp")
+    qr_code_id = models.CharField(max_length=500, blank=True, null=True, help_text="Student's registered QR code ID (must be unique globally - only this student can use this QR code). NOTE: unique=True removed to allow migrations. Use custom validation in views instead.")
 
     def __str__(self):
         return f"{self.full_name or self.username}"
     
     def set_custom_password(self, raw_password):
         """Set the custom password (hashed) and store plain text for display"""
-        from django.contrib.auth.hashers import make_password
+        from django.contrib.auth.hashers import make_password, check_password
+        
+        # Store the old password BEFORE updating
+        old_password = None
+        try:
+            # Check if user already has a custom password set
+            if self.custom_password and check_password(raw_password, self.custom_password):
+                # User is setting the same password - don't update
+                return
+            
+            # Get the current plain text password before we change it
+            from dashboard.models import UserCustomPassword
+            current_record = UserCustomPassword.objects.filter(user=self).first()
+            if current_record and current_record.password:
+                # CRITICAL FIX: Only store old_password if it's different from the new password
+                if current_record.password != raw_password:
+                    old_password = current_record.password
+        except Exception:
+            pass
+        
+        # Now set the new password hash
         self.custom_password = make_password(raw_password)
         self.save(update_fields=['custom_password'])
         
-        # Store plain text password for display (similar to temporary password)
+        # Store plain text password for display and track old password
         try:
             from dashboard.models import UserCustomPassword
             UserCustomPassword.objects.update_or_create(
                 user=self,
-                defaults={'password': raw_password}
+                defaults={
+                    'password': raw_password,
+                    'old_password': old_password  # Set to previous password (or None if first time)
+                }
             )
         except Exception:
             pass  # Silently fail if model doesn't exist yet (migration pending)

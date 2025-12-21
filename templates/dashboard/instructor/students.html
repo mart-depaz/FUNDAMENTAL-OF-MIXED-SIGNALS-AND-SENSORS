@@ -45,32 +45,7 @@
         pointer-events: none;
     }
     
-    /* Twinkling star overlay - Match Manage Courses */
-    @keyframes twinkle {
-        0%, 45%, 55%, 100% {
-            opacity: 0.1;
-            transform: scale(0.9);
-        }
-        50% {
-            opacity: 1.0;
-            transform: scale(1.1);
-        }
-    }
-    .multi-stars-field {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        overflow: hidden;
-        border-radius: 1rem; /* close to rounded-2xl */
-        mix-blend-mode: screen;
-    }
-    .star-dot {
-        position: absolute;
-        background-color: #ffffff;
-        border-radius: 50%;
-        box-shadow: 0 0 5px #a0c3ff, 0 0 10px #ffffff;
-        animation: twinkle linear infinite;
-    }
+    /* Twinkling star overlay - REMOVED */
     
     /* Course Card Block Styling - Match Manage Courses */
     .course-card-block {
@@ -110,12 +85,107 @@
         overflow-wrap: break-word;
         hyphens: auto;
     }
+
+    /* Transfer Students Modal Styles */
+    .transfer-modal-student-item {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.75rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .transfer-modal-student-item:hover {
+        background-color: #f3f4f6;
+        border-color: #d1d5db;
+    }
+
+    .transfer-modal-student-item.selected {
+        background-color: #dbeafe;
+        border-color: #3b82f6;
+    }
+
+    .transfer-modal-student-item input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        margin-right: 0.75rem;
+    }
+
+    .transfer-modal-student-list {
+        max-height: 400px;
+        overflow-y: auto;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.75rem;
+        padding: 0.5rem;
+        background: white;
+    }
+
+    /* Student Search Styles */
+    .animate-fadeIn {
+        animation: fadeInStudent 0.3s ease-in;
+    }
+
+    @keyframes fadeInStudent {
+        from {
+            opacity: 0;
+            transform: translateY(-5px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    #student-search-input {
+        transition: all 0.3s ease;
+    }
+
+    #student-search-input:focus {
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    #clear-search-btn {
+        cursor: pointer;
+        padding: 0.25rem;
+        border-radius: 0.25rem;
+    }
+
+    #clear-search-btn:hover {
+        background-color: rgba(156, 163, 175, 0.1);
+    }
+
+    /* Modal Transitions */
+    #enrollmentStatusModal {
+        transition: opacity 0.2s ease, visibility 0.2s ease;
+        opacity: 0;
+        visibility: hidden;
+    }
+    
+    #enrollmentStatusModal:not(.hidden) {
+        opacity: 1;
+        visibility: visible;
+    }
 </style>
 
 <div class="p-4 md:p-8 bg-gradient-to-br from-gray-50 via-white to-gray-50 flex-grow rounded-2xl min-h-full" style="background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 50%, #f0f4f8 100%);">
+    <!-- Register Button at Top - Only show on first page (course selection) -->
+    {% if not selected_course %}
+    <div class="mb-6 flex justify-end">
+        <button id="registrationToggleBtn" onclick="openRegistrationModal()" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg transition flex items-center gap-2 whitespace-nowrap">
+            <i class="fas fa-unlock"></i>
+            <span id="registrationBtnText">Open Registration</span>
+        </button>
+    </div>
+    {% endif %}
     {% if selected_course %}
-    <!-- View Dropped Students Button (Outside Container) -->
-    <div class="mb-4 flex justify-end">
+    <!-- View Dropped Students and Back to Courses Buttons -->
+    <div class="mb-4 flex justify-between items-center gap-3">
+        <a href="javascript:void(0)" onclick="showStudentLoadingModal('{% url 'dashboard:students' %}')" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold border border-indigo-700 transition flex items-center gap-2 shadow-md hover:shadow-lg">
+            <i class="fas fa-arrow-left mr-2"></i>Back to Courses
+        </a>
         <button onclick="window.openDroppedStudentsModal({{ selected_course.id }})" 
                 class="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-semibold border border-red-700 hover:bg-red-700 transition flex items-center gap-2 shadow-md hover:shadow-lg">
             <i class="fas fa-user-slash mr-2"></i>View Dropped Students
@@ -134,8 +204,6 @@
                 <h1 class="text-2xl md:text-3xl font-bold text-white drop-shadow flex flex-wrap items-center gap-2 truncate" title="{{ selected_course.code }} • {{ selected_course.name }}">{{ selected_course.code }} <span class="text-white/70 text-2xl">•</span> {{ selected_course.name }}</h1>
                 <div class="flex flex-wrap items-center gap-3 text-sm text-white/80 mt-2">
                     <span class="flex items-center gap-1"><i class="fas fa-graduation-cap text-xs"></i>{{ selected_course.program.code }} - {{ selected_course.program.name }}</span>
-                    <span class="flex items-center gap-1"><i class="fas fa-calendar text-xs"></i>{% if selected_course.semester == '1st' %}1st Semester{% elif selected_course.semester == '2nd' %}2nd Semester{% else %}{{ selected_course.semester }}{% endif %}</span>
-                    <span class="flex items-center gap-1"><i class="fas fa-calendar-alt text-xs"></i>{{ selected_course.school_year }}</span>
                     {% if selected_course.enrollment_code %}
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="flex items-center gap-2">
@@ -169,19 +237,9 @@
                     <p class="text-sm mt-1 text-gray-500">Select another section to continue exploring.</p>
                 </div>
             </div>
-                <div class="flex flex-wrap items-center gap-2">
-                <a href="{% url 'dashboard:students' %}" class="px-4 py-2 bg-white/20 text-white rounded-xl text-sm font-semibold border border-white/30 hover:bg-white/30 transition">
-                    <i class="fas fa-arrow-left mr-2"></i>Back to Courses
-                </a>
-                <a href="{% url 'dashboard:instructor_courses' %}" class="px-4 py-2 bg-white text-indigo-600 rounded-xl text-sm font-semibold shadow-md hover:shadow-lg transition">
-                    <i class="fas fa-cog mr-2"></i>Manage Courses
-                </a>
-                {% if selected_course.instructor == user %}
-                <button onclick="openQRScanner({{ selected_course.id }})" class="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 transition shadow-md">
-                    <i class="fas fa-qrcode mr-2"></i>Register QR Code
+                <button onclick="window.openTransferStudentsModal()" class="px-4 py-2 bg-white text-indigo-600 rounded-xl text-sm font-semibold shadow-md hover:shadow-lg transition" id="transfer-students-btn" data-current-section-id="{{ selected_course.id }}">
+                    <i class="fas fa-exchange-alt mr-2"></i>Reassign Section
                 </button>
-                {% endif %}
-            </div>
         </div>
         
         <!-- Section Filter -->
@@ -189,7 +247,7 @@
         <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
             <div class="flex items-center gap-4">
                 <label for="selected-course-section-filter" class="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold mt-1 block">Section</label>
-                <select id="selected-course-section-filter" data-mode="switch"
+                <select id="selected-course-section-filter" data-mode="switch" onchange="showSectionLoadingAnimation()"
                         class="flex-1 max-w-xs px-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-gray-900 font-semibold">
                     <option value="">Select Section</option>
                     {% for option in selected_course_section_options %}
@@ -206,13 +264,52 @@
                 <i class="fas fa-users mr-2 text-indigo-600"></i> Enrolled Students
                 <span class="ml-2 px-2 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full">{{ selected_course_enrollments|length }}</span>
             </h2>
+            
+            <!-- Search Bar for Students -->
+            {% if selected_course_enrollments %}
+            <div class="mb-4 relative">
+                <div class="flex items-center gap-2">
+                    <div class="flex-1 relative">
+                        <div class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <input 
+                            type="text" 
+                            id="student-search-input" 
+                            placeholder="Search by student name or ID..."
+                            class="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition"
+                        >
+                        <button 
+                            id="clear-search-btn" 
+                            onclick="clearStudentSearch()"
+                            class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition hidden"
+                            title="Clear search"
+                        >
+                            <i class="fas fa-times text-lg"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="no-search-results" class="mt-4 text-center py-8 text-gray-500 border border-dashed border-gray-200 rounded-2xl bg-white hidden">
+                    <div class="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                        <i class="fas fa-search text-3xl text-gray-400"></i>
+                    </div>
+                    <p class="text-lg font-semibold">No students found</p>
+                    <p class="text-sm mt-1">Try adjusting your search terms</p>
+                </div>
+            </div>
+            {% endif %}
+            
             {% if selected_course_enrollments %}
             <div id="selected-course-student-list" class="space-y-3">
                  {% for enrollment in selected_course_enrollments %}
                  {% with display_name=enrollment.student.full_name|default:enrollment.full_name %}
                  <div class="student-card flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-indigo-300 transition cursor-pointer group" 
                      data-student-section="{{ enrollment.section_display }}"
+                     data-enrollment-id="{{ enrollment.id }}"
+                     data-student-id="{{ enrollment.student_id_number }}"
+                     data-student-name="{{ display_name }}"
                      onclick="if (!event.target.closest('button') && !event.target.closest('a')) { window.showStudentDetails({{ enrollment.id }}, '{{ display_name|escapejs }}', '{{ enrollment.email|escapejs }}', '{{ enrollment.student_id_number|escapejs }}', '{{ enrollment.section_display|default:'N/A'|escapejs }}', {{ enrollment.year_level }}, '{{ enrollment.enrolled_at|date:'F d, Y g:i A'|escapejs }}', {% if enrollment.student.profile_picture %}'{{ enrollment.student.profile_picture.url }}'{% else %}null{% endif %}); }">
+                    
                     <div class="flex items-center gap-4 flex-grow min-w-0">
                         <div class="flex-shrink-0">
                             {% if enrollment.student.profile_picture %}
@@ -223,7 +320,7 @@
                             </div>
                             {% endif %}
                         </div>
-                        <div class="flex-grow min-w-0">
+                            <div class="flex-grow min-w-0">
                             <div class="flex items-center gap-2 flex-wrap mb-1">
                                 <h3 class="text-base font-semibold text-gray-900 truncate">{{ display_name }}</h3>
                                 {% if enrollment.section_display %}
@@ -231,29 +328,47 @@
                                 {% endif %}
                                 <span class="px-3 py-1 text-xs font-semibold rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">{{ enrollment.year_level|ordinal_year }}</span>
                             </div>
-                            
-                                <p class="text-xs text-gray-500 mt-1 flex items-center gap-1"><i class="fas fa-clock"></i>Enrolled: {{ enrollment.enrolled_at|date:"F d, Y g:i A" }}</p>
+                                
+                                <!-- Registration Status Indicators -->
+                                <div class="flex items-center gap-4 mt-2">
+                                    <!-- QR Code Registration Status -->
+                                    <div class="flex items-center gap-1" title="QR Code Registration">
+                                        <i class="fas fa-qrcode text-xs text-gray-600"></i>
+                                        {% if enrollment.has_qr %}
+                                            <span class="text-xs font-semibold text-green-600 flex items-center gap-0.5">
+                                                <i class="fas fa-check-circle"></i> Registered
+                                            </span>
+                                        {% else %}
+                                            <span class="text-xs font-semibold text-red-600 flex items-center gap-0.5">
+                                                <i class="fas fa-times-circle"></i> Not Registered
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <!-- Biometric Registration Status -->
+                                    <div class="flex items-center gap-1" title="Biometric Registration">
+                                        <i class="fas fa-fingerprint text-xs text-gray-600"></i>
+                                        {% if enrollment.has_biometric %}
+                                            <span class="text-xs font-semibold text-green-600 flex items-center gap-0.5">
+                                                <i class="fas fa-check-circle"></i> Registered
+                                            </span>
+                                        {% else %}
+                                            <span class="text-xs font-semibold text-red-600 flex items-center gap-0.5">
+                                                <i class="fas fa-times-circle"></i> Not Registered
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                </div>
                         </div>
                         <div class="flex items-center gap-2">
                             {% if selected_course.instructor == user %}
-                                {% if enrollment.has_qr %}
-                                <button disabled class="px-3 py-1.5 bg-gray-300 text-gray-700 text-xs font-semibold rounded-lg cursor-not-allowed transition flex items-center gap-2" title="QR already registered">
-                                    <i class="fas fa-lock text-xs"></i>
-                                    <span>Closed</span>
-                                </button>
-                                {% else %}
-                                <button onclick="event.stopPropagation(); openQRScanner({{ selected_course.id }}, '{{ enrollment.student_id_number }}')" class="px-3 py-1.5 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition flex items-center gap-2" title="Register QR for this student">
-                                    <i class="fas fa-qrcode text-xs"></i>
-                                    <span>Register</span>
-                                </button>
-                                {% endif %}
-                            {% endif %}
-                            <button onclick="event.stopPropagation(); window.showDropStudentModal({{ enrollment.id }}, '{{ display_name|escapejs }}')" 
+                                <button onclick="event.stopPropagation(); window.showDropStudentModal({{ enrollment.id }}, '{{ display_name|escapejs }}')" 
                                     class="px-3 py-1.5 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 transition flex items-center gap-2" 
                                     title="Drop student from course">
                                 <i class="fas fa-user-minus text-xs"></i>
                                 <span>Drop</span>
                             </button>
+                            {% endif %}
                             <div class="text-indigo-500 group-hover:text-indigo-600 transition">
                                 <i class="fas fa-chevron-right"></i>
                             </div>
@@ -299,7 +414,7 @@
             <!-- Beautiful Course Card with Enhanced Styling (Same as Manage Courses) -->
             <div class="course-card-block group rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-center py-8 px-4 min-h-[140px] flex flex-col justify-center items-center relative overflow-hidden border-2 border-white/20 cursor-pointer"
                  {% if course.display_gradient %} data-gradient="{{ course.display_gradient }}" {% endif %}
-                 onclick="window.location.href='?selected_course={{ course.id }}'"
+                 onclick="showStudentCourseLoadingModal('?selected_course={{ course.id }}')"
                  style="{% if not course.display_gradient %}background: linear-gradient(135deg, {{ course.color|default:'#3C4770' }} 0%, {{ course.color|default:'#447294' }} 100%);{% endif %}">
                 <!-- Decorative Pattern Overlay -->
                 <div class="absolute inset-0 opacity-10">
@@ -308,8 +423,6 @@
                 </div>
                 
                 {% if course.is_multi or course.sibling_sections and course.sibling_sections|length > 1 %}
-                <!-- Twinkling star overlay -->
-                <div class="multi-stars-field" data-star-count="60"></div>
                 {% endif %}
                 
                 <!-- Course Name with Better Typography -->
@@ -322,7 +435,6 @@
                 <!-- Hover Effect Indicator -->
                 <div class="absolute bottom-0 left-0 right-0 h-1 bg-white/30 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
             </div>
-            
         </div>
         {% endfor %}
     </div>
@@ -511,6 +623,58 @@
     </div>
 </div>
 
+<!-- Transfer Students Modal (Redesigned) -->
+<div id="transferStudentsModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[120] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="flex justify-between items-center p-6 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-indigo-600 to-purple-600">
+            <h3 class="text-2xl font-bold flex items-center text-white">
+                <i class="fas fa-exchange-alt w-6 h-6 mr-3"></i> Reassign Students to Section
+            </h3>
+            <button onclick="window.closeTransferStudentsModal()" class="text-white hover:text-gray-200 transition duration-150">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+
+        <!-- Content -->
+        <div class="flex-1 overflow-hidden flex flex-col p-6 space-y-4">
+            <!-- Target Section Selection -->
+            <div>
+                <label for="transfer-to-section" class="block text-sm font-semibold text-gray-700 mb-3">
+                    <i class="fas fa-arrow-right mr-2 text-indigo-600"></i> Select Target Section
+                </label>
+                <select id="transfer-to-section" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-medium" onchange="window.updateTransferUI()">
+                    <option value="">Choose a section...</option>
+                </select>
+            </div>
+
+            <!-- Students List Section -->
+            <div class="flex-1 flex flex-col">
+                <label class="block text-sm font-semibold text-gray-700 mb-3">
+                    <i class="fas fa-users mr-2 text-indigo-600"></i> Select Students to Reassign
+                    <span class="ml-2 text-xs text-gray-500">(<span id="transfer-selected-count">0</span> selected)</span>
+                </label>
+                <div class="transfer-modal-student-list" id="transfer-student-list">
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                        <p>Loading students...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex justify-end gap-3 p-6 border-t border-gray-200 flex-shrink-0 bg-gray-50">
+            <button onclick="window.closeTransferStudentsModal()" class="px-6 py-2 bg-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-400 transition duration-150 shadow-sm">
+                Cancel
+            </button>
+            <button id="submit-transfer-students-btn" onclick="window.submitTransferStudents()" class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150 shadow-sm flex items-center gap-2" disabled>
+                <i class="fas fa-check"></i> Reassign Now
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Dropped Students Modal -->
 <div id="droppedStudentsModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -542,47 +706,7 @@ document.addEventListener('DOMContentLoaded', function() {
             el.style.background = grad;
         }
     });
-    // Generate twinkling stars for multi-section course cards (same logic)
-    (function initStars() {
-        const STAR_COUNT_DEFAULT = 60;
-        const EDGE_BIAS_CHANCE = 0.7;
-        const EDGE_ZONE = 0.12;
-        function createStar(container) {
-            const rect = container.getBoundingClientRect();
-            const width = rect.width || container.clientWidth || 200;
-            const height = rect.height || container.clientHeight || 140;
-            const star = document.createElement('div');
-            star.className = 'star-dot';
-            const isEdge = Math.random() < EDGE_BIAS_CHANCE;
-            let x, y;
-            if (isEdge) {
-                const zone = EDGE_ZONE;
-                const side = Math.floor(Math.random() * 4);
-                if (side === 0) { x = Math.random() * width * zone; y = Math.random() * height; }
-                else if (side === 1) { x = width - Math.random() * width * zone; y = Math.random() * height; }
-                else if (side === 2) { x = Math.random() * width; y = Math.random() * height * zone; }
-                else { x = Math.random() * width; y = height - Math.random() * height * zone; }
-            } else {
-                x = Math.random() * width;
-                y = Math.random() * height;
-            }
-            star.style.left = x + 'px';
-            star.style.top = y + 'px';
-            const size = 2 + Math.random() * 3;
-            star.style.width = size + 'px';
-            star.style.height = size + 'px';
-            const duration = 2 + Math.random() * 4;
-            star.style.animationDuration = duration + 's';
-            star.style.animationDelay = Math.random() * 2 + 's';
-            container.appendChild(star);
-        }
-        document.querySelectorAll('.multi-stars-field').forEach(container => {
-            const count = parseInt(container.getAttribute('data-star-count') || STAR_COUNT_DEFAULT, 10);
-            for (let i = 0; i < count; i++) {
-                createStar(container);
-            }
-        });
-    })();
+
 });
 
 // Format year label function - must be defined before use
@@ -652,6 +776,16 @@ function confirmDropStudent() {
     const studentName = document.getElementById('drop-student-name').textContent;
     window.closeDropStudentModal();
     
+    // Show loading animation
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+    loadingOverlay.innerHTML = `
+        <div class="rainbow-spinner">
+            <img src="/static/img/attendance-logo.png" alt="Loading">
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+    
     fetch('{% url "dashboard:instructor_drop_enrollment" 0 %}'.replace('0', enrollmentId), {
         method: 'POST',
         headers: {
@@ -662,6 +796,7 @@ function confirmDropStudent() {
     })
     .then(response => response.json())
     .then(data => {
+        loadingOverlay.remove();
         if (data.success) {
             if (typeof showNotification === 'function') {
                 showNotification(data.message || `"${studentName}" has been dropped from the course.`, 'success');
@@ -678,6 +813,7 @@ function confirmDropStudent() {
         }
     })
     .catch(error => {
+        loadingOverlay.remove();
         console.error('Error dropping student:', error);
         if (typeof showNotification === 'function') {
             showNotification('An error occurred while dropping the student.', 'error');
@@ -760,6 +896,16 @@ window.confirmUndropStudent = function() {
 };
 
 window.undropStudentDirect = function(enrollmentId, studentName) {
+    // Show loading animation
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+    loadingOverlay.innerHTML = `
+        <div class="rainbow-spinner">
+            <img src="/static/img/attendance-logo.png" alt="Loading">
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+    
     fetch('{% url "dashboard:instructor_restore_enrollment" 0 %}'.replace('0', enrollmentId), {
         method: 'POST',
         credentials: 'same-origin',
@@ -774,6 +920,7 @@ window.undropStudentDirect = function(enrollmentId, studentName) {
         throw new Error('Unable to restore student at the moment.');
     }))
     .then(data => {
+        loadingOverlay.remove();
         if (!data.success) {
             throw new Error(data.message || 'Error restoring student.');
         }
@@ -785,6 +932,7 @@ window.undropStudentDirect = function(enrollmentId, studentName) {
         setTimeout(() => location.reload(), 800);
     })
     .catch(error => {
+        loadingOverlay.remove();
         console.error('Error restoring student:', error);
         if (typeof showNotification === 'function') {
             showNotification(error.message || 'An error occurred while restoring the student.', 'error');
@@ -938,6 +1086,16 @@ window.confirmPermanentDrop = function() {
         return;
     }
     
+    // Show loading animation
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+    loadingOverlay.innerHTML = `
+        <div class="rainbow-spinner">
+            <img src="/static/img/attendance-logo.png" alt="Loading">
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+    
     fetch('{% url "dashboard:instructor_permanent_delete_enrollment" 0 %}'.replace('0', currentPermanentDropEnrollmentId), {
         method: 'POST',
         headers: {
@@ -948,6 +1106,7 @@ window.confirmPermanentDrop = function() {
     })
     .then(response => response.json())
     .then(data => {
+        loadingOverlay.remove();
         window.closePermanentDropModal();
         if (data.success) {
             if (typeof showNotification === 'function') {
@@ -970,6 +1129,7 @@ window.confirmPermanentDrop = function() {
         }
     })
     .catch(error => {
+        loadingOverlay.remove();
         console.error('Error:', error);
         if (typeof showNotification === 'function') {
             showNotification('An error occurred. Please try again.', 'error');
@@ -1058,6 +1218,16 @@ function confirmEnrollmentStatusChange() {
     
     closeEnrollmentStatusModal();
     
+    // Show loading animation
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+    loadingOverlay.innerHTML = `
+        <div class="rainbow-spinner">
+            <img src="/static/img/attendance-logo.png" alt="Loading">
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+    
     fetch(`{% url 'dashboard:instructor_update_enrollment_status' 0 %}`.replace('0', courseId), {
         method: 'POST',
         headers: {
@@ -1083,6 +1253,8 @@ function confirmEnrollmentStatusChange() {
             }
             setTimeout(() => location.reload(), 800);
         } else {
+            // Remove loading overlay on error
+            loadingOverlay.remove();
             if (typeof showNotification === 'function') {
                 showNotification(data.message || 'Error updating enrollment status.', 'error');
             } else {
@@ -1097,6 +1269,8 @@ function confirmEnrollmentStatusChange() {
     })
     .catch(error => {
         console.error('Error updating enrollment status:', error);
+        // Remove loading overlay on error
+        loadingOverlay.remove();
         if (typeof showNotification === 'function') {
             showNotification('An error occurred while updating enrollment status.', 'error');
         } else {
@@ -1184,8 +1358,755 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
+<!-- Registration Modal - Simple Open/Close -->
+<div id="registrationModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[129] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-8 flex flex-col">
+        <div class="flex justify-between items-start mb-6">
+            <div>
+                <h3 class="text-2xl font-bold text-gray-900">Attendance Registration</h3>
+                <p class="text-sm text-gray-600 mt-1">Students can register their attendance methods from their enrolled courses</p>
+            </div>
+            <button onclick="closeRegistrationModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+
+        <!-- Confirmation Section -->
+        <div id="confirmationSection" class="mb-6">
+            <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg mb-4">
+                <h4 class="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                    <i class="fas fa-info-circle text-yellow-600"></i>Enable Registration for Your Courses
+                </h4>
+                <p class="text-sm text-gray-700 mb-3">
+                    Do you want to enable attendance registration (QR Code and Fingerprint) for all courses you are handling?
+                </p>
+                <p class="text-xs text-gray-600">
+                    Once enabled, your students will be able to register their attendance methods from their enrolled course pages.
+                </p>
+            </div>
+            
+            <div class="flex gap-3">
+                <button onclick="confirmEnableRegistration()" class="flex-1 px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2">
+                    <i class="fas fa-check"></i> Yes, Enable Registration
+                </button>
+            </div>
+        </div>
+        
+        <!-- Info Section (shown after confirmation) -->
+        <div id="infoSection" class="space-y-4 mb-6 hidden">
+            <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                <h4 class="font-semibold text-green-900 mb-1 flex items-center gap-2">
+                    <i class="fas fa-check-circle text-green-600"></i>Registration Enabled
+                </h4>
+                <p class="text-sm text-green-700">Students can now register their attendance methods in their enrolled courses</p>
+            </div>
+            
+            <div class="border-l-4 border-blue-500 bg-blue-50 p-4 rounded">
+                <h4 class="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                    <i class="fas fa-qrcode text-blue-600"></i>QR Code Registration
+                </h4>
+                <p class="text-sm text-gray-700">Students can register their ID QR code for attendance tracking</p>
+            </div>
+            
+            <div class="border-l-4 border-purple-500 bg-purple-50 p-4 rounded">
+                <h4 class="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                    <i class="fas fa-fingerprint text-purple-600"></i>Fingerprint Registration
+                </h4>
+                <p class="text-sm text-gray-700">Students can register their fingerprint for biometric attendance tracking</p>
+            </div>
+            
+            <div class="flex justify-end">
+                <button onclick="disableRegistration()" class="px-6 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition flex items-center gap-2">
+                    <i class="fas fa-lock-open mr-2"></i>Disable Registration
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Registration Modal Functions
+let registrationEnabled = false;
+
+function loadRegistrationStatus() {
+    // Load the current registration status from backend
+    fetch('{% url "dashboard:check_course_registration_status" %}', {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            registrationEnabled = data.registration_enabled;
+            updateRegistrationButton();
+        }
+    })
+    .catch(error => {
+        console.error('Error loading registration status:', error);
+    });
+}
+
+function openRegistrationModal(courseId, studentId = null) {
+    // Always load fresh status when opening modal
+    loadRegistrationStatus();
+    
+    document.getElementById('registrationModal').style.display = 'flex';
+    
+    // If already enabled, show info section; otherwise show confirmation
+    if (registrationEnabled) {
+        document.getElementById('confirmationSection').classList.add('hidden');
+        document.getElementById('infoSection').classList.remove('hidden');
+    } else {
+        document.getElementById('confirmationSection').classList.remove('hidden');
+        document.getElementById('infoSection').classList.add('hidden');
+    }
+}
+
+function confirmEnableRegistration() {
+    // Send request to enable registration for all courses handled by instructor
+    fetch('{% url "dashboard:enable_course_registration" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            registrationEnabled = true;
+            updateRegistrationButton();
+            // Show info section
+            document.getElementById('confirmationSection').classList.add('hidden');
+            document.getElementById('infoSection').classList.remove('hidden');
+        } else {
+            alert('Error: ' + (data.message || 'Failed to enable registration'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while enabling registration');
+    });
+}
+
+function disableRegistration() {
+    if (!confirm('Are you sure you want to disable registration for all your courses?')) {
+        return;
+    }
+    
+    // Send request to disable registration
+    fetch('{% url "dashboard:disable_course_registration" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            registrationEnabled = false;
+            updateRegistrationButton();
+            closeRegistrationModal();
+        } else {
+            alert('Error: ' + (data.message || 'Failed to disable registration'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while disabling registration');
+    });
+}
+
+function updateRegistrationButton() {
+    const btn = document.getElementById('registrationToggleBtn');
+    const text = document.getElementById('registrationBtnText');
+    
+    if (registrationEnabled) {
+        btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        btn.classList.add('bg-green-600', 'hover:bg-green-700');
+        text.textContent = 'Close Registration';
+        btn.querySelector('i').className = 'fas fa-lock';
+    } else {
+        btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+        btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+        text.textContent = 'Open Registration';
+        btn.querySelector('i').className = 'fas fa-unlock';
+    }
+}
+
+function closeRegistrationModal() {
+    document.getElementById('registrationModal').style.display = 'none';
+    // Do NOT change registrationEnabled state when closing - just close the modal
+}
+
+// Load registration status on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadRegistrationStatus();
+    
+    const registrationModal = document.getElementById('registrationModal');
+    if (registrationModal) {
+        registrationModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeRegistrationModal();
+            }
+        });
+    }
+});
+</script>
+
 <!-- Minimal QR Scanner (proven working code) -->
 {% include 'dashboard/partials/qr_scanner_basic.html' %}
+
+<!-- Fingerprint Scanner Modal -->
+<div id="fingerprintScannerModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[130] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] p-6 md:p-8 flex flex-col overflow-hidden">
+        <div class="flex justify-between items-start mb-4">
+            <h3 class="text-2xl font-bold text-blue-600">
+                <i class="fas fa-fingerprint mr-2"></i>Fingerprint Scanner
+            </h3>
+            <button onclick="closeFingerprintScanner()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times w-6 h-6"></i>
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto space-y-4">
+            <!-- Fingerprint Icon -->
+            <div class="text-center py-12">
+                <div class="w-32 h-32 mx-auto mb-4 rounded-full bg-blue-100 flex items-center justify-center animate-pulse">
+                    <i class="fas fa-fingerprint text-6xl text-blue-600"></i>
+                </div>
+                <div id="fingerprintScannerOutput" class="text-lg font-semibold text-gray-700 mb-2">
+                    Ready to scan fingerprint
+                </div>
+                <p class="text-sm text-gray-600">Place the student's finger on the fingerprint scanner</p>
+            </div>
+
+            <!-- Student Information -->
+            <div class="bg-gray-50 rounded-lg p-4 space-y-3 border border-gray-200">
+                <div>
+                    <label class="text-sm font-medium text-gray-700">Student ID:</label>
+                    <input id="fingerprintStudentIdInput" type="text" placeholder="Enter or scan Student ID" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-gray-700">Fingerprint Data:</label>
+                    <div id="fingerprintDataDisplay" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm text-gray-600 min-h-10 flex items-center">
+                        <span class="text-gray-400">Waiting for fingerprint...</span>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-gray-700">Fingerprint Template (Base64):</label>
+                    <textarea id="fingerprintTemplateInput" placeholder="Fingerprint template will appear here" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs font-mono" rows="4"></textarea>
+                </div>
+            </div>
+
+            <!-- Test Mode Note -->
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+                <i class="fas fa-info-circle mr-2"></i>
+                <strong>Note:</strong> In test mode, you can manually enter fingerprint template data or use a compatible biometric device.
+            </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
+            <button onclick="closeFingerprintScanner()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition">
+                Cancel
+            </button>
+            <button id="fingerprintRegisterBtn" onclick="submitFingerprintData()" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition opacity-50 cursor-not-allowed" disabled>
+                Register Fingerprint
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Fingerprint Scanner Functions
+let fingerprintScannerActive = false;
+let fingerprintCourseId = null;
+let fingerprintStudentId = null;
+
+function openFingerprintScanner(courseId, studentId) {
+    console.log('openFingerprintScanner called:', { courseId, studentId });
+    const modal = document.getElementById('fingerprintScannerModal');
+    if (!modal) {
+        console.error('Modal #fingerprintScannerModal not found!');
+        alert('Fingerprint Scanner modal not found. Please refresh the page.');
+        return;
+    }
+    
+    modal.style.display = 'flex';
+    fingerprintCourseId = courseId;
+    fingerprintStudentId = studentId || '';
+    
+    document.getElementById('fingerprintStudentIdInput').value = studentId || '';
+    document.getElementById('fingerprintTemplateInput').value = '';
+    document.getElementById('fingerprintDataDisplay').innerHTML = '<span class="text-gray-400">Waiting for fingerprint...</span>';
+    document.getElementById('fingerprintScannerOutput').textContent = 'Ready to scan fingerprint';
+    
+    updateFingerprintRegisterButton();
+    fingerprintScannerActive = true;
+}
+
+function closeFingerprintScanner() {
+    document.getElementById('fingerprintScannerModal').style.display = 'none';
+    fingerprintScannerActive = false;
+    fingerprintCourseId = null;
+    fingerprintStudentId = null;
+}
+
+function updateFingerprintRegisterButton() {
+    const studentId = document.getElementById('fingerprintStudentIdInput').value.trim();
+    const template = document.getElementById('fingerprintTemplateInput').value.trim();
+    const btn = document.getElementById('fingerprintRegisterBtn');
+    
+    if (studentId && template) {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+    } else {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        btn.style.cursor = 'not-allowed';
+    }
+}
+
+function submitFingerprintData() {
+    const studentId = document.getElementById('fingerprintStudentIdInput').value.trim();
+    const template = document.getElementById('fingerprintTemplateInput').value.trim();
+    
+    if (!studentId || !template) {
+        alert('Please enter both Student ID and Fingerprint Template');
+        return;
+    }
+    
+    // Send registration request
+    fetch('/api/register-fingerprint/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+        },
+        body: JSON.stringify({
+            course_id: fingerprintCourseId,
+            student_id: studentId,
+            fingerprint_template: template
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccessPopup('Fingerprint Registered Successfully');
+            closeFingerprintScanner();
+            // Reload page after 2 seconds
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            alert('Error: ' + (data.message || 'Failed to register fingerprint'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while registering fingerprint');
+    });
+}
+
+// Update button when inputs change
+document.addEventListener('DOMContentLoaded', function() {
+    const studentIdInput = document.getElementById('fingerprintStudentIdInput');
+    const templateInput = document.getElementById('fingerprintTemplateInput');
+    
+    if (studentIdInput) {
+        studentIdInput.addEventListener('input', updateFingerprintRegisterButton);
+    }
+    if (templateInput) {
+        templateInput.addEventListener('input', updateFingerprintRegisterButton);
+    }
+    
+    // Close modal on background click
+    const modal = document.getElementById('fingerprintScannerModal');
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeFingerprintScanner();
+            }
+        });
+    }
+});
+
+// Make functions globally available
+window.openFingerprintScanner = openFingerprintScanner;
+window.closeFingerprintScanner = closeFingerprintScanner;
+window.submitFingerprintData = submitFingerprintData;
+
+// ============ REASSIGN STUDENTS TO OTHER SECTIONS ============
+
+function openTransferStudentsModal() {
+    const courseId = new URLSearchParams(window.location.search).get('selected_course');
+    if (!courseId) {
+        alert('Please select a course first');
+        return;
+    }
+    
+    document.getElementById('transferStudentsModal').style.display = 'flex';
+    document.getElementById('transfer-to-section').value = '';
+    document.getElementById('transfer-selected-count').textContent = '0';
+    
+    // Load sections
+    loadTransferSections(courseId);
+    
+    // Load students for this course from the server
+    loadTransferStudentsFromServer(courseId);
+}
+
+function closeTransferStudentsModal() {
+    console.log('closeTransferStudentsModal called');
+    const modal = document.getElementById('transferStudentsModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    // Clear selections
+    document.querySelectorAll('#transfer-student-list input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.getElementById('transfer-to-section').value = '';
+    document.getElementById('transfer-selected-count').textContent = '0';
+    updateTransferUI();
+}
+
+// Add click outside modal to close
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('transferStudentsModal');
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            // Close if clicking on the background (not the modal content)
+            if (e.target === this) {
+                closeTransferStudentsModal();
+            }
+        });
+    }
+});
+
+function loadTransferStudentsFromServer(courseId) {
+    const studentList = document.getElementById('transfer-student-list');
+    
+    // Show loading state
+    studentList.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-spinner fa-spin text-2xl mb-2"></i><p>Loading students...</p></div>';
+    
+    console.log('[TRANSFER] Loading students from server for course:', courseId);
+    
+    // Fetch students from server
+    fetch(`/dashboard/api/get-course-enrollments/?course_id=${courseId}`)
+        .then(response => {
+            console.log('[TRANSFER] Response status:', response.status);
+            return response.json();
+        })
+        .then(data => {
+            console.log('[TRANSFER] Received data:', data);
+            
+            if (data.success && data.enrollments && data.enrollments.length > 0) {
+                let html = '';
+                data.enrollments.forEach(enrollment => {
+                    const initials = enrollment.full_name.split(' ').map(n => n[0]).join('').toUpperCase();
+                    const profilePic = enrollment.profile_picture;
+                    
+                    html += `
+                        <div class="transfer-modal-student-item" onclick="this.querySelector('input[type=checkbox]').click()">
+                            <input type="checkbox" data-enrollment-id="${enrollment.id}" onchange="window.updateTransferUI()">
+                            <div class="flex-shrink-0 mr-3">
+                                ${profilePic ? 
+                                    `<img src="${profilePic}" alt="${enrollment.full_name}" class="w-10 h-10 rounded-full object-cover">` :
+                                    `<div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white bg-gradient-to-br from-indigo-500 to-purple-600">${initials}</div>`
+                                }
+                            </div>
+                            <div class="flex-1">
+                                <p class="font-semibold text-gray-900">${enrollment.full_name}</p>
+                                <p class="text-xs text-gray-500">${enrollment.section}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                studentList.innerHTML = html;
+                console.log('[TRANSFER] Loaded ' + data.enrollments.length + ' students');
+            } else if (data.success && data.enrollments) {
+                studentList.innerHTML = '<div class="text-center py-8 text-gray-500"><p>No students enrolled in this course</p></div>';
+                console.log('[TRANSFER] No enrollments found');
+            } else {
+                studentList.innerHTML = '<div class="text-center py-8 text-red-500"><p>Error: ' + (data.message || 'Failed to load students') + '</p></div>';
+                console.error('[TRANSFER] Error:', data.message);
+            }
+        })
+        .catch(error => {
+            console.error('[TRANSFER] Fetch error:', error);
+            studentList.innerHTML = '<div class="text-center py-8 text-red-500"><p>Error loading students: ' + error.message + '</p></div>';
+        });
+}
+
+function loadTransferSections(courseId) {
+    const sectionSelect = document.getElementById('transfer-to-section');
+    const transferBtn = document.getElementById('transfer-students-btn');
+    const currentSectionId = transferBtn ? parseInt(transferBtn.getAttribute('data-current-section-id')) : null;
+    
+    fetch(`/dashboard/api/get-course-sections/?course_id=${courseId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.sections) {
+                sectionSelect.innerHTML = '<option value="">Choose a section...</option>';
+                data.sections.forEach(section => {
+                    // Exclude the current section from the dropdown
+                    if (section.id !== currentSectionId) {
+                        const option = document.createElement('option');
+                        option.value = section.id;
+                        option.textContent = `Section ${section.section}`;
+                        sectionSelect.appendChild(option);
+                    }
+                });
+            }
+        })
+        .catch(error => console.error('Error fetching sections:', error));
+}
+
+function updateTransferUI() {
+    const checkboxes = document.querySelectorAll('#transfer-student-list input[type="checkbox"]:checked');
+    const selectedCount = checkboxes.length;
+    const sectionSelect = document.getElementById('transfer-to-section').value;
+    const submitBtn = document.getElementById('submit-transfer-students-btn');
+    
+    document.getElementById('transfer-selected-count').textContent = selectedCount;
+    
+    // Enable button only if students and section are selected
+    submitBtn.disabled = !(selectedCount > 0 && sectionSelect);
+    
+    // Update item styling
+    document.querySelectorAll('#transfer-student-list .transfer-modal-student-item').forEach(item => {
+        if (item.querySelector('input[type="checkbox"]:checked')) {
+            item.classList.add('selected');
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+}
+
+function getTransferSelectedStudents() {
+    const checkboxes = document.querySelectorAll('#transfer-student-list input[type="checkbox"]:checked');
+    return Array.from(checkboxes).map(cb => cb.getAttribute('data-enrollment-id'));
+}
+
+function submitTransferStudents() {
+    console.log('submitTransferStudents called');
+    
+    const enrollmentIds = getTransferSelectedStudents();
+    const targetSectionId = document.getElementById('transfer-to-section').value;
+    
+    console.log('Enrollment IDs:', enrollmentIds);
+    console.log('Target Section ID:', targetSectionId);
+    
+    if (enrollmentIds.length === 0 || !targetSectionId) {
+        alert('Please select students and a target section');
+        return;
+    }
+    
+    const btn = document.getElementById('submit-transfer-students-btn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reassigning...';
+    
+    const payload = {
+        enrollment_ids: enrollmentIds,
+        target_course_id: targetSectionId
+    };
+    
+    console.log('Sending payload:', JSON.stringify(payload));
+    
+    fetch('/dashboard/api/move-students-to-section/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Response data:', data);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        
+        if (data.success && data.moved_count > 0) {
+            alert(`Successfully reassigned ${data.moved_count} student(s) to the new section!`);
+            closeTransferStudentsModal();
+            setTimeout(() => location.reload(), 1500);
+        } else if (data.success && data.moved_count === 0) {
+            alert('No students were reassigned. ' + (data.message || ''));
+        } else {
+            const errorMsg = data.message || 'Failed to reassign students';
+            console.error('Transfer error:', data);
+            alert('Error: ' + errorMsg);
+        }
+    })
+    .catch(error => {
+        console.error('Fetch error:', error);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        alert('Error: ' + (error.message || 'An error occurred while reassigning students'));
+    });
+}
+
+// Make functions globally available
+window.openTransferStudentsModal = openTransferStudentsModal;
+window.closeTransferStudentsModal = closeTransferStudentsModal;
+window.updateTransferUI = updateTransferUI;
+window.submitTransferStudents = submitTransferStudents;
+
+// Remove old functions that are no longer needed
+window.toggleMoveStudentsMode = function() { };
+window.updateMoveStudentsUI = function() { };
+window.openMoveStudentsModal = function() { };
+window.closeMoveStudentsModal = function() { };
+window.submitMoveStudents = function() { };
+
+// ============ STUDENT SEARCH FUNCTIONALITY ============
+
+function initStudentSearch() {
+    const searchInput = document.getElementById('student-search-input');
+    const clearBtn = document.getElementById('clear-search-btn');
+    
+    if (!searchInput) return;
+    
+    // Real-time search as user types
+    searchInput.addEventListener('input', function(e) {
+        const searchTerm = e.target.value.toLowerCase().trim();
+        
+        // Show/hide clear button
+        if (searchTerm) {
+            clearBtn.classList.remove('hidden');
+        } else {
+            clearBtn.classList.add('hidden');
+        }
+        
+        filterStudents(searchTerm);
+    });
+    
+    // Allow clearing with Escape key
+    searchInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            clearStudentSearch();
+        }
+    });
+}
+
+function filterStudents(searchTerm) {
+    const studentCards = document.querySelectorAll('#selected-course-student-list .student-card');
+    const noResultsDiv = document.getElementById('no-search-results');
+    let visibleCount = 0;
+    
+    studentCards.forEach(card => {
+        // Get data from data attributes for more reliable searching
+        const studentName = (card.dataset.studentName || '').toLowerCase();
+        const studentId = (card.dataset.studentId || '').toLowerCase();
+        
+        // Also get all text content as fallback
+        const allText = card.textContent.toLowerCase();
+        
+        // Check if search term matches student name, ID, or any text in the card
+        const matches = studentName.includes(searchTerm) || 
+                       studentId.includes(searchTerm) || 
+                       allText.includes(searchTerm);
+        
+        if (searchTerm === '' || matches) {
+            card.style.display = '';
+            card.classList.add('animate-fadeIn');
+            visibleCount++;
+        } else {
+            card.style.display = 'none';
+        }
+    });
+    
+    // Show no results message if needed
+    if (searchTerm && visibleCount === 0) {
+        noResultsDiv.classList.remove('hidden');
+        document.getElementById('selected-course-student-list').style.display = 'none';
+    } else {
+        noResultsDiv.classList.add('hidden');
+        document.getElementById('selected-course-student-list').style.display = '';
+    }
+}
+
+function clearStudentSearch() {
+    const searchInput = document.getElementById('student-search-input');
+    const clearBtn = document.getElementById('clear-search-btn');
+    
+    searchInput.value = '';
+    clearBtn.classList.add('hidden');
+    filterStudents('');
+    searchInput.focus();
+}
+
+// Initialize search when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    initStudentSearch();
+});
+
+// Make search functions globally available
+window.filterStudents = filterStudents;
+window.clearStudentSearch = clearStudentSearch;
+
+// Add loading modal for course cards in students page
+function showStudentCourseLoadingModal(url) {
+    console.log('[STUDENTS] Loading modal shown for course selection');
+    
+    // Show loading overlay
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.id = 'student-course-loading-overlay';
+    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+    loadingOverlay.innerHTML = `
+        <div class="rainbow-spinner">
+            <img src="/static/img/attendance-logo.png" alt="Loading">
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+    
+    // Navigate after short delay
+    setTimeout(() => {
+        window.location.href = url;
+    }, 300);
+}
+
+// Make loading function globally available
+window.showStudentCourseLoadingModal = showStudentCourseLoadingModal;
+
+function showStudentLoadingModal(url) {
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+    loadingOverlay.innerHTML = `
+        <div class="rainbow-spinner">
+            <img src="/static/img/attendance-logo.png" alt="Loading">
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+    setTimeout(() => {
+        window.location.href = url;
+    }, 300);
+}
+
+window.showStudentLoadingModal = showStudentLoadingModal;
+
+// Section filter loading animation
+function showSectionLoadingAnimation() {
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
+    loadingOverlay.innerHTML = `
+        <div class="rainbow-spinner">
+            <img src="/static/img/attendance-logo.png" alt="Loading">
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+}
+
+window.showSectionLoadingAnimation = showSectionLoadingAnimation;
+</script>
 
 {% endblock %}
 

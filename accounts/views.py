@@ -1,6 +1,7 @@
 # accounts/views.py
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.hashers import make_password, check_password
 from django.contrib import messages
 from django.core.mail import send_mail
 from django.http import JsonResponse
@@ -29,7 +30,8 @@ def login_signup_view(request):
                     return JsonResponse({'success': False, 'message': 'Please select a valid role (Teacher or Student).'})
 
                 try:
-                    if re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', email_or_id):
+                    # Try email first (if contains @), otherwise try as ID (school_id)
+                    if '@' in email_or_id:
                         user = CustomUser.objects.get(email=email_or_id.lower())
                     else:
                         user = CustomUser.objects.get(school_id=email_or_id)
@@ -37,6 +39,38 @@ def login_signup_view(request):
                 except CustomUser.DoesNotExist:
                     logger.error(f"Login failed: No user found for email_or_id={email_or_id}")
                     return JsonResponse({'success': False, 'message': 'Invalid email, ID, or password.'})
+
+                # Check if the password is an old password (ONLY if user actually reset their password)
+                try:
+                    from dashboard.models import UserCustomPassword
+                    from django.contrib.auth.hashers import check_password
+                    
+                    # Only check for old password if user has a custom password record with an old_password value
+                    custom_pwd_record = UserCustomPassword.objects.filter(user=user).first()
+                    if custom_pwd_record and custom_pwd_record.old_password and len(custom_pwd_record.old_password) > 0:
+                        # Check if the provided password matches the old password (stored in plain text)
+                        # CRITICAL FIX: Only show this error if the password matches the old password AND
+                        # the old password is different from the current password
+                        if password == custom_pwd_record.old_password and password != custom_pwd_record.password:
+                            # Old password attempt - user is trying to login with password from before they reset
+                            logger.warning(f"Login attempt with old password for user={user.username}")
+                            return JsonResponse({'success': False, 'message': 'You changed your password recently. Please use your current password to log in.'})
+                        
+                        # Also check if hash matches old custom_password (for edge cases)
+                        try:
+                            # Get the user's previous custom_password hash if stored elsewhere
+                            # This handles case where password was updated but old hash still in system
+                            if hasattr(user, '_old_password_hash'):
+                                if check_password(password, user._old_password_hash):
+                                    # CRITICAL FIX: Verify this isn't the current password
+                                    if not user.check_custom_password(password):
+                                        logger.warning(f"Login attempt with old password hash for user={user.username}")
+                                        return JsonResponse({'success': False, 'message': 'You changed your password recently. Please use your current password to log in.'})
+                        except Exception:
+                            pass
+                except Exception as e:
+                    logger.debug(f"Old password check failed (non-critical): {str(e)}")
+                    pass  # Silently continue if check fails
 
                 # Try authenticating with temporary password first
                 authenticated_user = authenticate(request, username=user.username, password=password)
@@ -64,22 +98,18 @@ def login_signup_view(request):
                         redirect_url = '/dashboard/university-college-dashboard/'
                     return JsonResponse({'success': True, 'redirect': redirect_url, 'message': f'Welcome back, {user.full_name or user.username}!'})
                 elif selected_role == 'teacher' and user.is_teacher:
-                    if user.is_approved:
-                        # Clear any existing messages before login
-                        storage = messages.get_messages(request)
-                        list(storage)  # Consume all existing messages
-                        login(request, authenticated_user)
-                        logger.info(f"Successful teacher login: {user.username}")
-                        messages.success(request, f'Welcome to Attendance system, {user.full_name or user.username}!')
-                        redirect_url = '/dashboard/teacher-dashboard/'
-                        if user.education_level == 'high_senior':
-                            redirect_url = '/dashboard/high-school-teacher-dashboard/'
-                        elif user.education_level == 'university_college':
-                            redirect_url = '/dashboard/university-college-teacher-dashboard/'
-                        return JsonResponse({'success': True, 'redirect': redirect_url, 'message': f'Welcome back, {user.full_name or user.username}!'})
-                    else:
-                        logger.warning(f"Login failed: Teacher {user.username} not approved")
-                        return JsonResponse({'success': False, 'message': 'Your teacher account is pending admin approval.'})
+                    # Clear any existing messages before login
+                    storage = messages.get_messages(request)
+                    list(storage)  # Consume all existing messages
+                    login(request, authenticated_user)
+                    logger.info(f"Successful teacher login: {user.username}")
+                    messages.success(request, f'Welcome to Attendance system, {user.full_name or user.username}!')
+                    redirect_url = '/dashboard/teacher-dashboard/'
+                    if user.education_level == 'high_senior':
+                        redirect_url = '/dashboard/high-school-teacher-dashboard/'
+                    elif user.education_level == 'university_college':
+                        redirect_url = '/dashboard/university-college-teacher-dashboard/'
+                    return JsonResponse({'success': True, 'redirect': redirect_url, 'message': f'Welcome back, {user.full_name or user.username}!'})
                 else:
                     logger.error(f"Login failed: Role mismatch for user={user.username}, selected_role={selected_role}")
                     return JsonResponse({
@@ -98,11 +128,10 @@ def login_signup_view(request):
             form = CustomUserCreationForm(request.POST)
             if form.is_valid():
                 email = form.cleaned_data['email'].lower()
-                full_name = form.cleaned_data.get('full_name', '')  # Optional, defaults to empty string
+                full_name = form.cleaned_data.get('full_name', '')
                 password1 = form.cleaned_data['password1']
                 password2 = form.cleaned_data['password2']
                 role = request.POST.get('role')
-                education_level = form.cleaned_data['education_level']
 
                 if password1 != password2:
                     logger.error(f"Signup failed: Passwords do not match for {full_name or 'unnamed user'}")
@@ -110,29 +139,18 @@ def login_signup_view(request):
 
                 try:
                     user = form.save()
-                    selected_school = request.POST.get('school_name', '').strip()
                     
-                    # Notify only the admin(s) of the selected school
-                    if selected_school:
-                        # Find admins with matching school name and education level
-                        admins = CustomUser.objects.filter(
-                            is_admin=True,
-                            school_name=selected_school,
-                            education_level=education_level
-                        )
-                    else:
-                        # If no school selected, notify all admins (fallback)
-                        admins = CustomUser.objects.filter(is_admin=True)
+                    # Notify all admins of new signup
+                    admins = CustomUser.objects.filter(is_admin=True)
                     
                     notification_type = 'new_student_signup' if role == 'student' else 'new_teacher_signup'
                     title = f"New {'Student' if role == 'student' else 'Teacher'} Signup"
-                    school_text = f" from {selected_school}" if selected_school else ""
                     
                     # Different messages for students (auto-approved) vs teachers (needs approval)
                     if role == 'student':
-                        message = f"{user.full_name or user.username} ({user.email}){school_text} has signed up and is now active."
+                        message = f"{user.full_name or user.username} ({user.email}) has signed up and is now active."
                     else:
-                        message = f"{user.full_name or user.username} ({user.email}){school_text} has signed up and is awaiting approval."
+                        message = f"{user.full_name or user.username} ({user.email}) has signed up and is awaiting approval."
                     
                     for admin in admins:
                         AdminNotification.objects.create(
@@ -151,17 +169,10 @@ def login_signup_view(request):
                             login(request, authenticated_user)
                             logger.info(f"Student signup completed and auto-logged in: {user.username}")
                             
-                            # Determine redirect URL based on education level
-                            redirect_url = '/dashboard/student-dashboard/'
-                            if user.education_level == 'high_senior':
-                                redirect_url = '/dashboard/high-school-dashboard/'
-                            elif user.education_level == 'university_college':
-                                redirect_url = '/dashboard/university-college-dashboard/'
-                            
                             return JsonResponse({
                                 'success': True,
                                 'message': f'Your student account has been created successfully! Redirecting to dashboard...',
-                                'redirect': redirect_url
+                                'redirect': '/dashboard/student-dashboard/'
                             })
                         else:
                             # If authentication fails, still return success but without redirect
@@ -171,11 +182,24 @@ def login_signup_view(request):
                                 'message': f'Your student account has been created successfully! Please log in.'
                             })
                     else:
-                        logger.info(f"Teacher signup submitted: {user.username}")
-                        return JsonResponse({
-                            'success': True,
-                            'message': f'Your teacher account request has been submitted. Await admin approval.'
-                        })
+                        # Teachers are also auto-approved now - no admin approval needed
+                        authenticated_user = authenticate(request, username=user.username, password=password1)
+                        if authenticated_user:
+                            login(request, authenticated_user)
+                            logger.info(f"Teacher signup completed and auto-logged in: {user.username}")
+                            
+                            return JsonResponse({
+                                'success': True,
+                                'message': f'Your teacher account has been created successfully! Redirecting to dashboard...',
+                                'redirect': '/dashboard/teacher-dashboard/'
+                            })
+                        else:
+                            # If authentication fails, still return success but without redirect
+                            logger.warning(f"Teacher signup completed but auto-login failed: {user.username}")
+                            return JsonResponse({
+                                'success': True,
+                                'message': f'Your teacher account has been created successfully! Please log in.'
+                            })
                 except Exception as e:
                     logger.error(f"Signup failed: {str(e)}")
                     return JsonResponse({'success': False, 'message': str(e)})
@@ -190,9 +214,18 @@ def login_signup_view(request):
                     user = CustomUser.objects.get(email=email)
                     logger.info(f"User found for password reset: {user.username}, email={user.email}")
                     verification_code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+                    
+                    # CRITICAL FIX: Create a unique reset session token to prevent session fixation attacks
+                    import hashlib
+                    import time
+                    reset_token = hashlib.sha256(f"{user.id}{email}{time.time()}".encode()).hexdigest()
+                    
                     request.session['reset_user_id'] = user.id
+                    request.session['reset_email'] = email  # Store the email that initiated the reset
                     request.session['verification_code'] = verification_code
                     request.session['verified_email'] = email
+                    request.session['reset_token'] = reset_token  # Add unique token for this reset session
+                    
                     try:
                         html_message = None
                         try:
@@ -208,7 +241,7 @@ def login_signup_view(request):
                             fail_silently=False,
                             html_message=html_message,
                         )
-                        logger.info(f"Verification code sent to {email}")
+                        logger.info(f"Verification code sent to {email}, reset_token={reset_token}")
                         return JsonResponse({
                             'success': True,
                             'message': f'Verification code sent to {email}. Please check your inbox (and spam/junk folder).',
@@ -238,85 +271,135 @@ def login_signup_view(request):
 
         elif 'code-verification-form' in request.POST:
             user_id = request.session.get('reset_user_id')
-            if user_id:
+            verified_email = request.session.get('verified_email')
+            if user_id and verified_email:
+                try:
+                    # Verify that the user_id and email still match (CRITICAL SECURITY FIX)
+                    user = CustomUser.objects.get(id=user_id)
+                    if user.email.lower() != verified_email.lower():
+                        logger.error(f"Code verification failed: Email mismatch for user_id={user_id}. Expected {user.email}, got {verified_email}")
+                        return JsonResponse({'success': False, 'message': 'Session expired. Please start the reset process again.'})
+                except CustomUser.DoesNotExist:
+                    logger.error(f"Code verification failed: User not found for user_id={user_id}")
+                    return JsonResponse({'success': False, 'message': 'Session expired. Please start the reset process again.'})
+                
                 input_code = request.POST.get('verification-code')
                 stored_code = request.session.get('verification_code')
                 if input_code == stored_code:
-                    logger.info(f"Code verified for user_id={user_id}")
+                    logger.info(f"Code verified for user_id={user_id}, email={verified_email}")
                     return JsonResponse({
                         'success': True,
                         'message': 'Code verified. Please set your new password.',
                         'step': 3,
-                        'email': request.session.get('verified_email')
+                        'email': verified_email
                     })
                 else:
-                    logger.error(f"Code verification failed: input_code={input_code}, stored_code={stored_code}")
+                    logger.error(f"Code verification failed: input_code={input_code}, stored_code={stored_code}, user_id={user_id}")
                     return JsonResponse({
                         'success': False,
                         'message': 'Incorrect code. Please check your email and try again.',
                         'step': 2,
-                        'email': request.session.get('verified_email')
+                        'email': verified_email
                     })
             else:
-                logger.error("Code verification failed: Session expired")
+                logger.error(f"Code verification failed: Missing session data. user_id={user_id}, email={verified_email}")
                 return JsonResponse({'success': False, 'message': 'Session expired. Please start the reset process again.'})
 
         elif 'reset-password-form' in request.POST:
             user_id = request.session.get('reset_user_id')
-            if user_id:
-                try:
-                    user = CustomUser.objects.get(id=user_id)
-                    new_password = request.POST.get('new-password')
-                    confirm_password = request.POST.get('confirm-new-password')
-                    if new_password and confirm_password and new_password == confirm_password:
-                        if len(new_password) >= 6:
-                            # Set custom password (user's personal password)
-                            user.set_custom_password(new_password)
-                            # Clear OTP after successful reset
-                            user.otp_code = None
-                            user.otp_expires_at = None
-                            user.save()
+            verified_email = request.session.get('verified_email')
+            
+            # CRITICAL FIX: Validate both user_id and email to prevent cross-account password resets
+            if not user_id or not verified_email:
+                logger.error(f"Password reset failed: Missing session data. user_id={user_id}, email={verified_email}")
+                return JsonResponse({'success': False, 'message': 'Session expired. Please start the reset process again.'})
+            
+            try:
+                user = CustomUser.objects.get(id=user_id)
+                
+                # CRITICAL VALIDATION: Ensure the email in session matches the user being reset
+                if user.email.lower() != verified_email.lower():
+                    logger.error(f"Password reset failed: Email mismatch attack detected! user_id={user_id}, stored_email={user.email}, session_email={verified_email}")
+                    return JsonResponse({'success': False, 'message': 'Session validation failed. Please start the reset process again.'})
+                
+                new_password = request.POST.get('new-password')
+                confirm_password = request.POST.get('confirm-new-password')
+                if new_password and confirm_password and new_password == confirm_password:
+                    if len(new_password) >= 6:
+                        # Set custom password (user's personal password)
+                        user.set_custom_password(new_password)
+                        # Clear OTP after successful reset
+                        user.otp_code = None
+                        user.otp_expires_at = None
+                        user.save()
+                        
+                        # Clear session data immediately after successful password reset
+                        try:
                             del request.session['reset_user_id']
+                        except KeyError:
+                            pass
+                        try:
                             del request.session['verification_code']
+                        except KeyError:
+                            pass
+                        try:
                             del request.session['verified_email']
-                            logger.info(f"Custom password reset successful for user={user.username}")
-                            return JsonResponse({
-                                'success': True,
-                                'message': 'Your password has been successfully reset! You can now log in with your new password.'
-                            })
-                        else:
-                            logger.error(f"Password reset failed: Password too short for user={user.username}")
-                            return JsonResponse({
-                                'success': False,
-                                'message': 'Password must be at least 6 characters long.',
-                                'step': 3,
-                                'email': request.session.get('verified_email')
-                            })
+                        except KeyError:
+                            pass
+                        
+                        logger.info(f"Custom password reset successful for user={user.username} (id={user.id}), email={user.email}")
+                        return JsonResponse({
+                            'success': True,
+                            'message': 'Your password has been successfully reset! You can now log in with your new password.'
+                        })
                     else:
-                        logger.error(f"Password reset failed: Passwords do not match for user={user.username}")
+                        logger.error(f"Password reset failed: Password too short for user={user.username}")
                         return JsonResponse({
                             'success': False,
-                            'message': 'Passwords do not match. Please re-enter.',
+                            'message': 'Password must be at least 6 characters long.',
                             'step': 3,
-                            'email': request.session.get('verified_email')
+                            'email': verified_email
                         })
-                except CustomUser.DoesNotExist:
-                    logger.error(f"Password reset failed: No user found for user_id={user_id}")
-                    return JsonResponse({'success': False, 'message': 'Session expired. Please start the reset process again.'})
-            else:
-                logger.error("Password reset failed: Session expired")
+                else:
+                    logger.error(f"Password reset failed: Passwords do not match for user={user.username}")
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'Passwords do not match. Please re-enter.',
+                        'step': 3,
+                        'email': verified_email
+                    })
+            except CustomUser.DoesNotExist:
+                logger.error(f"Password reset failed: No user found for user_id={user_id}")
                 return JsonResponse({'success': False, 'message': 'Session expired. Please start the reset process again.'})
+            except Exception as e:
+                logger.error(f"Password reset failed with exception for user_id={user_id}: {str(e)}")
+                return JsonResponse({'success': False, 'message': 'An error occurred. Please try again.'})
 
         elif 'resend_code' in request.POST:
             email = request.POST.get('verify-email').lower()
+            
+            # CRITICAL FIX: Validate that the resend email matches session
+            session_email = request.session.get('verified_email')
+            if email and session_email and email.lower() != session_email.lower():
+                logger.error(f"Resend code failed: Email mismatch. Requested {email}, session has {session_email}")
+                return JsonResponse({'success': False, 'message': 'Email mismatch. Please start the reset process again.'})
+            
             if email and re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', email):
                 try:
                     user = CustomUser.objects.get(email=email)
+                    
+                    # CRITICAL FIX: Verify session user_id matches the user trying to resend
+                    session_user_id = request.session.get('reset_user_id')
+                    if session_user_id and session_user_id != user.id:
+                        logger.error(f"Resend code failed: User ID mismatch. Session has {session_user_id}, email belongs to {user.id}")
+                        return JsonResponse({'success': False, 'message': 'Session validation failed. Please start the reset process again.'})
+                    
                     logger.info(f"User found for resend code: {user.username}, email={user.email}")
                     verification_code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
                     request.session['reset_user_id'] = user.id
                     request.session['verification_code'] = verification_code
                     request.session['verified_email'] = email
+                    
                     try:
                         html_message = None
                         try:
@@ -332,7 +415,7 @@ def login_signup_view(request):
                             fail_silently=False,
                             html_message=html_message,
                         )
-                        logger.info(f"Verification code resent to {email}")
+                        logger.info(f"Verification code resent to {email}, user_id={user.id}")
                         return JsonResponse({
                             'success': True,
                             'message': f'Code resent to {email}. Please check your inbox (and spam/junk folder).',
@@ -395,46 +478,70 @@ def get_programs_by_school(request):
 def reset_password_view(request):
     if request.method == 'POST':
         user_id = request.session.get('reset_user_id')
-        if user_id:
-            try:
-                user = CustomUser.objects.get(id=user_id)
-                new_password = request.POST.get('new-password')
-                confirm_password = request.POST.get('confirm-new-password')
-                if new_password and confirm_password and new_password == confirm_password:
-                    if len(new_password) >= 6:
-                        # Set custom password (user's personal password)
-                        user.set_custom_password(new_password)
-                        # Clear OTP after successful reset
-                        user.otp_code = None
-                        user.otp_expires_at = None
-                        user.save()
-                        del request.session['reset_user_id']
-                        del request.session['verification_code']
-                        del request.session['verified_email']
-                        logger.info(f"Custom password reset successful for user={user.username}")
-                        return JsonResponse({
-                            'success': True,
-                            'message': 'Your password has been successfully reset! You can now log in with your new password.'
-                        })
-                    else:
-                        logger.error(f"Password reset failed: Password too short for user={user.username}")
-                        return JsonResponse({
-                            'success': False,
-                            'message': 'Password must be at least 6 characters long.'
-                        })
-                else:
-                    logger.error(f"Password reset failed: Passwords do not match for user={user.username}")
-                    return JsonResponse({'success': False, 'message': 'Passwords do not match. Please re-enter.'})
-            except CustomUser.DoesNotExist:
-                logger.error(f"Password reset failed: No user found for user_id={user_id}")
-                return JsonResponse({'success': False, 'message': 'Session expired. Please start the reset process again.'})
-        else:
-            logger.error("Password reset failed: Session expired")
+        verified_email = request.session.get('verified_email')
+        
+        # CRITICAL FIX: Validate both user_id and email
+        if not user_id or not verified_email:
+            logger.error(f"Password reset view: Missing session data. user_id={user_id}, email={verified_email}")
             return JsonResponse({'success': False, 'message': 'Session expired. Please start the reset process again.'})
+        
+        try:
+            user = CustomUser.objects.get(id=user_id)
+            
+            # CRITICAL VALIDATION: Ensure email matches
+            if user.email.lower() != verified_email.lower():
+                logger.error(f"Password reset view: Email mismatch detected! user_id={user_id}, user_email={user.email}, session_email={verified_email}")
+                return JsonResponse({'success': False, 'message': 'Session validation failed. Please start the reset process again.'})
+            
+            new_password = request.POST.get('new-password')
+            confirm_password = request.POST.get('confirm-new-password')
+            if new_password and confirm_password and new_password == confirm_password:
+                if len(new_password) >= 6:
+                    # Set custom password (user's personal password)
+                    user.set_custom_password(new_password)
+                    # Clear OTP after successful reset
+                    user.otp_code = None
+                    user.otp_expires_at = None
+                    user.save()
+                    
+                    # Clear session data immediately after reset
+                    try:
+                        del request.session['reset_user_id']
+                    except KeyError:
+                        pass
+                    try:
+                        del request.session['verification_code']
+                    except KeyError:
+                        pass
+                    try:
+                        del request.session['verified_email']
+                    except KeyError:
+                        pass
+                    
+                    logger.info(f"Custom password reset successful for user={user.username} (id={user.id}), email={user.email}")
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Your password has been successfully reset! You can now log in with your new password.'
+                    })
+                else:
+                    logger.error(f"Password reset failed: Password too short for user={user.username}")
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'Password must be at least 6 characters long.'
+                    })
+            else:
+                logger.error(f"Password reset failed: Passwords do not match for user={user.username}")
+                return JsonResponse({'success': False, 'message': 'Passwords do not match. Please re-enter.'})
+        except CustomUser.DoesNotExist:
+            logger.error(f"Password reset failed: No user found for user_id={user_id}")
+            return JsonResponse({'success': False, 'message': 'Session expired. Please start the reset process again.'})
+        except Exception as e:
+            logger.error(f"Password reset view failed with exception for user_id={user_id}: {str(e)}")
+            return JsonResponse({'success': False, 'message': 'An error occurred. Please try again.'})
     elif request.session.get('reset_user_id'):
         return render(request, 'accounts/reset_password.html')
     else:
-        logger.error("Password reset failed: Invalid session")
+        logger.error("Password reset view: Invalid session")
         messages.error(request, 'Invalid session. Please verify your email or ID first.')
         return redirect('login_signup')
 

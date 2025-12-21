@@ -3,28 +3,32 @@
 {% block title %}Enroll Course{% endblock %}
 {% block dashboard_content %}
 <style>
-    /* Ensure consistent card heights and layout */
-    #enrolledCoursesList > div {
-        display: flex;
-        flex-direction: column;
+    /* Course card styling matching instructor dashboard */
+    .course-card-student {
+        transition: all 0.3s ease;
         min-height: 280px;
-    }
-    
-    /* Ensure text doesn't overflow */
-    .course-card-title {
-        word-break: break-word;
-        overflow-wrap: break-word;
-        hyphens: auto;
-    }
-    
-    /* Consistent spacing for course details */
-    .course-details-section {
-        flex: 1;
         display: flex;
         flex-direction: column;
+        padding: 1rem;
+    }
+    .course-card-student:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.2) !important;
+    }
+    .course-title-student {
+        font-size: clamp(1rem, 2.2vw, 1.3rem);
+        line-height: 1.25;
+        word-break: break-word;
+        text-wrap: balance;
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 </style>
-<div class="max-w-4xl mx-auto px-1">
+<div class="max-w-4xl mx-auto px-1" data-student-id="{{ user.school_id }}">
     <h2 class="text-xl md:text-2xl font-bold mb-4 px-2" style="color: #3C4770;">Enroll in Course</h2>
     
     <!-- Enrollment Form -->
@@ -103,93 +107,47 @@
         </form>
     </div>
     
-    <!-- Enrolled Courses -->
-    <div class="bg-white rounded-lg shadow-sm p-3 md:p-4 border border-gray-100">
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-3 mb-4">
-            <h3 class="text-base md:text-lg font-bold text-gray-900 flex items-center gap-2">
-                <i class="fas fa-book-open text-blue-600"></i>
-                My Enrolled Courses
-            </h3>
-            <div class="flex items-center gap-2">
-                <button id="openDroppedBtn" type="button" onclick="safeOpenDroppedModal()" class="px-2 md:px-3 py-1 bg-red-50 text-red-700 text-xs md:text-sm font-semibold rounded-full hover:bg-red-100 transition">Dropped</button>
-                <span class="px-2 md:px-3 py-1 bg-blue-100 text-blue-700 text-xs md:text-sm font-semibold rounded-full">
-                    {{ enrolled_courses|length|default:0 }} course{{ enrolled_courses|length|default:0|pluralize }}
-                </span>
+    <!-- Enrolled Courses - Grid Display -->
+    <div class="bg-white rounded-2xl shadow p-4 border border-gray-100">
+        <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
+            <h3 class="text-lg font-semibold text-gray-800">My Enrolled Courses</h3>
+            <div class="flex gap-2 flex-wrap">
+                <button onclick="openRegistrationInstructorsModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition flex items-center gap-2">
+                    <i class="fas fa-user-check"></i> Teacher Registration
+                </button>
+                <button onclick="safeOpenDroppedModal()" class="px-4 py-2 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-700 transition flex items-center gap-2">
+                    <i class="fas fa-trash"></i> Dropped Courses
+                </button>
             </div>
         </div>
-        <div id="enrolledCoursesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-            {% if enrolled_courses %}
+        {% if enrolled_courses %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" id="enrolled-courses-grid">
                 {% for enrollment in enrolled_courses %}
-                <div class="bg-white rounded-lg p-3 md:p-4 shadow-sm hover:shadow-md transition-all border border-gray-200 cursor-pointer flex flex-col h-full" 
-                     onclick="showEnrolledCourseDetails({{ enrollment.course.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}', '{{ enrollment.course.program.code|escapejs }}', '{{ enrollment.course.program.name|escapejs }}', {{ enrollment.course.year_level }}, '{{ enrollment.course.semester|escapejs }}', '{{ enrollment.course.school_year|escapejs }}', '{{ enrollment.course.instructor.full_name|default:enrollment.course.instructor.username|escapejs }}', '{{ enrollment.course.room|default:"TBA"|escapejs }}', '{{ enrollment.enrolled_at|date:"F d, Y"|escapejs }}', '{{ enrollment.section|default:"N/A"|escapejs }}', '{{ enrollment.course.color|default:"#3C4770"|escapejs }}', {{ enrollment.has_qr|lower }})">>
-                    <!-- Course Header -->
-                    <div class="flex items-start gap-2 md:gap-3 mb-3 flex-shrink-0">
-                        <div class="w-10 md:w-12 h-10 md:h-12 rounded-lg flex items-center justify-center text-white font-bold text-sm md:text-base shadow-md flex-shrink-0" 
-                             style="background: linear-gradient(135deg, {{ enrollment.course.color|default:'#3C4770' }} 0%, {{ enrollment.course.color|default:'#447294' }} 100%);">
-                            {{ enrollment.course.code|first|upper }}
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <h4 class="font-bold text-gray-900 text-sm md:text-base mb-1 truncate" title="{{ enrollment.course.code }}">
-                                {{ enrollment.course.code }}
-                            </h4>
-                            <p class="text-xs text-gray-600 line-clamp-2 course-card-title" title="{{ enrollment.course.name }}">
-                                {{ enrollment.course.name }}
-                            </p>
-                        </div>
+                <div class="course-card-student group relative rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer text-white" 
+                     style="background: linear-gradient(135deg, {{ enrollment.course.color|default:'#3C4770' }} 0%, {{ enrollment.course.color|default:'#447294' }} 100%); box-shadow: 0 10px 20px -5px rgba(60, 71, 112, 0.3);"
+                     onclick="showEnrolledCourseDetails({{ enrollment.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}', '{{ enrollment.course.program.code|escapejs }}', '{{ enrollment.course.program.name|escapejs }}', {{ enrollment.course.year_level }}, '{{ enrollment.course.semester|escapejs }}', '{{ enrollment.course.school_year|escapejs }}', '{{ enrollment.course.instructor.full_name|default:enrollment.course.instructor.username|escapejs }}', '{{ enrollment.course.room|default:'TBA'|escapejs }}', '{{ enrollment.enrolled_at|date:'F d, Y'|escapejs }}', '{{ enrollment.section|default:'N/A'|escapejs }}', '{{ enrollment.course.color|default:'#3C4770'|escapejs }}', {{ enrollment.has_qr|lower }})">
+                    <div class="flex justify-between items-start mb-3">
+                        <i class="fas fa-book-open text-2xl opacity-70"></i>
                     </div>
-                    
-                    <!-- Course Details -->
-                    <div class="space-y-1.5 md:space-y-2 pt-2 md:pt-3 border-t border-gray-200 flex-1 flex flex-col course-details-section text-xs md:text-sm">
-                        <div class="flex items-center gap-2 text-gray-600 min-w-0">
-                            <i class="fas fa-graduation-cap text-blue-500 w-3 md:w-4 flex-shrink-0"></i>
-                            <span class="truncate" title="{{ enrollment.course.program.code }} - {{ enrollment.course.program.name }}">
-                                {{ enrollment.course.program.code }}
-                            </span>
-                        </div>
-                        <div class="flex items-center gap-2 text-gray-600 flex-wrap">
-                            <i class="fas fa-user text-blue-500 w-3 md:w-4 flex-shrink-0"></i>
-                            <span class="flex-shrink-0">{{ enrollment.course.year_level|ordinal_year }}</span>
-                            {% if enrollment.section %}
-                            <span class="px-1.5 md:px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px] md:text-xs font-semibold flex-shrink-0">Sec {{ enrollment.section|upper }}</span>
-                            {% endif %}
-                        </div>
-                        <div class="flex items-center gap-2 text-gray-600 min-w-0">
-                            <i class="fas fa-calendar text-purple-500 w-3 md:w-4 flex-shrink-0"></i>
-                            <span class="flex-shrink-0 text-xs md:text-sm">
-                                {% if enrollment.course.semester == '1st' %}1st{% elif enrollment.course.semester == '2nd' %}2nd{% else %}{{ enrollment.course.semester }}{% endif %} Sem
-                                {% if enrollment.course.school_year %} • {{ enrollment.course.school_year }}{% endif %}
-                            </span>
-                        </div>
-                        <div class="pt-1 md:pt-2 mt-auto">
-                            <p class="text-[10px] text-gray-500 leading-tight">
-                                <span class="font-medium">Code:</span> <span class="font-mono text-[9px]">{{ enrollment.course.enrollment_code|default:'N/A' }}</span>
-                            </p>
-                            <p class="text-[10px] text-gray-500 leading-tight mt-0.5 md:mt-1">
-                                <span class="font-medium">Enrolled:</span> {{ enrollment.enrolled_at|date:"M d, Y" }}
-                            </p>
-                        </div>
-                    </div>
-                
-        
-                    <!-- Unenroll Button -->
-                    <div class="pt-2 md:pt-3 mt-2 md:mt-3 border-t border-gray-200 flex-shrink-0">
-                        <button onclick="event.stopPropagation(); showUnenrollModal({{ enrollment.id }}, '{{ enrollment.course.code|escapejs }}', '{{ enrollment.course.name|escapejs }}')" 
-                                class="w-full px-3 md:px-4 py-1.5 md:py-2 bg-red-600 text-white text-xs md:text-sm font-semibold rounded transition hover:bg-red-700">
-                            <i class="fas fa-times mr-1"></i> Drop
-                        </button>
-                    </div>
+                    <h3 class="course-title-student font-bold mb-1 text-base">{{ enrollment.course.code }}</h3>
+                    <p class="text-xs font-medium opacity-90 mb-2 line-clamp-2">{{ enrollment.course.name }}</p>
+                    {% if enrollment.section %}
+                    <p class="text-xs font-semibold opacity-80 mb-2 flex items-center">
+                        <i class="fas fa-users mr-1"></i> Section {{ enrollment.section|upper }}
+                    </p>
+                    {% endif %}
+                    <p class="text-xs font-semibold opacity-80 flex items-center">
+                        <i class="fas fa-map-marker-alt mr-1"></i> {{ enrollment.course.room|default:'TBA' }}
+                    </p>
                 </div>
                 {% endfor %}
-            {% else %}
-                <div class="col-span-full text-center py-12 text-gray-500">
-                    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-                        <i class="fas fa-book-open text-2xl text-gray-400"></i>
-                    </div>
-                    <p class="text-base font-semibold text-gray-700">No enrolled courses yet</p>
-                    <p class="text-sm text-gray-500 mt-1">Enter a course code above to enroll</p>
-                </div>
-            {% endif %}
+            </div>
+        {% else %}
+        <div class="text-center py-8 text-gray-500">
+            <i class="fas fa-book-open text-3xl mb-2"></i>
+            <p class="text-sm">No enrolled courses yet</p>
         </div>
+        {% endif %}
     </div>
 </div>
 
@@ -438,7 +396,6 @@ function showCourseInfo(course) {
         <div class="p-4 rounded-lg border-l-4" style="background: linear-gradient(90deg, ${course.color || '#3C4770'}15 0%, #FFFFFF 100%); border-left-color: ${course.color || '#3C4770'};">
             <h4 class="text-lg font-bold mb-2" style="color: ${course.color || '#3C4770'};">${course.code} - ${course.name}</h4>
             <div class="grid grid-cols-2 gap-2 text-sm text-gray-700">
-                <div><strong>Program:</strong> ${course.program_code || ''} - ${course.program_name || ''}</div>
                 <div><strong>Year Level:</strong> ${course.year_level || 'N/A'}</div>
                 <div><strong>Semester:</strong> ${course.semester === '1st' ? '1st Semester' : course.semester === '2nd' ? '2nd Semester' : course.semester || 'N/A'}</div>
                 <div><strong>School Year:</strong> ${course.school_year || 'N/A'}</div>
@@ -587,7 +544,7 @@ document.getElementById('enrollment_code').addEventListener('keypress', function
     }
 });
 
-function showEnrolledCourseDetails(courseId, code, name, programCode, programName, yearLevel, semester, schoolYear, instructor, room, enrolledAt, section, color, hasQR) {
+function showEnrolledCourseDetails(enrollmentId, code, name, programCode, programName, yearLevel, semester, schoolYear, instructor, room, enrolledAt, section, color, hasQR) {
     let modal = document.getElementById('enrolledCourseDetailsModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -616,29 +573,12 @@ function showEnrolledCourseDetails(courseId, code, name, programCode, programNam
     
     document.getElementById('modal-course-code').textContent = code + ' - ' + name;
     
-    // Create button HTML based on QR registration status
-    let buttonHTML = '';
-    if (hasQR) {
-        buttonHTML = `
-            <button disabled class="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg font-semibold cursor-not-allowed transition flex items-center gap-2" title="QR code already registered">
-                <i class="fas fa-lock text-sm"></i> 
-                <span>QR Registered</span>
-            </button>
-        `;
-    } else {
-        buttonHTML = `
-            <button id="studentRegisterBtn" onclick="(function(){ window.isStudentRegisterMode = true; window.studentRegisterCourseId = ${courseId}; openQRScanner(${courseId}, '{{ user.school_id|default:''|escapejs }}'); })()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition flex items-center gap-2">
-                <i class="fas fa-qrcode"></i> 
-                <span>Register QR for this Course</span>
-            </button>
-        `;
-    }
+    // Note: QR registration has been moved to the "Register" button. No registration button in this modal.
     
     document.getElementById('modal-course-content').innerHTML = `
         <div class="p-4 rounded-xl border-l-4" style="background: linear-gradient(90deg, ${color}15 0%, #FFFFFF 100%); border-left-color: ${color};">
             <h4 class="text-lg font-bold mb-2" style="color: ${color};">${code} - ${name}</h4>
             <div class="grid grid-cols-2 gap-2 text-sm text-gray-700">
-                <div><strong>Program:</strong> ${programCode} - ${programName}</div>
                 <div><strong>Year Level:</strong> ${ordinalYear}</div>
                 <div><strong>Semester:</strong> ${semesterDisplay}</div>
                 <div><strong>School Year:</strong> ${schoolYear || 'N/A'}</div>
@@ -648,10 +588,12 @@ function showEnrolledCourseDetails(courseId, code, name, programCode, programNam
                 <div><strong>Enrolled on:</strong> ${enrolledAt}</div>
             </div>
         </div>
-        <div class="mt-4 flex items-center gap-3">
-            ${buttonHTML}
+        <div class="mt-4 flex gap-3 justify-end border-t border-gray-200 pt-4">
             <button onclick="closeEnrolledCourseDetails()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition">
-                Close
+                Cancel
+            </button>
+            <button onclick="showUnenrollModal(${enrollmentId}, '${code}', '${name}')" class="px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition flex items-center gap-2">
+                <i class="fas fa-user-minus"></i> Drop Course
             </button>
         </div>
     `;
@@ -665,6 +607,706 @@ function closeEnrolledCourseDetails() {
     }
 }
 </script>
+
+<!-- Registration Instructors Functions -->
+<script>
+function openRegistrationInstructorsModal() {
+    const modal = document.getElementById('registrationInstructorsModal');
+    const content = document.getElementById('registrationInstructorsContent');
+    
+    if (!modal) {
+        console.error('Registration modal not found');
+        return;
+    }
+    
+    // Show loading state
+    content.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-spinner fa-spin text-2xl mb-2"></i><p>Loading registration data...</p></div>';
+    modal.classList.remove('hidden');
+    
+    // Fetch registration data
+    fetch('{% url "dashboard:student_get_registration_instructors" %}')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                content.innerHTML = `<div class="text-red-600 p-4 text-center">${data.message || 'Failed to load registration data.'}</div>`;
+                return;
+            }
+            
+            if (!data.instructors || data.instructors.length === 0) {
+                content.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-inbox text-3xl mb-2"></i><p>No instructors have registration enabled for your courses.</p></div>';
+                return;
+            }
+            
+            // Build instructor cards
+            let html = '<div class="space-y-3">';
+            data.instructors.forEach(instructor => {
+                const profilePic = instructor.profile_picture ? `<img src="${instructor.profile_picture}" alt="${instructor.name}" class="w-12 h-12 rounded-full object-cover">` : `<div class="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold">${instructor.name.charAt(0)}</div>`;
+                html += `
+                    <div class="p-4 rounded-lg border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="flex items-center gap-3">
+                                ${profilePic}
+                                <div>
+                                    <h4 class="font-bold text-lg text-gray-900">${instructor.name}</h4>
+                                    <p class="text-xs text-gray-600">${instructor.courses.length} course(s)</p>
+                                </div>
+                            </div>
+                            <button onclick="openInstructorRegistration(${instructor.id}, '${instructor.name.replace(/'/g, "\\'")}', '${instructor.profile_picture || ''}', ${JSON.stringify(instructor.courses).replace(/"/g, '&quot;')})" class="px-3 py-1 bg-blue-600 text-white rounded text-sm font-semibold hover:bg-blue-700 transition">
+                                Register
+                            </button>
+                        </div>
+                        <div class="space-y-1 ml-15">
+                            ${instructor.courses.map(course => `
+                                <div class="text-sm text-gray-700 flex items-center gap-2">
+                                    <i class="fas fa-book text-blue-600"></i>
+                                    <span class="font-medium">${course.code}</span> - ${course.name}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            content.innerHTML = html;
+        })
+        .catch(err => {
+            content.innerHTML = '<div class="text-red-600 p-4 text-center">Error loading registration data.</div>';
+            console.error(err);
+        });
+}
+
+function closeRegistrationInstructorsModal() {
+    const modal = document.getElementById('registrationInstructorsModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function openInstructorRegistration(instructorId, instructorName, profilePicture, courses) {
+    // Create a modal for this specific instructor showing their courses
+    let modal = document.getElementById('instructorRegistrationDetailsModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'instructorRegistrationDetailsModal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 hidden z-[120] flex items-center justify-center p-4 backdrop-blur-sm';
+        document.body.appendChild(modal);
+    }
+    
+    const profilePic = profilePicture ? `<img src="${profilePicture}" alt="${instructorName}" class="w-16 h-16 rounded-full object-cover border-2 border-blue-300">` : `<div class="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-2xl">${instructorName.charAt(0)}</div>`;
+    
+    let coursesHtml = courses.map(course => `
+        <div class="p-3 rounded-lg border border-gray-200 bg-gray-50">
+            <div class="font-semibold text-gray-900">${course.code} - ${course.name}</div>
+        </div>
+    `).join('');
+    
+    modal.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div class="flex justify-between items-start mb-6">
+                <div class="flex items-center gap-3">
+                    ${profilePic}
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900">Register with</h3>
+                        <p class="text-lg font-semibold text-blue-600">${instructorName}</p>
+                    </div>
+                </div>
+                <button onclick="closeInstructorRegistrationModal()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-3 mb-6">
+                <h4 class="font-semibold text-gray-800 text-sm">Your courses with this instructor:</h4>
+                ${coursesHtml}
+            </div>
+            
+            <div class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="openQRCodeRegistration(${instructorId}, '${instructorName.replace(/'/g, "\\'")}')" class="px-4 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2">
+                        <i class="fas fa-qrcode"></i> QR Code
+                    </button>
+                    <button onclick="openBiometricRegistration(${instructorId}, '${instructorName.replace(/'/g, "\\'")}')" class="px-4 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2">
+                        <i class="fas fa-fingerprint"></i> Biometric
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 text-center">Choose registration method or use both</p>
+            </div>
+            <button onclick="closeInstructorRegistrationModal()" class="w-full mt-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition">
+                Close
+            </button>
+        </div>
+    `;
+    
+    modal.classList.remove('hidden');
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeInstructorRegistrationModal();
+        }
+    });
+}
+
+function closeInstructorRegistrationModal() {
+    const modal = document.getElementById('instructorRegistrationDetailsModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function openRegistrationMethods(instructorId, instructorName) {
+    // Close modals first
+    closeInstructorRegistrationModal();
+    closeRegistrationInstructorsModal();
+    
+    // Set the registration mode to student self-registration
+    window.isStudentRegisterMode = true;
+    
+    // Store instructor ID for backend reference
+    window.currentInstructorId = instructorId;
+    
+    // Set student ID prefill from page data if available
+    const studentIdPrefill = document.querySelector('[data-student-id]')?.getAttribute('data-student-id') || '';
+    
+    // Get all courses from the current registration modal (before we close it)
+    // In the QR scanner, we'll use courseId 0 as a special marker for multi-course registration
+    console.log('Opening QR Scanner in student registration mode for instructor:', instructorId);
+    
+    // Open QR Scanner - courseId of 0 indicates student registering with instructor (multi-course)
+    if (typeof window.openQRScanner === 'function') {
+        window.openQRScanner(0, studentIdPrefill, '');
+    } else {
+        console.error('QR Scanner function not available');
+        alert('QR Scanner is not available. Please refresh the page and try again.');
+    }
+}
+
+// Open QR Code Registration
+function openQRCodeRegistration(instructorId, instructorName) {
+    // Close modals first
+    closeInstructorRegistrationModal();
+    closeRegistrationInstructorsModal();
+    
+    // Set the registration mode to student self-registration
+    window.isStudentRegisterMode = true;
+    
+    // Store instructor ID for backend reference
+    window.currentInstructorId = instructorId;
+    
+    // Set student ID prefill from page data if available
+    const studentIdPrefill = document.querySelector('[data-student-id]')?.getAttribute('data-student-id') || '';
+    
+    console.log('Opening QR Scanner for instructor:', instructorId);
+    
+    // Open QR Scanner - courseId of 0 indicates student registering with instructor (multi-course)
+    if (typeof window.openQRScanner === 'function') {
+        window.openQRScanner(0, studentIdPrefill, '');
+    } else {
+        console.error('QR Scanner function not available');
+        alert('QR Scanner is not available. Please refresh the page and try again.');
+    }
+}
+
+// Open Biometric Registration
+function openBiometricRegistration(instructorId, instructorName) {
+    console.log('Opening biometric registration for instructor:', instructorId, instructorName);
+    
+    // Close modals first
+    closeInstructorRegistrationModal();
+    closeRegistrationInstructorsModal();
+    
+    // Fetch enrolled courses for this student with this instructor
+    console.log(`Fetching enrolled courses from: /dashboard/api/student/enrolled-courses/?instructor_id=${instructorId}`);
+    
+    fetch(`/dashboard/api/student/enrolled-courses/?instructor_id=${instructorId}`)
+        .then(response => {
+            console.log('API response status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('API response data:', data);
+            
+            if (!data.success) {
+                console.error('API error:', data.message);
+                showNotification(`Error loading courses: ${data.message}`, 'error');
+                return;
+            }
+            
+            if (!data.courses || data.courses.length === 0) {
+                console.warn('No enrolled courses found with this instructor', instructorId);
+                showNotification('You are not enrolled in any courses with this instructor', 'warning');
+                return;
+            }
+            
+            console.log(`Found ${data.courses.length} enrolled courses`);
+            
+            // Store course IDs for enrollment
+            window.enrollmentCourseIds = data.courses.map(c => c.id);
+            
+            // Create biometric registration modal (simplified without course selection)
+            let modal = document.getElementById('biometricRegistrationModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'biometricRegistrationModal';
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 hidden z-[120] flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto';
+                document.body.appendChild(modal);
+            }
+            
+            // Build course list display
+            let coursesListHtml = data.courses.map(course => `
+                <div class="p-3 rounded-lg border border-green-200 bg-green-50">
+                    <div class="font-semibold text-gray-900">${course.code}</div>
+                    <div class="text-sm text-gray-600">${course.name}</div>
+                </div>
+            `).join('');
+            
+            modal.innerHTML = `
+                <div class="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+                    <!-- Header -->
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <i class="fas fa-fingerprint text-purple-600"></i> Fingerprint
+                        </h3>
+                        <button onclick="closeBiometricRegistrationModal()" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-times text-lg"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Scan Icon and Status -->
+                    <div class="flex flex-col items-center justify-center py-6 mb-4 bg-purple-50 rounded-lg">
+                        <i id="scanIcon" class="fas fa-fingerprint text-5xl text-purple-600 mb-3"></i>
+                        <p id="scanTitle" class="text-base font-semibold text-gray-800">Ready to Scan</p>
+                        <p id="scanSubtitle" class="text-xs text-gray-600 mt-1">0/5</p>
+                    </div>
+                    
+                    <!-- Progress Display - Large Percentage -->
+                    <div class="mb-4">
+                        <div class="flex flex-col items-center justify-center p-6 bg-purple-50 rounded-lg">
+                            <div class="text-6xl font-bold text-purple-600 mb-2" id="percentageDisplay">0%</div>
+                            <div class="text-sm text-gray-600 text-center mb-2">
+                                <span id="enrollmentCounter" class="text-lg font-semibold text-purple-600">0/5</span> scans completed
+                            </div>
+                            <div id="enrollmentStatus" class="text-xs text-gray-600 text-center">
+                                Ready to start
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Results -->
+                    <div id="confirmationsList" class="space-y-1 mb-4 max-h-24 overflow-y-auto hidden">
+                        <!-- Results appear here -->
+                    </div>
+                    
+                    <!-- Buttons -->
+                    <div class="space-y-2">
+                        <button id="startEnrollBtn" onclick="startBiometricEnrollment('${instructorName.replace(/'/g, "\\'")}')" class="w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm rounded-lg transition">
+                            <i class="fas fa-play mr-1"></i> Start
+                        </button>
+                        <button onclick="closeBiometricRegistrationModal()" class="w-full px-4 py-2 bg-gray-100 text-gray-700 font-medium text-sm rounded-lg hover:bg-gray-200 transition">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            modal.classList.remove('hidden');
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    closeBiometricRegistrationModal();
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching courses:', error);
+            showNotification(`Error loading courses: ${error.message}`, 'error');
+        });
+}
+
+// Close Biometric Registration Modal
+function closeBiometricRegistrationModal() {
+    const modal = document.getElementById('biometricRegistrationModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+// Start Biometric Enrollment with Real-Time WebSocket Updates
+function startBiometricEnrollment(instructorName) {
+    console.log('[ENROLLMENT] Starting biometric enrollment');
+    
+    // Get pre-stored enrolled course IDs
+    const courseIds = window.enrollmentCourseIds;
+    if (!courseIds || courseIds.length === 0) {
+        showNotification('No courses found for enrollment', 'warning');
+        return;
+    }
+    
+    console.log(`[ENROLLMENT] Enrolling in ${courseIds.length} courses:`, courseIds);
+    
+    const btn = document.getElementById('startEnrollBtn');
+    const statusEl = document.getElementById('enrollmentStatus');
+    const percentageDisplay = document.getElementById('percentageDisplay');
+    const counter = document.getElementById('enrollmentCounter');
+    const scanIcon = document.getElementById('scanIcon');
+    const scanTitle = document.getElementById('scanTitle');
+    const scanSubtitle = document.getElementById('scanSubtitle');
+    
+    // Check if all required elements exist
+    if (!btn || !statusEl || !percentageDisplay || !counter || !scanIcon || !scanTitle || !scanSubtitle) {
+        console.error('[ENROLLMENT] Missing required modal elements');
+        console.error('btn:', btn);
+        console.error('statusEl:', statusEl);
+        console.error('percentageDisplay:', percentageDisplay);
+        console.error('counter:', counter);
+        console.error('scanIcon:', scanIcon);
+        console.error('scanTitle:', scanTitle);
+        console.error('scanSubtitle:', scanSubtitle);
+        showNotification('Error: Modal elements missing', 'danger');
+        return;
+    }
+    
+    console.log('[ENROLLMENT] All modal elements found');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Connecting...';
+    
+    // Generate unique enrollment ID
+    const enrollmentId = `enrollment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const biometricTemplate = `template_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    console.log('[ENROLLMENT] Generated enrollment ID:', enrollmentId);
+    
+    // Create WebSocket connection for real-time updates
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let wsHost = window.location.host;
+    // If running on localhost with different port, adjust
+    if (!wsHost.includes(':') && window.location.hostname === 'localhost') {
+        wsHost = 'localhost:8000'; // Explicitly use port 8000 for development
+    }
+    const wsUrl = `${protocol}//${wsHost}/ws/biometric/enrollment/${enrollmentId}/`;
+    
+    console.log(`[ENROLLMENT] Connecting to WebSocket: ${wsUrl}`);
+    console.log(`[ENROLLMENT] Enrollment ID for group: ${enrollmentId}`);
+    
+    const socket = new WebSocket(wsUrl);
+    let confirmations = 0;
+    let confirmationResults = [];
+    const R307_IP = '192.168.1.26';
+    
+    socket.onopen = async (event) => {
+        console.log('[WEBSOCKET] ✓ Connection established');
+        console.log('[WEBSOCKET] Socket ready state:', socket.readyState);
+        btn.innerHTML = '<i class="fas fa-fingerprint mr-1"></i> Starting scans...';
+        // Add small delay to ensure connection is fully ready
+        setTimeout(() => startNextScan(), 500);
+    };
+    
+    socket.onmessage = (event) => {
+        try {
+            console.log('[WEBSOCKET] Raw message data received:', event.data);
+            const message = JSON.parse(event.data);
+            console.log('[WEBSOCKET] Parsed message:', JSON.stringify(message));
+            console.log('[WEBSOCKET] Message type:', message.type);
+            
+            switch(message.type) {
+                case 'scan_update':
+                    console.log('[WEBSOCKET] Handling scan_update with slot:', message.slot);
+                    handleScanUpdate(message);
+                    break;
+                case 'enrollment_complete':
+                    console.log('[WEBSOCKET] Handling enrollment_complete');
+                    handleEnrollmentComplete(message);
+                    break;
+                case 'enrollment_error':
+                    console.log('[WEBSOCKET] Handling enrollment_error');
+                    handleEnrollmentError(message);
+                    break;
+                default:
+                    console.log('[WEBSOCKET] Unknown message type:', message.type);
+            }
+        } catch (error) {
+            console.error('[WEBSOCKET] Error parsing message:', error, 'Raw:', event.data);
+        }
+    };
+    
+    socket.onerror = (error) => {
+        console.error('[WEBSOCKET] ERROR:', error);
+        console.error('[WEBSOCKET] Ready state:', socket.readyState);
+        showNotification('WebSocket connection error', 'danger');
+    };
+    
+    socket.onclose = (event) => {
+        console.log('[WEBSOCKET] Connection closed');
+        console.log('[WEBSOCKET] Close code:', event.code);
+        console.log('[WEBSOCKET] Close reason:', event.reason);
+    };
+    
+    // Handle scan update from server
+    function handleScanUpdate(message) {
+        console.log('[SCAN] Processing update with data:', message);
+        
+        // Extract fields from message
+        const slot = message.slot || message.scan_step || 0;
+        const success = message.success || false;
+        const quality = message.quality || message.quality_score || 0;
+        const progress = message.progress || (slot / 5) * 100;
+        
+        console.log(`[SCAN] Extracted: slot=${slot}, success=${success}, quality=${quality}, progress=${progress}%`);
+        
+        if (!success) {
+            console.warn('[SCAN] Scan failed');
+            showNotification(`Scan failed: ${message.message}`, 'warning');
+            return;
+        }
+        
+        confirmations = slot;
+        confirmationResults.push({success: true, quality: quality, message: message.message});
+        
+        // Update percentage display - THIS IS THE KEY PART
+        const percentageDisplay = document.getElementById('percentageDisplay');
+        if (percentageDisplay) {
+            const newPercentage = Math.round(progress);
+            percentageDisplay.textContent = newPercentage + '%';
+            percentageDisplay.style.color = newPercentage === 100 ? '#10b981' : '#9333ea';
+            console.log('[PROGRESS] Updated percentage to:', newPercentage + '%');
+        } else {
+            console.error('[PROGRESS] percentageDisplay element not found!');
+        }
+        
+        // Update counter
+        const counter = document.getElementById('enrollmentCounter');
+        if (counter) {
+            const newText = `${confirmations}/5`;
+            counter.textContent = newText;
+            console.log('[PROGRESS] Updated counter to:', newText);
+        } else {
+            console.error('[PROGRESS] counter element not found!');
+        }
+        
+        // Update status
+        const statusEl = document.getElementById('enrollmentStatus');
+        if (statusEl) {
+            statusEl.innerHTML = `<i class="fas fa-fingerprint mr-2"></i> Scan ${confirmations}/5 captured - Quality: ${quality}%`;
+        }
+        
+        // Update icon
+        const scanIcon = document.getElementById('scanIcon');
+        if (scanIcon) {
+            scanIcon.innerHTML = '<i class="fas fa-circle-check text-5xl text-green-500 mb-3"></i>';
+        }
+        const scanTitle = document.getElementById('scanTitle');
+        if (scanTitle) {
+            scanTitle.textContent = `Scan ${confirmations}/5`;
+        }
+        const scanSubtitle = document.getElementById('scanSubtitle');
+        if (scanSubtitle) {
+            scanSubtitle.textContent = `Quality: ${quality}%`;
+        }
+        
+        console.log('[SCAN] Update complete - slot:', confirmations, 'progress:', progress + '%');
+        
+        if (confirmations < 5) {
+            setTimeout(() => {
+                startNextScan();
+            }, 500);
+        } else {
+            handleEnrollmentComplete({success: true, courses_enrolled: courseIds.length});
+        }
+    }
+    
+    function handleEnrollmentComplete(message) {
+        console.log('[ENROLLMENT] Complete:', message);
+        statusEl.innerHTML = '<i class="fas fa-check mr-2"></i> Enrollment complete!';
+        scanTitle.textContent = 'Success!';
+        scanSubtitle.textContent = `${courseIds.length} course(s) enrolled`;
+        submitBiometricEnrollment(confirmations, biometricTemplate, courseIds);
+        if (socket.readyState === WebSocket.OPEN) socket.close();
+    }
+    
+    function handleEnrollmentError(message) {
+        console.error('[ENROLLMENT] Error:', message);
+        showNotification(`Error: ${message.message}`, 'danger');
+        scanIcon.innerHTML = '<i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-3"></i>';
+        scanTitle.textContent = 'Error';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-redo mr-1"></i> Retry';
+        if (socket.readyState === WebSocket.OPEN) socket.close();
+    }
+    
+    // Start scanning for next fingerprint
+    async function startNextScan() {
+        confirmations++;
+        console.log('[SCAN] Starting scan', confirmations);
+        
+        scanIcon.innerHTML = '<i class="fas fa-fingerprint text-5xl text-blue-500 mb-3 animate-pulse"></i>';
+        scanTitle.textContent = `Scan ${confirmations} of 5`;
+        scanSubtitle.textContent = 'Place your finger on sensor';
+        statusEl.innerHTML = `<i class="fas fa-fingerprint mr-2"></i> Ready for scan ${confirmations}...`;
+        
+        try {
+            const enrollPayload = {
+                slot: confirmations,
+                template_id: enrollmentId
+            };
+            
+            console.log('[SCAN] Sending to Arduino:', JSON.stringify(enrollPayload));
+            
+            const response = await fetch(`http://${R307_IP}/enroll`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(enrollPayload)
+            });
+            
+            const r307Data = await response.json();
+            console.log('[SCAN] Arduino response:', r307Data);
+            
+            if (r307Data.success) {
+                statusEl.innerHTML = `<i class="fas fa-fingerprint mr-2"></i> Scanning fingerprint ${confirmations}/5...`;
+            } else {
+                console.error('[SCAN] Arduino returned error:', r307Data.message);
+            }
+        } catch (error) {
+            console.error('[SCAN] Arduino error:', error);
+            showNotification(`Cannot reach Arduino at ${R307_IP}`, 'danger');
+            scanIcon.innerHTML = '<i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-3"></i>';
+            scanTitle.textContent = 'Connection Error';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-redo mr-1"></i> Retry';
+        }
+    }
+}
+
+// Submit biometric enrollment to backend
+function submitBiometricEnrollment(confirmations, biometricTemplate, courseIds) {
+    // Get CSRF token
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    
+    // Submit for each selected course
+    let successCount = 0;
+    let failureCount = 0;
+    const totalCourses = courseIds.length;
+    
+    courseIds.forEach((courseId, index) => {
+        const enrollmentData = {
+            course_id: courseId,
+            biometric_data: biometricTemplate,
+            biometric_type: 'fingerprint',
+            confirmations: confirmations
+        };
+        
+        console.log(`Submitting biometric enrollment for course ${courseId}:`, enrollmentData);
+        
+        fetch('{% url "dashboard:api_biometric_enroll" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(enrollmentData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log(`Enrollment response for course ${courseId}:`, data);
+            
+            if (data.success) {
+                successCount++;
+            } else {
+                failureCount++;
+            }
+            
+            // Update UI when all courses are processed
+            if (successCount + failureCount === totalCourses) {
+                const statusEl = document.getElementById('enrollmentStatus');
+                const scanTitle = document.getElementById('scanTitle');
+                const scanSubtitle = document.getElementById('scanSubtitle');
+                const scanIcon = document.getElementById('scanIcon');
+                
+                if (failureCount === 0) {
+                    // All successful
+                    scanIcon.innerHTML = '<i class="fas fa-check-circle text-6xl text-green-500 mb-4"></i>';
+                    scanTitle.textContent = 'Enrollment Successful!';
+                    scanSubtitle.textContent = `Fingerprint registered in ${successCount} course(s)`;
+                    statusEl.innerHTML = `<i class="fas fa-check mr-2 text-green-600"></i> <span class="text-green-700">Fingerprint enrolled successfully</span>`;
+                    
+                    showNotification(`Fingerprint enrolled in ${successCount} course(s) with 5 confirmations!`, 'success');
+                    
+                    setTimeout(() => {
+                        closeBiometricRegistrationModal();
+                    }, 2000);
+                } else {
+                    // Partial or complete failure
+                    scanIcon.innerHTML = '<i class="fas fa-exclamation-circle text-6xl text-orange-500 mb-4"></i>';
+                    scanTitle.textContent = failureCount === totalCourses ? 'Enrollment Failed' : 'Partial Enrollment';
+                    scanSubtitle.textContent = `Success: ${successCount}/${totalCourses}`;
+                    statusEl.innerHTML = `<i class="fas fa-warning mr-2 text-orange-600"></i> <span class="text-orange-700">Enrolled in ${successCount}/${totalCourses} courses</span>`;
+                    
+                    showNotification(`Enrolled in ${successCount}/${totalCourses} courses`, failureCount === totalCourses ? 'error' : 'warning');
+                    
+                    // Re-enable start button
+                    const btn = document.getElementById('startEnrollBtn');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-play mr-2"></i> Start Enrollment';
+                }
+            }
+        })
+        .catch(error => {
+            console.error(`Enrollment error for course ${courseId}:`, error);
+            failureCount++;
+            
+            if (successCount + failureCount === totalCourses) {
+                showNotification(`Error during enrollment: ${error.message}`, 'error');
+                
+                // Re-enable start button
+                const btn = document.getElementById('startEnrollBtn');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-play mr-2"></i> Start Enrollment';
+            }
+        });
+    });
+}
+
+function openRegistrationMethods(instructorId, instructorName) {
+    // Close modals first
+    closeInstructorRegistrationModal();
+    closeRegistrationInstructorsModal();
+    
+    // Set the registration mode to student self-registration
+    window.isStudentRegisterMode = true;
+    
+    // Store instructor ID for backend reference
+    window.currentInstructorId = instructorId;
+    
+    // Set student ID prefill from page data if available
+    const studentIdPrefill = document.querySelector('[data-student-id]')?.getAttribute('data-student-id') || '';
+    
+    // Get all courses from the current registration modal (before we close it)
+    // In the QR scanner, we'll use courseId 0 as a special marker for multi-course registration
+    console.log('Opening QR Scanner in student registration mode for instructor:', instructorId);
+    
+    // Open QR Scanner - courseId of 0 indicates student registering with instructor (multi-course)
+    if (typeof window.openQRScanner === 'function') {
+        window.openQRScanner(0, studentIdPrefill, '');
+    } else {
+        console.error('QR Scanner function not available');
+        alert('QR Scanner is not available. Please refresh the page and try again.');
+    }
+}
+</script>
+
 <script>
 function safeOpenDroppedModal() {
     try {
@@ -807,6 +1449,24 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 {% include 'dashboard/partials/qr_scanner_basic.html' %}
+
+<!-- Registration Instructors Modal -->
+<div id="registrationInstructorsModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[115] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 sticky top-0 bg-white">
+            <h3 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <i class="fas fa-clipboard-check"></i> Registration
+            </h3>
+            <button onclick="closeRegistrationInstructorsModal()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times text-lg"></i></button>
+        </div>
+        <div id="registrationInstructorsContent" class="p-6">
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p>Loading registration data...</p>
+            </div>
+        </div>
+    </div>
+</div>
 
         <!-- Dropped Enrollments Modal (inserted) -->
         <div id="droppedEnrollmentsModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[115] flex items-center justify-center p-4">
