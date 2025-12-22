@@ -114,6 +114,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('qr-reader-error').classList.add('hidden');
                 document.getElementById('scan-result-message').textContent = data.message || 'Attendance marked successfully!';
                 
+                // Play success sound
+                playScanSuccessSound();
+                
                 // Different notification type based on status
                 const notificationType = data.status === 'late' ? 'warning' : 'success';
                 const notificationMessage = data.is_late ? 
@@ -145,19 +148,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 let errorMessage = data.message || 'Failed to mark attendance.';
                 let alertMessage = errorMessage;
                 
+                // Handle already scanned case
+                if (data.already_scanned) {
+                    errorMessage = '⚠️ This QR code has already been used\n\nThis QR code ID is already registered in the system by another student. Each student must have a unique QR code.';
+                    alertMessage = errorMessage;
+                    playScanErrorSound();
+                }
                 // Handle special error types
-                if (data.error_type === 'qr_not_registered') {
+                else if (data.error_type === 'qr_not_registered') {
                     errorMessage = '⚠️ QR Code Not Registered\n\nYour QR code has not been registered for this course.\nPlease register it first before marking attendance.';
                     alertMessage = '⚠️ QR Code Not Registered\n\nYour QR code has NOT been registered in this course.\nPlease register your QR code first before you can mark attendance.\n\nGo to your Enrolled Courses and click "Register QR for this Course".';
+                    playScanErrorSound();
                 } else if (data.attendance_status === 'closed') {
                     errorMessage = 'Attendance is currently CLOSED for this course. Please contact your instructor.';
                     alertMessage = '✗ Attendance Closed\n\nAttendance is currently CLOSED for this course.\nPlease contact your instructor.';
+                    playScanErrorSound();
                 } else if (data.attendance_status === 'stopped') {
                     errorMessage = 'Attendance has been STOPPED for this course. Please contact your instructor.';
                     alertMessage = '✗ Attendance Stopped\n\nAttendance has been STOPPED for this course.\nPlease contact your instructor.';
+                    playScanErrorSound();
                 } else if (data.attendance_status === 'open') {
                     // Shouldn't reach here if open, but just in case
                     alertMessage = '✓ Attendance Open\n\nYou can now scan the QR code.';
+                } else {
+                    // Generic error - play error sound
+                    playScanErrorSound();
                 }
                 
                 document.getElementById('scan-error-message').textContent = errorMessage;
@@ -197,6 +212,27 @@ document.addEventListener('DOMContentLoaded', function() {
     function onScanFailure(error) {
         // Ignore scanning errors (they happen frequently during scanning)
         // console.log('Scan error:', error);
+    }
+
+    // Sound effects for QR scanning feedback
+    function playScanSuccessSound() {
+        try {
+            const audio = new Audio('/static/sounds/success-sound-effect.mp3');
+            audio.volume = 0.5; // Set volume to 50%
+            audio.play().catch(err => console.log('Could not play success sound:', err));
+        } catch (e) {
+            console.log('Could not play success sound:', e);
+        }
+    }
+
+    function playScanErrorSound() {
+        try {
+            const audio = new Audio('/static/sounds/error-sound-effect.mp3');
+            audio.volume = 0.5;  // Set to 50% volume
+            audio.play().catch(e => console.log('Could not play error sound:', e));
+        } catch (e) {
+            console.log('Could not create error sound:', e);
+        }
     }
 
     function startScanner() {

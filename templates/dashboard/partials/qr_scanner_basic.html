@@ -59,6 +59,35 @@ let scannerActive = false;
 let scannerStream = null;
 let animationId = null;
 
+// Global audio objects for better performance and repeated playback
+const registrationAudioObjects = {
+    scanSuccess: null,
+    scanError: null,
+    regSuccess: null
+};
+
+// Initialize audio objects on first load
+function initRegistrationAudio() {
+    try {
+        registrationAudioObjects.scanSuccess = new Audio('/static/sounds/success-sound-effect.mp3');
+        registrationAudioObjects.scanSuccess.volume = 0.5;
+        registrationAudioObjects.scanError = new Audio('/static/sounds/error-sound-effect.mp3');
+        registrationAudioObjects.scanError.volume = 0.5;
+        registrationAudioObjects.regSuccess = new Audio('/static/sounds/registration-success-beep.mp3');
+        registrationAudioObjects.regSuccess.volume = 0.5;
+        console.log('Registration audio objects initialized');
+    } catch (e) {
+        console.debug('Audio initialization failed:', e);
+    }
+}
+
+// Initialize on page load
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initRegistrationAudio);
+} else {
+    initRegistrationAudio();
+}
+
 function checkJsQRReady() {
     if (typeof jsQR !== 'undefined') {
         console.log('✓ jsQR library is available');
@@ -66,6 +95,57 @@ function checkJsQRReady() {
     }
     console.warn('jsQR not available yet');
     return false;
+}
+
+function playScanSuccessSound() {
+    try {
+        if (registrationAudioObjects.scanSuccess) {
+            // Pause and reset to beginning
+            registrationAudioObjects.scanSuccess.pause();
+            registrationAudioObjects.scanSuccess.currentTime = 0;
+            // Play with promise handling
+            const playPromise = registrationAudioObjects.scanSuccess.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(err => console.debug('Audio play failed:', err));
+            }
+        }
+    } catch (e) {
+        console.debug('Audio not supported', e);
+    }
+}
+
+function playScanErrorSound() {
+    try {
+        if (registrationAudioObjects.scanError) {
+            // Pause and reset to beginning
+            registrationAudioObjects.scanError.pause();
+            registrationAudioObjects.scanError.currentTime = 0;
+            // Play with promise handling
+            const playPromise = registrationAudioObjects.scanError.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(err => console.debug('Audio play failed:', err));
+            }
+        }
+    } catch (e) {
+        console.debug('Audio not supported', e);
+    }
+}
+
+function playRegistrationSuccessSound() {
+    try {
+        if (registrationAudioObjects.regSuccess) {
+            // Pause and reset to beginning
+            registrationAudioObjects.regSuccess.pause();
+            registrationAudioObjects.regSuccess.currentTime = 0;
+            // Play with promise handling
+            const playPromise = registrationAudioObjects.regSuccess.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(err => console.debug('Audio play failed:', err));
+            }
+        }
+    } catch (e) {
+        console.debug('Audio not supported', e);
+    }
 }
 
 function openQRScanner(courseId, studentIdPrefill, scheduleId) {
@@ -207,6 +287,10 @@ function handleQRScanned(data) {
     console.log('QR Scanned:', data);
     const trimmed = (data || '').trim();
     document.getElementById('regQrInput').value = trimmed.length > 50 ? trimmed.substring(0,50) + '...' : trimmed;
+    
+    // Play success sound for QR scan
+    playScanSuccessSound();
+    
     // Use the global notification system if available for a consistent UX
     if (typeof showNotification === 'function') {
         showNotification('Registration QR Scanned', 'success');
@@ -255,6 +339,7 @@ function submitQRData() {
     const regQr = document.getElementById('regQrInput').value;
 
     if (!regQr) {
+        playScanErrorSound();
         alert('Please scan a QR code');
         return;
     }
@@ -263,10 +348,12 @@ function submitQRData() {
     if (window.isStudentRegisterMode && window.currentInstructorId) {
         // In student mode from enroll course, we don't need individual courseId
         if (!studentId) {
+            playScanErrorSound();
             alert('Please enter your student ID');
             return;
         }
     } else if (!courseId) {
+        playScanErrorSound();
         alert('Please fill in all fields');
         return;
     }
@@ -287,17 +374,20 @@ function submitQRData() {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
+                playRegistrationSuccessSound();
                 if (output) { output.textContent = '✓ QR Registered'; output.style.color = '#10b981'; }
                 try { if (typeof showNotification === 'function') showNotification(data.message || 'QR registered successfully', 'success'); }
                 catch(e){}
                 setTimeout(() => { closeQRScanner(); window.isStudentRegisterMode = false; window.currentInstructorId = null; location.reload(); }, 1200);
             } else {
+                playScanErrorSound();
                 if (output) { output.textContent = '✗ ' + (data.message || 'Failed'); output.style.color = '#dc2626'; }
                 try { if (typeof showNotification === 'function') showNotification(data.message || 'Failed to register QR', 'error'); }
                 catch(e){}
             }
         })
         .catch(err => {
+            playScanErrorSound();
             if (output) { output.textContent = '✗ Error: ' + (err?.message || err); output.style.color = '#dc2626'; }
             console.error('Student register error:', err);
         });
@@ -311,20 +401,24 @@ function submitQRData() {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
+                playRegistrationSuccessSound();
                 if (output) { output.textContent = '✓ QR Registered'; output.style.color = '#10b981'; }
                 try { if (typeof showNotification === 'function') showNotification(data.message || 'QR registered successfully', 'success'); }
                 catch(e){}
                 setTimeout(() => { closeQRScanner(); window.isStudentRegisterMode = false; location.reload(); }, 1200);
             } else {
+                playScanErrorSound();
                 if (output) { output.textContent = '✗ ' + (data.message || 'Failed'); output.style.color = '#dc2626'; }
                 try { if (typeof showNotification === 'function') showNotification(data.message || 'Failed to register QR', 'error'); }
                 catch(e){}
             }
         })
         .catch(err => {
+            playScanErrorSound();
             if (output) { output.textContent = '✗ Error: ' + (err?.message || err); output.style.color = '#dc2626'; }
             console.error('Student register error:', err);
         });
+    } else {
         // Instructor mode (existing)
         fetch('{% url "dashboard:instructor_register_student_qr_code" %}', {
             method: 'POST',
@@ -334,13 +428,16 @@ function submitQRData() {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
+                playRegistrationSuccessSound();
                 if (output) { output.textContent = '✓ Registered for ' + (data.student_name || 'Student'); output.style.color = '#10b981'; }
                 setTimeout(() => { closeQRScanner(); location.reload(); }, 1200);
             } else {
+                playScanErrorSound();
                 if (output) { output.textContent = '✗ ' + (data.message || 'Failed'); output.style.color = '#dc2626'; }
             }
         })
         .catch(err => {
+            playScanErrorSound();
             if (output) { output.textContent = '✗ Error: ' + (err?.message || err); output.style.color = '#dc2626'; }
             console.error('Register error:', err);
         });

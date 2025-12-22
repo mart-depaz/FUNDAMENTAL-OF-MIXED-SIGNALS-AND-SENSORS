@@ -1,25 +1,28 @@
 <!-- Global Notification System -->
 {% load static %}
-<div id="notification-container" style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 999999 !important; pointer-events: none; max-width: 90%; width: auto;"></div>
+<link rel="stylesheet" href="{% static 'css/mobile_responsive.css' %}">
+<div id="notification-container" style="position: fixed; top: 0px; left: 0; right: 0; z-index: 999999999 !important; pointer-events: none; width: 100%; max-height: 100vh; overflow-y: auto; padding-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;"></div>
 
 <style>
 .notification-toast {
     background: white;
     border-radius: 12px;
     padding: 16px 20px;
-    margin-bottom: 12px;
+    margin: 8px auto !important;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
     display: flex;
-    align-items: center;
+    flex-wrap: wrap;
+    align-items: flex-start;
     gap: 12px;
-    min-width: 300px;
+    min-width: 280px;
     max-width: 500px;
     pointer-events: auto;
     animation: slideInDown 0.3s ease-out;
     border-left: 4px solid;
     position: relative;
-    overflow: hidden;
-    z-index: 999999 !important;
+    overflow: visible;
+    z-index: 999999999 !important;
+    width: auto;
 }
 
 .notification-toast.success {
@@ -73,6 +76,7 @@
     line-height: 1.5;
     color: #1F2937;
     font-weight: 500;
+    text-align: center;
 }
 
 .notification-close {
@@ -131,7 +135,7 @@ if (typeof window.notificationSystemInitialized === 'undefined') {
             // Create container if it doesn't exist
             const container = document.createElement('div');
             container.id = 'notification-container';
-            container.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 999999 !important; pointer-events: none; max-width: 90%; width: auto;';
+            container.style.cssText = 'position: fixed; top: 0px; left: 0; right: 0; z-index: 999999999 !important; pointer-events: none; width: 100%; max-height: 100vh; overflow-y: auto; padding-top: 8px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;';
             document.body.appendChild(container);
         }
 
@@ -187,6 +191,10 @@ if (typeof window.notificationSystemInitialized === 'undefined') {
             // Create notification element
             const notification = document.createElement('div');
             notification.className = `notification-toast ${type}`;
+            
+            // DO NOT set inline transform styles - let CSS handle positioning
+            // Only set z-index to ensure it's on top
+            notification.style.zIndex = '999999999';
             
             // Function to close notification with animation
             const closeNotification = function() {

@@ -2492,11 +2492,11 @@ window.startInstructorSchoolIDScanner = async function(courseId, section) {
     instructorSchoolIDScanner = new Html5Qrcode('instructor-qr-scanner');
     
     const qrCodeConfig = {
-        fps: 20,
-        qrbox: { width: 300, height: 300 },
+        fps: 30,
+        qrbox: { width: 400, height: 400 },
         rememberLastUsedCamera: true,
         supportedScanTypes: [Html5QrcodeScanType.CAMERA, Html5QrcodeScanType.CAMERA_AND_FILE],
-        disableFlip: false,
+        disableFlip: true,
         aspectRatio: 1.0
     };
     
@@ -2573,7 +2573,7 @@ window.onInstructorSchoolIDScanned = async function(decodedText, decodedResult) 
                 startInstructorSchoolIDScanner(courseId, document.getElementById('scanner-section-title').textContent);
             }, 800);
         } else {
-            showScannerNotification(`✗ ${data.message}`, 'error');
+            showScannerNotification('✗ QR code ID not found', 'error');
             // Play error sound
             try { playScanErrorSound(); } catch(e) { console.debug('audio fail', e); }
 
@@ -2602,46 +2602,60 @@ window.lastScannedStudentPk = null;
 window.lastScannedCourseId = null;
 window.lastScannedScheduleId = null;
 
+// Global audio objects for better performance and repeated playback
+const scanAudioObjects = {
+    success: null,
+    error: null
+};
+
+// Initialize audio objects on first load
+function initScanAudio() {
+    try {
+        scanAudioObjects.success = new Audio('/static/sounds/success-sound-effect.mp3');
+        scanAudioObjects.success.volume = 0.5;
+        scanAudioObjects.error = new Audio('/static/sounds/error-sound-effect.mp3');
+        scanAudioObjects.error.volume = 0.5;
+        console.log('Scan audio objects initialized');
+    } catch (e) {
+        console.debug('Audio initialization failed:', e);
+    }
+}
+
+// Initialize on page load
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initScanAudio);
+} else {
+    initScanAudio();
+}
+
 // Audio feedback using Web Audio API (no external files required)
 function playScanSuccessSound() {
     try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        // Classic barcode beep: two quick 1200 Hz beeps (40ms each, 60ms gap)
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.type = 'sine';
-        o.frequency.value = 1200; // Barcode scanner pitch
-        o.connect(g);
-        g.connect(ctx.destination);
-        
-        // First beep
-        g.gain.setValueAtTime(0.3, ctx.currentTime);
-        o.start(ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04);
-        o.stop(ctx.currentTime + 0.04);
-        
-        // Second beep (after 100ms total from start)
-        g.gain.setValueAtTime(0.3, ctx.currentTime + 0.1);
-        o.start(ctx.currentTime + 0.1);
-        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.14);
-        o.stop(ctx.currentTime + 0.14);
+        if (scanAudioObjects.success) {
+            // Pause and reset to beginning
+            scanAudioObjects.success.pause();
+            scanAudioObjects.success.currentTime = 0;
+            // Play with promise handling
+            const playPromise = scanAudioObjects.success.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(err => console.debug('Audio play failed:', err));
+            }
+        }
     } catch (e) { console.debug('Audio not supported', e); }
 }
 
 function playScanErrorSound() {
     try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        // Error buzzer: low pitch (500Hz) longer tone with quick fade
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.type = 'sawtooth';
-        o.frequency.value = 500; // Lower barcode-like tone for error
-        o.connect(g);
-        g.connect(ctx.destination);
-        g.gain.setValueAtTime(0.25, ctx.currentTime);
-        o.start(ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
-        o.stop(ctx.currentTime + 0.2);
+        if (scanAudioObjects.error) {
+            // Pause and reset to beginning
+            scanAudioObjects.error.pause();
+            scanAudioObjects.error.currentTime = 0;
+            // Play with promise handling
+            const playPromise = scanAudioObjects.error.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(err => console.debug('Audio play failed:', err));
+            }
+        }
     } catch (e) { console.debug('Audio not supported', e); }
 }
 
@@ -2710,17 +2724,25 @@ function enableScanForCourse(courseId, scheduleId) {
 }
 
 window.showScannerNotification = function(message, type) {
-    const notification = document.createElement('div');
-    let cls = 'bg-red-500 text-white';
-    if (type === 'success') cls = 'bg-green-500 text-white';
-    else if (type === 'warning') cls = 'bg-yellow-300 text-black';
-    notification.className = `px-4 py-3 rounded-lg font-semibold text-sm fixed top-4 right-4 z-[999] ${cls}`;
-    notification.textContent = message;
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        try { notification.remove(); } catch (e) {}
-    }, 3000);
+    // Use the global notification system instead of creating a custom notification
+    if (typeof showNotification === 'function') {
+        showNotification(message, type);
+    } else {
+        // Fallback if showNotification is not available (shouldn't happen)
+        console.warn('Global showNotification not available');
+        const notification = document.createElement('div');
+        let cls = 'bg-red-500 text-white';
+        if (type === 'success') cls = 'bg-green-500 text-white';
+        else if (type === 'warning') cls = 'bg-yellow-300 text-black';
+        notification.className = `px-4 py-3 rounded-lg font-semibold text-sm fixed top-0 left-50 z-[999999999] ${cls}`;
+        notification.style.transform = 'translateX(-50%)';
+        notification.textContent = message;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            try { notification.remove(); } catch (e) {}
+        }, 3000);
+    }
 };
 
 window.updateScannedStudentsList = function() {

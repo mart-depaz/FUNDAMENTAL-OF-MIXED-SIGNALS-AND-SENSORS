@@ -192,7 +192,7 @@
                                                         </div>
                                                         <div class="flex gap-1">
                                                             
-                                                            <button onclick="showTrashLoadingModal(null); restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
+                                                            <button onclick="restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
                                                                 <i class="fas fa-undo"></i> Restore
                                                             </button>
                                                         </div>
@@ -307,10 +307,10 @@
                                                             </div>
                                                         </div>
                                                         <div class="flex gap-1">
-                                                            <button onclick="showTrashLoadingModal(null); restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
+                                                            <button onclick="restoreCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition">
                                                                 <i class="fas fa-undo"></i> Restore
                                                             </button>
-                                                            <button onclick="showTrashLoadingModal(null); permanentDeleteCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition">
+                                                            <button onclick="permanentDeleteCourse({{ course.id }}, '{{ course.code|escapejs }}', '{{ course.name|escapejs }}')" class="flex-1 px-2 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition">
                                                                 <i class="fas fa-trash"></i> Delete
                                                             </button>
                                                         </div>
@@ -389,10 +389,10 @@
                         </td>
                         <td class="px-3 py-2 whitespace-nowrap">
                             <div class="flex gap-2">
-                                <button onclick="showTrashLoadingModal(null); restoreEnrollment({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" class="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-sm">
+                                <button onclick="restoreEnrollment({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" class="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition duration-150 shadow-sm">
                                     <i class="fas fa-undo mr-1"></i> Restore
                                 </button>
-                                <button onclick="showTrashLoadingModal(null); permanentDeleteEnrollment({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" class="px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm">
+                                <button onclick="permanentDeleteEnrollment({{ enrollment.id }}, '{{ enrollment.full_name|escapejs }}')" class="px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-sm">
                                     <i class="fas fa-trash mr-1"></i> Delete
                                 </button>
                             </div>
@@ -854,6 +854,7 @@ function closeRestoreAllTrashModal() {
     if (modal) {
         modal.classList.add('hidden');
     }
+    hideTrashLoadingModal();
 }
 
 // Confirm Restore All Trash Courses
@@ -889,6 +890,7 @@ function confirmRestoreAllTrashCourses() {
             if (typeof showNotification === 'function') {
                 showNotification(data.message, 'error');
             }
+            hideTrashLoadingModal();
         }
     })
     .catch(error => {
@@ -896,6 +898,7 @@ function confirmRestoreAllTrashCourses() {
         if (typeof showNotification === 'function') {
             showNotification('An error occurred. Please try again.', 'error');
         }
+        hideTrashLoadingModal();
     });
 }
 
@@ -912,6 +915,7 @@ function closeDeleteAllPermanentModal() {
     if (modal) {
         modal.classList.add('hidden');
     }
+    hideTrashLoadingModal();
 }
 
 // Confirm Permanently Delete All Courses
@@ -967,10 +971,13 @@ function restoreCourse(courseId, code, name) {
 function closeRestoreCourseModal() {
     document.getElementById('restoreCourseModal').classList.add('hidden');
     currentCourseId = null;
+    hideTrashLoadingModal();
 }
 
 function confirmRestoreCourse() {
     if (!currentCourseId) return;
+    
+    showTrashLoadingModal(null);
     
     fetch(`{% url 'dashboard:instructor_restore_course' 0 %}`.replace('0', currentCourseId), {
         method: 'POST',
@@ -990,6 +997,7 @@ function confirmRestoreCourse() {
             if (typeof showNotification === 'function') {
                 showNotification(data.message, 'error');
             }
+            hideTrashLoadingModal();
         }
         closeRestoreCourseModal();
     })
@@ -998,6 +1006,7 @@ function confirmRestoreCourse() {
         if (typeof showNotification === 'function') {
             showNotification('An error occurred. Please try again.', 'error');
         }
+        hideTrashLoadingModal();
         closeRestoreCourseModal();
     });
 }
@@ -1011,10 +1020,13 @@ function permanentDeleteCourse(courseId, code, name) {
 function closeDeleteCourseModal() {
     document.getElementById('deleteCourseModal').classList.add('hidden');
     currentCourseId = null;
+    hideTrashLoadingModal();
 }
 
 function confirmDeleteCourse() {
     if (!currentCourseId) return;
+    
+    showTrashLoadingModal(null);
     
     fetch(`{% url 'dashboard:instructor_permanent_delete_course' 0 %}`.replace('0', currentCourseId), {
         method: 'POST',
@@ -1047,6 +1059,7 @@ function confirmDeleteCourse() {
             if (typeof showNotification === 'function') {
                 showNotification(data.message, 'error');
             }
+            hideTrashLoadingModal();
         }
         closeDeleteCourseModal();
     })
@@ -1055,6 +1068,7 @@ function confirmDeleteCourse() {
         if (typeof showNotification === 'function') {
             showNotification('An error occurred. Please try again.', 'error');
         }
+        hideTrashLoadingModal();
         closeDeleteCourseModal();
     });
 }
@@ -1069,10 +1083,13 @@ function restoreEnrollment(enrollmentId, studentName) {
 function closeRestoreEnrollmentModal() {
     document.getElementById('restoreEnrollmentModal').classList.add('hidden');
     currentEnrollmentId = null;
+    hideTrashLoadingModal();
 }
 
 function confirmRestoreEnrollment() {
     if (!currentEnrollmentId) return;
+    
+    showTrashLoadingModal(null);
     
     fetch(`{% url 'dashboard:instructor_restore_enrollment' 0 %}`.replace('0', currentEnrollmentId), {
         method: 'POST',
@@ -1092,6 +1109,7 @@ function confirmRestoreEnrollment() {
             if (typeof showNotification === 'function') {
                 showNotification(data.message, 'error');
             }
+            hideTrashLoadingModal();
         }
         closeRestoreEnrollmentModal();
     })
@@ -1100,6 +1118,7 @@ function confirmRestoreEnrollment() {
         if (typeof showNotification === 'function') {
             showNotification('An error occurred. Please try again.', 'error');
         }
+        hideTrashLoadingModal();
         closeRestoreEnrollmentModal();
     });
 }
@@ -1113,10 +1132,13 @@ function permanentDeleteEnrollment(enrollmentId, studentName) {
 function closeDeleteEnrollmentModal() {
     document.getElementById('deleteEnrollmentModal').classList.add('hidden');
     currentEnrollmentId = null;
+    hideTrashLoadingModal();
 }
 
 function confirmDeleteEnrollment() {
     if (!currentEnrollmentId) return;
+    
+    showTrashLoadingModal(null);
     
     fetch(`{% url 'dashboard:instructor_permanent_delete_enrollment' 0 %}`.replace('0', currentEnrollmentId), {
         method: 'POST',
@@ -1136,6 +1158,7 @@ function confirmDeleteEnrollment() {
             if (typeof showNotification === 'function') {
                 showNotification(data.message, 'error');
             }
+            hideTrashLoadingModal();
         }
         closeDeleteEnrollmentModal();
     })
@@ -1144,6 +1167,7 @@ function confirmDeleteEnrollment() {
         if (typeof showNotification === 'function') {
             showNotification('An error occurred. Please try again.', 'error');
         }
+        hideTrashLoadingModal();
         closeDeleteEnrollmentModal();
     });
 }
@@ -1428,9 +1452,12 @@ function closeRestoreAllArchivedModal() {
     if (modal) {
         modal.classList.add('hidden');
     }
+    hideTrashLoadingModal();
 }
 
 function confirmRestoreAllArchivedCourses() {
+    showTrashLoadingModal(null);
+    
     fetch('{% url "dashboard:instructor_restore_all_archived_courses" %}', {
         method: 'POST',
         headers: {
@@ -1450,6 +1477,7 @@ function confirmRestoreAllArchivedCourses() {
             if (typeof showNotification === 'function') {
                 showNotification(data.message, 'error');
             }
+            hideTrashLoadingModal();
         }
     })
     .catch(error => {
@@ -1457,12 +1485,14 @@ function confirmRestoreAllArchivedCourses() {
         if (typeof showNotification === 'function') {
             showNotification('An error occurred. Please try again.', 'error');
         }
+        hideTrashLoadingModal();
     });
 }
 
 // Trash & Archive page loading modal
 function showTrashLoadingModal(url) {
     const loadingOverlay = document.createElement('div');
+    loadingOverlay.id = 'trash-loading-overlay';
     loadingOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center';
     loadingOverlay.innerHTML = `
         <div class="rainbow-spinner">
@@ -1475,6 +1505,13 @@ function showTrashLoadingModal(url) {
         setTimeout(() => {
             window.location.href = url;
         }, 300);
+    }
+}
+
+function hideTrashLoadingModal() {
+    const loadingOverlay = document.getElementById('trash-loading-overlay');
+    if (loadingOverlay) {
+        loadingOverlay.remove();
     }
 }
 
