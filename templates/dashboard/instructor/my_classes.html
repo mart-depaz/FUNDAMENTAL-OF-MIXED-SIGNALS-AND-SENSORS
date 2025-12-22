@@ -2557,7 +2557,17 @@ window.onInstructorSchoolIDScanned = async function(decodedText, decodedResult) 
             const notifType = status === 'late' ? 'warning' : 'success';
             showScannerNotification(`✓ ${msg}`, notifType);
             // Play sound: success for present, error for late
-            try { if (status === 'late') playScanErrorSound(); else playScanSuccessSound(); } catch(e) { console.debug('audio fail', e); }
+            try {
+                if (status === 'late') {
+                    console.log('Status is LATE - playing error sound');
+                    playScanErrorSound();
+                } else {
+                    console.log('Status is PRESENT - playing success sound');
+                    playScanSuccessSound();
+                }
+            } catch(e) {
+                console.error('Audio playback error:', e);
+            }
             updateScannedStudentsList();
 
             // store last scanned student's DB id for quick Early/Late actions
@@ -2575,7 +2585,12 @@ window.onInstructorSchoolIDScanned = async function(decodedText, decodedResult) 
         } else {
             showScannerNotification('✗ QR code ID not found', 'error');
             // Play error sound
-            try { playScanErrorSound(); } catch(e) { console.debug('audio fail', e); }
+            try {
+                console.log('QR ID not found - playing error sound');
+                playScanErrorSound();
+            } catch(e) {
+                console.error('Audio playback error:', e);
+            }
 
             // Resume scanner to allow retry
             setTimeout(() => {
@@ -2615,9 +2630,9 @@ function initScanAudio() {
         scanAudioObjects.success.volume = 0.5;
         scanAudioObjects.error = new Audio('/static/sounds/error-sound-effect.mp3');
         scanAudioObjects.error.volume = 0.5;
-        console.log('Scan audio objects initialized');
+        console.log('Scan audio objects initialized successfully');
     } catch (e) {
-        console.debug('Audio initialization failed:', e);
+        console.error('Audio initialization failed:', e);
     }
 }
 
@@ -2638,10 +2653,14 @@ function playScanSuccessSound() {
             // Play with promise handling
             const playPromise = scanAudioObjects.success.play();
             if (playPromise !== undefined) {
-                playPromise.catch(err => console.debug('Audio play failed:', err));
+                playPromise
+                    .then(() => console.log('Success sound played successfully'))
+                    .catch(err => console.warn('Audio play failed:', err));
             }
+        } else {
+            console.warn('Success audio object not initialized');
         }
-    } catch (e) { console.debug('Audio not supported', e); }
+    } catch (e) { console.warn('Audio error:', e); }
 }
 
 function playScanErrorSound() {
@@ -2653,10 +2672,14 @@ function playScanErrorSound() {
             // Play with promise handling
             const playPromise = scanAudioObjects.error.play();
             if (playPromise !== undefined) {
-                playPromise.catch(err => console.debug('Audio play failed:', err));
+                playPromise
+                    .then(() => console.log('Error sound played successfully'))
+                    .catch(err => console.warn('Audio play failed:', err));
             }
+        } else {
+            console.warn('Error audio object not initialized');
         }
-    } catch (e) { console.debug('Audio not supported', e); }
+    } catch (e) { console.warn('Audio error:', e); }
 }
 
 // UX helper: enable/insert a Scan button for a course/schedule (used immediately after opening attendance)
