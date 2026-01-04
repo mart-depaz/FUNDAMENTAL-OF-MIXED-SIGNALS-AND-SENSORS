@@ -30,14 +30,15 @@
         .mobile-sidebar-toggle:hover { background: rgba(255,255,255,0.15); }
         
         /* Ensure notification container does not affect header layout on instructor mobile */
-        #notification-container,
-        #notification-container * {
-            display: none !important;
-            visibility: hidden !important;
-            height: 0 !important;
+        #notification-container {
+            display: flex !important;
+            visibility: visible !important;
+            height: auto !important;
             margin: 0 !important;
-            padding: 0 !important;
-            overflow: hidden !important;
+            overflow: visible !important;
+        }
+        #notification-container * {
+            visibility: visible !important;
         }
 
         /* Keep mobile toggle visually fixed and above other elements */
@@ -382,7 +383,7 @@
                         <a href="#" id="profile-dropdown-link" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors">
                             <i class="fas fa-user mr-2 w-4"></i> Profile
                         </a>
-                        <a href="javascript:void(0)" onclick="showLogoutLoadingModal('{% url 'logout' %}')" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors cursor-pointer">
+                        <a href="javascript:void(0)" data-logout-url="{% url 'logout' %}" onclick="showLogoutLoadingModal(this.dataset.logoutUrl)" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors cursor-pointer">
                             <i class="fas fa-sign-out-alt mr-2 w-4"></i> Logout
                         </a>
                     </div>
@@ -479,16 +480,6 @@ function adjustTeacherHeaderOffset() {
         try { document.documentElement.style.setProperty('--teacher-header-offset', offset + 'px'); } catch(e) {}
 
         if (window.innerWidth <= 600) {
-            const main = document.getElementById('main-content');
-            if (main) {
-                main.style.position = 'absolute';
-                main.style.top = 'var(--teacher-header-offset)';
-                main.style.left = '0';
-                main.style.right = '0';
-                main.style.bottom = '0';
-                main.style.margin = '0';
-                main.style.overflow = 'auto';
-            }
             const aside = document.getElementById('sidebar');
             if (aside) {
                 aside.style.top = 'var(--teacher-header-offset)';

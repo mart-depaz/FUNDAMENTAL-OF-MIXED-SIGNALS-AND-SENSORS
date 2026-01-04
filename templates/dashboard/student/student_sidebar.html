@@ -204,7 +204,7 @@
                 {% endif %}
             </div>
         </button>
-        <a href="javascript:void(0)" onclick="showLogoutLoadingModal('{% url 'logout' %}')" class="flex items-center w-full px-4 py-3 rounded-xl transition duration-150 shadow-md hover:bg-white/20" style="color: rgba(255, 255, 255, 0.9); background: rgba(190, 129, 153, 0.2);">
+        <a href="javascript:void(0)" data-logout-url="{% url 'logout' %}" onclick="showLogoutLoadingModal(this.dataset.logoutUrl)" class="flex items-center w-full px-4 py-3 rounded-xl transition duration-150 shadow-md hover:bg-white/20" style="color: rgba(255, 255, 255, 0.9); background: rgba(190, 129, 153, 0.2);">
             <i class="fas fa-sign-out-alt w-5 h-5 mr-3"></i>
             <span class="font-medium">Logout</span>
         </a>
@@ -333,7 +333,21 @@
                 <div class="flex-1">
                     <div id="profile-name-container">
                         <h2 class="text-2xl font-bold text-gray-900 mb-2" id="profile-name-display" data-original-value="{{ user.full_name|default:'Student' }}">{{ user.full_name|default:"Student" }}</h2>
-                        <input type="text" name="full_name" id="profile-name-input" value="{{ user.full_name|default:'' }}" class="text-2xl font-bold text-gray-900 w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mb-2" style="display: none;" placeholder="Enter Full Name">
+                        <input type="hidden" name="full_name" id="profile-name-input" value="{{ user.full_name|default:'' }}">
+                        <div id="profile-name-fields" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2" style="display: none;">
+                            <div>
+                                <label for="profile-first-name-input" class="block text-xs font-medium text-gray-600 mb-1">First Name</label>
+                                <input type="text" name="first_name" id="profile-first-name-input" class="w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-semibold" placeholder="First">
+                            </div>
+                            <div>
+                                <label for="profile-middle-name-input" class="block text-xs font-medium text-gray-600 mb-1">Middle Name</label>
+                                <input type="text" name="middle_name" id="profile-middle-name-input" class="w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-semibold" placeholder="Middle (optional)">
+                            </div>
+                            <div>
+                                <label for="profile-last-name-input" class="block text-xs font-medium text-gray-600 mb-1">Last Name</label>
+                                <input type="text" name="last_name" id="profile-last-name-input" class="w-full px-3 py-2 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-semibold" placeholder="Last">
+                            </div>
+                        </div>
                     </div>
                     <p class="text-gray-600 mb-2">{{ user.email }}</p>
                     <span class="inline-block mt-2 px-3 py-1 rounded-full text-sm font-semibold" style="background-color: #DFCFD5; color: #3C4770;">
@@ -569,6 +583,60 @@
             cancelProfileEdit();
         }
     }
+
+    function parseStudentFullName(fullName) {
+        const normalized = String(fullName || '').trim().replace(/\s+/g, ' ');
+        if (!normalized) {
+            return { first: '', middle: '', last: '' };
+        }
+
+        const tokens = normalized.split(' ').filter(Boolean);
+        if (tokens.length === 1) {
+            return { first: tokens[0], middle: '', last: '' };
+        }
+
+        const particleTokens = new Set([
+            'de', 'del', 'dela', 'da', 'di', 'la', 'las', 'los', 'van', 'von', 'bin', 'binti', 'al', 'ibn'
+        ]);
+
+        let lastStart = tokens.length - 1;
+        let foundParticle = false;
+        for (let i = tokens.length - 2; i >= 1; i--) {
+            const t = tokens[i].toLowerCase();
+            if (particleTokens.has(t)) {
+                lastStart = i;
+                foundParticle = true;
+                break;
+            }
+        }
+
+        // Default parsing (no multi-word surname particles detected)
+        if (!foundParticle) {
+            const first = tokens[0] || '';
+            const last = tokens[tokens.length - 1] || '';
+            const middle = tokens.length > 2 ? tokens.slice(1, -1).join(' ').trim() : '';
+            return { first, middle, last };
+        }
+
+        const last = tokens.slice(lastStart).join(' ').trim();
+        const remaining = tokens.slice(0, lastStart);
+
+        if (remaining.length === 0) {
+            return { first: '', middle: '', last };
+        }
+        if (remaining.length === 1) {
+            return { first: remaining[0], middle: '', last };
+        }
+        if (remaining.length === 2) {
+            return { first: remaining.join(' ').trim(), middle: '', last };
+        }
+
+        return {
+            first: remaining.slice(0, -1).join(' ').trim(),
+            middle: remaining[remaining.length - 1].trim(),
+            last
+        };
+    }
     
     function enableProfileEdit() {
         // Show profile picture upload button
@@ -577,12 +645,23 @@
             pictureLabel.classList.remove('hidden');
         }
         
-        // Make name editable
+        // Make name editable (students: First/Middle/Last)
         const nameDisplay = document.getElementById('profile-name-display');
-        const nameInput = document.getElementById('profile-name-input');
-        if (nameDisplay && nameInput) {
+        const fullNameInput = document.getElementById('profile-name-input');
+        const nameFields = document.getElementById('profile-name-fields');
+        const firstNameInput = document.getElementById('profile-first-name-input');
+        const middleNameInput = document.getElementById('profile-middle-name-input');
+        const lastNameInput = document.getElementById('profile-last-name-input');
+        if (nameDisplay && fullNameInput && nameFields && firstNameInput && middleNameInput && lastNameInput) {
+            const originalFullName = (nameDisplay.getAttribute('data-original-value') || '').trim();
+            const parsed = parseStudentFullName(originalFullName);
+            firstNameInput.value = parsed.first;
+            middleNameInput.value = parsed.middle;
+            lastNameInput.value = parsed.last;
+
             nameDisplay.style.display = 'none';
-            nameInput.style.display = 'block';
+            nameFields.style.display = 'grid';
+            firstNameInput.focus();
         }
         
         // Make department editable - keep current value
@@ -638,14 +717,23 @@
             pictureInput.value = '';
         }
         
-        // Reset name field
+        // Reset name fields
         const nameDisplay = document.getElementById('profile-name-display');
-        const nameInput = document.getElementById('profile-name-input');
-        if (nameDisplay && nameInput) {
-            const originalValue = nameDisplay.getAttribute('data-original-value');
-            nameInput.value = originalValue || '';
+        const fullNameInput = document.getElementById('profile-name-input');
+        const nameFields = document.getElementById('profile-name-fields');
+        const firstNameInput = document.getElementById('profile-first-name-input');
+        const middleNameInput = document.getElementById('profile-middle-name-input');
+        const lastNameInput = document.getElementById('profile-last-name-input');
+        if (nameDisplay && fullNameInput && nameFields && firstNameInput && middleNameInput && lastNameInput) {
+            const originalValue = (nameDisplay.getAttribute('data-original-value') || '').trim();
+            const parsed = parseStudentFullName(originalValue);
+            firstNameInput.value = parsed.first;
+            middleNameInput.value = parsed.middle;
+            lastNameInput.value = parsed.last;
+            fullNameInput.value = originalValue;
+
             nameDisplay.style.display = 'block';
-            nameInput.style.display = 'none';
+            nameFields.style.display = 'none';
         }
         
         // Reset department field - revert to display mode
@@ -1023,6 +1111,26 @@
     if (profileForm) {
         profileForm.addEventListener('submit', function(e) {
             e.preventDefault();
+
+            // Combine First/Middle/Last into full_name before building FormData
+            const firstNameInput = document.getElementById('profile-first-name-input');
+            const middleNameInput = document.getElementById('profile-middle-name-input');
+            const lastNameInput = document.getElementById('profile-last-name-input');
+            const fullNameInput = document.getElementById('profile-name-input');
+            if (fullNameInput && firstNameInput && lastNameInput) {
+                const first = (firstNameInput.value || '').trim();
+                const middle = (middleNameInput ? (middleNameInput.value || '').trim() : '');
+                const last = (lastNameInput.value || '').trim();
+                if (!first || !last) {
+                    if (typeof showNotification === 'function') {
+                        showNotification('First Name and Last Name are required.', 'error');
+                    } else {
+                        alert('First Name and Last Name are required.');
+                    }
+                    return;
+                }
+                fullNameInput.value = [first, middle, last].filter(Boolean).join(' ').trim();
+            }
             
             const formData = new FormData(this);
             const saveBtn = document.getElementById('profile-save-btn');

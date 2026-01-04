@@ -18,7 +18,7 @@ templates folder: library_system/templates/dashboard/teacher.html
     @media (max-width: 479px) {
         /* Add top margin to prevent content from being hidden behind fixed topbar */
         main, #main-content, main > * {
-            margin-top: 56px !important;
+            margin-top: 0 !important;
         }
 
         /* Ensure full viewport height for main content */
@@ -232,7 +232,7 @@ templates folder: library_system/templates/dashboard/teacher.html
 <style>
     @media (max-width: 412px) {
         /* Main content padding */
-        #main-content { padding: 8px !important; margin-top: 56px !important; }
+        #main-content { padding: 8px !important; margin-top: 0 !important; }
 
         /* Hero adjustments */
         .bg-gradient-to-r.rounded-3xl { padding: 12px !important; border-radius: 12px !important; }
@@ -342,7 +342,7 @@ templates folder: library_system/templates/dashboard/teacher.html
         #instructor-page-wrapper {
             flex-direction: column !important;
             background: white !important;
-            margin-top: 56px !important;
+            margin-top: 0 !important;
         }
 
         /* Sidebar styling for mobile */
@@ -498,7 +498,7 @@ templates folder: library_system/templates/dashboard/teacher.html
     /* Ensure consistent layout on all mobile sizes */
     @media (max-width: 600px) {
         #instructor-page-wrapper {
-            margin-top: 56px !important;
+            margin-top: 0 !important;
             padding: 0 !important;
             background: white !important;
             flex-direction: column !important;
@@ -524,9 +524,9 @@ templates folder: library_system/templates/dashboard/teacher.html
 
     <!-- Main Content -->
     <!-- No top margin on mobile; keep lg offset on large screens -->
-    <main id="main-content" class="flex-grow p-4 lg:p-6 lg:ml-64 mt-0 lg:mt-16 overflow-y-auto" style="overscroll-behavior: contain;">
+    <main id="main-content" class="flex-grow lg:ml-64 mt-0 lg:mt-16 overflow-y-auto" style="overscroll-behavior: contain;">
+        {% block dashboard_content %}
         <div class="p-4 md:p-8 bg-white lg:bg-gray-50 flex-grow rounded-2xl shadow-inner min-h-full">
-            {% block dashboard_content %}
             <div class="space-y-6">
                 <!-- Hero section -->
                 <section class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-3xl glow text-white p-6 md:p-8 shadow-lg relative overflow-hidden">
@@ -773,8 +773,8 @@ templates folder: library_system/templates/dashboard/teacher.html
                     </div>
                 </section>
             </div>
-            {% endblock %}
         </div>
+        {% endblock %}
     </main>
 </div>
 <script>

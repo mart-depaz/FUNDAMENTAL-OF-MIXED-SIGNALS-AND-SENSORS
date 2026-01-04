@@ -136,9 +136,40 @@
                         <i class="fas fa-users mr-1"></i> Section {{ enrollment.section|upper }}
                     </p>
                     {% endif %}
-                    <p class="text-xs font-semibold opacity-80 flex items-center">
+                    <p class="text-xs font-semibold opacity-80 flex items-center mb-4">
                         <i class="fas fa-map-marker-alt mr-1"></i> {{ enrollment.course.room|default:'TBA' }}
                     </p>
+                    
+                    <!-- Registration Status Indicators -->
+                    <div class="flex items-center gap-4 mt-2 pt-3 border-t border-white border-opacity-30">
+                        <!-- QR Code Registration Status -->
+                        <div class="flex items-center gap-1">
+                            <i class="fas fa-qrcode text-xs text-white opacity-70"></i>
+                            {% if enrollment.has_qr %}
+                                <span class="text-xs font-semibold text-white flex items-center gap-0.5">
+                                    <i class="fas fa-check-circle" style="color: #22c55e; text-shadow: 0 0 2px rgba(255,255,255,0.8), 0 0 4px rgba(255,255,255,0.6); filter: drop-shadow(0 0 1px white);"></i> Registered
+                                </span>
+                            {% else %}
+                                <span class="text-xs font-semibold text-white opacity-60 flex items-center gap-0.5">
+                                    <i class="fas fa-times-circle" style="color: #ef4444; text-shadow: 0 0 2px rgba(255,255,255,0.8), 0 0 4px rgba(255,255,255,0.6); filter: drop-shadow(0 0 1px white);"></i> Not Registered
+                                </span>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Biometric Registration Status -->
+                        <div class="flex items-center gap-1">
+                            <i class="fas fa-fingerprint text-xs text-white opacity-70"></i>
+                            {% if enrollment.has_biometric %}
+                                <span class="text-xs font-semibold text-white flex items-center gap-0.5">
+                                    <i class="fas fa-check-circle" style="color: #22c55e; text-shadow: 0 0 2px rgba(255,255,255,0.8), 0 0 4px rgba(255,255,255,0.6); filter: drop-shadow(0 0 1px white);"></i> Registered
+                                </span>
+                            {% else %}
+                                <span class="text-xs font-semibold text-white opacity-60 flex items-center gap-0.5">
+                                    <i class="fas fa-times-circle" style="color: #ef4444; text-shadow: 0 0 2px rgba(255,255,255,0.8), 0 0 4px rgba(255,255,255,0.6); filter: drop-shadow(0 0 1px white);"></i> Not Registered
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
@@ -228,6 +259,100 @@
 </div>
 
 <script>
+// ============================================================
+// CRITICAL: Define getCookie at the very start - needed by multiple functions
+// ============================================================
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// ============================================================
+// CRITICAL: Global variables for enrollment state - MUST be at top
+// ============================================================
+let currentWebSocket = null;  // Track current WebSocket connection
+let confirmations = 0;  // Track number of successful fingerprint captures
+let lastEnrollmentCancelTime = 0;  // Track when last enrollment was cancelled to allow retry after delay
+let enrollmentConfirmedSuccessfully = false;  // Flag to track if confirmation succeeded
+window.enrollmentInProgress = false;  // CRITICAL: Prevent multiple simultaneous enrollment requests
+
+// ============================================================
+// SOUND EFFECTS - Defined early at global scope for WebSocket handler
+// ============================================================
+function playScanCaptureSound() {
+    try {
+        const audio = new Audio('/static/sounds/success-sound-effect.mp3');
+        audio.volume = 0.5; // Set volume to 50%
+        audio.play().catch(err => console.log('Could not play capture sound:', err));
+    } catch (e) {
+        console.log('Could not play capture sound:', e);
+    }
+}
+
+function playConfirmationSound() {
+    return new Promise((resolve) => {
+        try {
+            const audio = new Audio('/static/sounds/registration-success-beep.mp3');
+            audio.volume = 1.0; // Full volume
+            
+            // Resolve when audio ends or after timeout
+            const audioEndedHandler = () => {
+                console.log('[SOUND] Confirmation sound finished playing');
+                audio.removeEventListener('ended', audioEndedHandler);
+                resolve();
+            };
+            
+            // Fallback timeout in case 'ended' event doesn't fire (3 seconds max)
+            const timeoutId = setTimeout(() => {
+                console.log('[SOUND] Confirmation sound timeout - proceeding anyway');
+                audio.removeEventListener('ended', audioEndedHandler);
+                resolve();
+            }, 3000);
+            
+            audio.addEventListener('ended', audioEndedHandler);
+            
+            audio.play().catch(err => {
+                console.log('Could not play confirmation sound:', err);
+                clearTimeout(timeoutId);
+                resolve(); // Resolve immediately if play fails
+            });
+        } catch (e) {
+            console.log('Could not play confirmation sound:', e);
+            resolve(); // Resolve immediately if exception occurs
+        }
+    });
+}
+
+function playEnrollmentSuccessSound() {
+    try {
+        const audio = new Audio('/static/sounds/success-sound-effect.mp3');
+        audio.volume = 0.5; // Set volume to 50%
+        audio.play().catch(err => console.log('Could not play success sound:', err));
+    } catch (e) {
+        console.log('Could not play success sound:', e);
+    }
+}
+
+function playEnrollmentErrorSound() {
+    try {
+        const audio = new Audio('/static/sounds/error-sound-effect.mp3');
+        audio.volume = 0.5; // Set volume to 50%
+        audio.play().catch(err => console.log('Could not play error sound:', err));
+    } catch (e) {
+        console.log('Could not play error sound:', e);
+    }
+}
+
 function showInvalidCodeModal(message) {
     const modal = document.getElementById('invalidCodeModal');
     const messageEl = document.getElementById('invalidCodeMessage');
@@ -244,12 +369,298 @@ function closeInvalidCodeModal() {
     }
 }
 
+// ============================================================
+// CRITICAL: Define submitBiometricEnrollment EARLY - before it's called by confirm button
+// ============================================================
+function submitBiometricEnrollment(confirmations, biometricTemplate, courseIds) {
+    return new Promise((resolve, reject) => {
+        console.log(`[SUBMIT] Starting enrollment submission for ${courseIds.length} courses:`, courseIds);
+        
+        // CRITICAL FIX: Send ALL course IDs in ONE request instead of multiple requests
+        // This ensures the fingerprint is registered ONCE for ALL courses (like QR code)
+        const enrollmentData = {
+            course_ids: courseIds,  // Send ALL course IDs at once
+            biometric_data: biometricTemplate,
+            biometric_type: 'fingerprint',
+            confirmations: confirmations,
+            skip_mqtt_start: true
+        };
+        
+        console.log(`[SUBMIT] Sending batch enrollment for ${courseIds.length} courses in single request:`, enrollmentData);
+        
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        
+        fetch('{% url "dashboard:api_biometric_enroll" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(enrollmentData),
+            signal: controller.signal
+        })
+        .then(response => {
+            clearTimeout(timeoutId);
+            console.log('[SUBMIT] Response status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('[SUBMIT] Batch enrollment response:', data);
+        
+        // Store fingerprint IDs for later use in confirmation
+        window.enrollmentFingerprintId = data.fingerprint_id;
+        window.enrollmentIsReplacement = data.is_replacement || false;
+        window.enrollmentCourseIds = courseIds;  // Store course IDs
+        
+        // Log if this is a replacement
+        if (data.is_replacement) {
+            console.log('[SUBMIT] ⚠️ FINGERPRINT REPLACEMENT MODE DETECTED:');
+            console.log('[SUBMIT]    Fingerprint_id: ' + data.fingerprint_id + ' (reusing same ID)');
+            console.log('[SUBMIT]    Biometric data will be updated on CONFIRM');
+        }
+        
+        const statusEl = document.getElementById('enrollmentStatus');
+        const scanTitle = document.getElementById('scanTitle');
+        const scanSubtitle = document.getElementById('scanSubtitle');
+        const scanIcon = document.getElementById('scanIcon');
+        const btn = document.getElementById('startEnrollBtn');
+        
+        if (data.success) {
+            // All courses enrolled successfully
+            console.log('[SUBMIT] ✓✓✓ ALL COURSES ENROLLED SUCCESSFULLY ✓✓✓');
+            console.log('[SUBMIT] Fingerprint ID from Django:', data.fingerprint_id);
+            console.log('[SUBMIT] Biometric template:', window.biometricTemplate);
+            
+            // ⚠️ CRITICAL FIX: No longer attempting direct HTTP to ESP32
+            // Using MQTT via Django API instead (works on any network)
+            console.log('[SUBMIT] Fingerprint confirmed via MQTT (Django API)');
+            console.log('[SUBMIT] Data from Django:', data);
+            
+            // Prepare confirmation payload
+            const confirmPayload = {
+                fingerprint_id: data.fingerprint_id,
+                template_id: window.biometricTemplate || '',
+                enrollment_id: window.currentEnrollmentId || 'unknown'
+            };
+            
+            console.log('[SUBMIT] Confirmation payload:', JSON.stringify(confirmPayload));
+            
+            // Send confirmation + course list to Django so it can guarantee the fingerprint_id
+            // is saved for every selected course (required for instructor-side accurate matching).
+            try {
+                console.log('[SUBMIT] Sending confirmation to ESP32 via Django API (MQTT)...');
+                fetch('{% url "dashboard:api_biometric_confirm_enrollment" %}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken'),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        fingerprint_id: data.fingerprint_id,
+                        template_id: window.biometricTemplate || '',
+                        is_replacement: data.is_replacement || false,
+                        course_ids: courseIds
+                    })
+                }).then(confirmResponse => {
+                    console.log('[SUBMIT] Django API response status:', confirmResponse.status);
+                    
+                    if (confirmResponse.ok) {
+                        confirmResponse.json().then(confirmData => {
+                            console.log('[SUBMIT] ✓✓✓ CONFIRMATION SENT TO ESP32 VIA MQTT ✓✓✓');
+                            console.log('[SUBMIT] Response:', confirmData);
+                            console.log('[SUBMIT] ✓ Fingerprint will be saved to sensor slot:', data.fingerprint_id);
+                            console.log('[SUBMIT] Note: This works on ANY network (WiFi, mobile data, different networks)');
+                        });
+                    } else {
+                        confirmResponse.json().then(confirmData => {
+                            console.error('[SUBMIT] ✗ Confirmation failed with status:', confirmResponse.status);
+                            console.error('[SUBMIT] ✗ Response:', confirmData);
+                        });
+                    }
+                }).catch(err => {
+                    console.error('[SUBMIT] ✗ Network error sending confirmation:');
+                    console.error('[SUBMIT] ✗ Error:', err.message);
+                    console.error('[SUBMIT] ✗ Note: This uses MQTT, so it should work on any network');
+                });
+            } catch (err) {
+                console.error('[SUBMIT] ✗ Error sending confirmation:');
+                console.error('[SUBMIT] ✗ Error:', err.message);
+            }
+            
+            scanIcon.innerHTML = '<i class="fas fa-check-circle text-6xl text-green-500 mb-4"></i>';
+            
+            // Show different message if replacement
+            if (data.is_replacement) {
+                scanTitle.textContent = 'Fingerprint Updated!';
+                scanSubtitle.textContent = `Biometric for fingerprint_id ${data.fingerprint_id} updated`;
+                statusEl.innerHTML = `<i class="fas fa-sync mr-2 text-blue-600"></i> <span class="text-blue-700">Fingerprint update confirmed!</span>`;
+            } else {
+                scanTitle.textContent = 'Enrollment Complete!';
+                scanSubtitle.textContent = `Fingerprint registered in ${courseIds.length} course(s)`;
+                statusEl.innerHTML = `<i class="fas fa-check mr-2 text-green-600"></i> <span class="text-green-700">Fingerprint enrolled in all ${courseIds.length} courses!</span>`;
+
+            }
+            
+            // Show notification first
+            showNotification(`✓ Fingerprint enrolled in ${courseIds.length} course(s)!`, 'success');
+            
+            // SOUND EFFECT: Play enrollment success sound synchronized with notification
+            playEnrollmentSuccessSound();
+            
+            console.log('[SUBMIT] ⏳ Closing modal and reloading page immediately...');
+            
+            // CRITICAL FIX: Set flag BEFORE closing modal to prevent cancel from being sent to ESP32
+            window.enrollmentConfirmedSuccessfully = true;
+            console.log('[SUBMIT] ✓✓✓ Set enrollmentConfirmedSuccessfully flag to TRUE - ESP32 cancel will be skipped');
+            
+            // Close modal completely by removing from DOM FIRST
+            setInstructorEnrollmentInProgress(false);
+            const modal = document.getElementById('biometricRegistrationModal');
+            if (modal) {
+                console.log('[SUBMIT] ✓ Removing modal from DOM');
+                modal.remove();  // Remove modal completely from DOM
+            }
+            
+            // Close WebSocket
+            if (currentWebSocket) {
+                try {
+                    currentWebSocket.close();
+                    currentWebSocket = null;
+                } catch (e) {
+                    console.warn('[SUBMIT] Error closing WebSocket:', e);
+                }
+            }
+            
+            console.log('[SUBMIT] ✓ Modal removed and WebSocket closed');
+            
+            // Resolve promise AFTER modal is removed
+            resolve(data);
+            
+            // Reload page - this will show the updated enrollment status
+            console.log('[SUBMIT] ✓ Reloading page now...');
+            window.location.reload(true);  // true = force reload from server
+        } else {
+            // Enrollment failed - show error details
+            console.error('[SUBMIT] Enrollment failed:', data.message);
+            
+            // SOUND EFFECT: Play enrollment error sound
+            playEnrollmentErrorSound();
+            
+            scanIcon.innerHTML = '<i class="fas fa-exclamation-circle text-6xl text-red-500 mb-4"></i>';
+            scanTitle.textContent = 'Enrollment Failed';
+            scanSubtitle.textContent = data.message || 'Could not register fingerprint';
+            statusEl.innerHTML = `<i class="fas fa-exclamation mr-2 text-red-600"></i> <span class="text-red-700">${data.message || 'Failed to register fingerprint'}</span>`;
+            
+            showNotification(`✗ ${data.message || 'Failed to register fingerprint'}`, 'danger');
+            
+            // Reject the promise with the error
+            reject(new Error(data.message || 'Failed to register fingerprint'));
+            
+            // Show retry button
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-redo mr-1"></i> Retry';
+                btn.className = 'w-full px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm rounded-lg transition';
+                btn.onclick = function() {
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Restarting...';
+                    
+                    // Reset enrollment state
+                    setInstructorEnrollmentInProgress(false);
+                    window.fingerDetectedShown = false;
+                    window.enrollmentCompleted = false;
+                    
+                    // Notify ESP32 to cancel
+                    fetch(`http://${window.ESP32_IP || '192.168.1.9'}/enroll/cancel`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({})
+                    }).catch(e => console.warn('[RETRY] Cancel request failed:', e));
+                    
+                    // Wait and retry
+                    setTimeout(() => {
+                        console.log('[RETRY] Starting new enrollment attempt');
+                        proceedWithEnrollment(window.enrollmentCourseIds);
+                    }, 3000);
+                };
+            }
+            
+            setInstructorEnrollmentInProgress(false);
+        }
+        })
+        .catch(error => {
+            clearTimeout(timeoutId);
+            console.error('[SUBMIT] Network error during enrollment:', error);
+            
+            // SOUND EFFECT: Play error sound for network failure
+            playEnrollmentErrorSound();
+            
+            // Reject the promise
+            reject(error);
+            
+            const statusEl = document.getElementById('enrollmentStatus');
+            const scanTitle = document.getElementById('scanTitle');
+            const scanSubtitle = document.getElementById('scanSubtitle');
+            const scanIcon = document.getElementById('scanIcon');
+            const btn = document.getElementById('startEnrollBtn');
+            
+            // Handle timeout vs other errors
+            let errorMessage = error.message;
+            if (error.name === 'AbortError') {
+                errorMessage = 'Registration took too long. Server not responding.';
+            }
+            
+            scanIcon.innerHTML = '<i class="fas fa-exclamation-circle text-6xl text-red-500 mb-4"></i>';
+            scanTitle.textContent = 'Connection Error';
+            scanSubtitle.textContent = 'Failed to reach server';
+            statusEl.innerHTML = `<i class="fas fa-exclamation mr-2 text-red-600"></i> <span class="text-red-700">${errorMessage}</span>`;
+        
+        showNotification(`✗ Network error: ${error.message}`, 'danger');
+        
+        // Show retry button
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-redo mr-1"></i> Retry';
+            btn.className = 'w-full px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm rounded-lg transition';
+            btn.onclick = function() {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Restarting...';
+                
+                setInstructorEnrollmentInProgress(false);
+                window.fingerDetectedShown = false;
+                window.enrollmentCompleted = false;
+                
+                fetch(`http://${window.ESP32_IP || '192.168.1.9'}/enroll/cancel`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                }).catch(e => console.warn('[RETRY] Cancel request failed:', e));
+                
+                setTimeout(() => {
+                    console.log('[RETRY] Starting new enrollment attempt after network error');
+                    proceedWithEnrollment(window.enrollmentCourseIds);
+                }, 3000);
+            };
+        }
+        
+        setInstructorEnrollmentInProgress(false);
+        });
+    });
+}
+
 // Close modal when clicking outside
 document.getElementById('invalidCodeModal')?.addEventListener('click', function(e) {
     if (e.target === this) {
         closeInvalidCodeModal();
     }
 });
+
+
 function verifyEnrollmentCode() {
     const code = document.getElementById('enrollment_code').value.trim().toUpperCase();
     if (!code) {
@@ -606,10 +1017,7 @@ function closeEnrolledCourseDetails() {
         modal.classList.add('hidden');
     }
 }
-</script>
 
-<!-- Registration Instructors Functions -->
-<script>
 function openRegistrationInstructorsModal() {
     const modal = document.getElementById('registrationInstructorsModal');
     const content = document.getElementById('registrationInstructorsContent');
@@ -752,34 +1160,6 @@ function closeInstructorRegistrationModal() {
     }
 }
 
-function openRegistrationMethods(instructorId, instructorName) {
-    // Close modals first
-    closeInstructorRegistrationModal();
-    closeRegistrationInstructorsModal();
-    
-    // Set the registration mode to student self-registration
-    window.isStudentRegisterMode = true;
-    
-    // Store instructor ID for backend reference
-    window.currentInstructorId = instructorId;
-    
-    // Set student ID prefill from page data if available
-    const studentIdPrefill = document.querySelector('[data-student-id]')?.getAttribute('data-student-id') || '';
-    
-    // Get all courses from the current registration modal (before we close it)
-    // In the QR scanner, we'll use courseId 0 as a special marker for multi-course registration
-    console.log('Opening QR Scanner in student registration mode for instructor:', instructorId);
-    
-    // Open QR Scanner - courseId of 0 indicates student registering with instructor (multi-course)
-    if (typeof window.openQRScanner === 'function') {
-        window.openQRScanner(0, studentIdPrefill, '');
-    } else {
-        console.error('QR Scanner function not available');
-        alert('QR Scanner is not available. Please refresh the page and try again.');
-    }
-}
-
-// Open QR Code Registration
 function openQRCodeRegistration(instructorId, instructorName) {
     // Close modals first
     closeInstructorRegistrationModal();
@@ -805,9 +1185,12 @@ function openQRCodeRegistration(instructorId, instructorName) {
     }
 }
 
-// Open Biometric Registration
 function openBiometricRegistration(instructorId, instructorName) {
     console.log('Opening biometric registration for instructor:', instructorId, instructorName);
+    
+    // CRITICAL: Store instructor ID for use in enrollment functions
+    window.currentInstructorId = instructorId;
+    console.log('[INSTRUCTOR] Set currentInstructorId to:', window.currentInstructorId);
     
     // Close modals first
     closeInstructorRegistrationModal();
@@ -829,13 +1212,17 @@ function openBiometricRegistration(instructorId, instructorName) {
             
             if (!data.success) {
                 console.error('API error:', data.message);
-                showNotification(`Error loading courses: ${data.message}`, 'error');
+                if (typeof showNotification === 'function') {
+                    showNotification(`Error loading courses: ${data.message}`, 'error');
+                }
                 return;
             }
             
             if (!data.courses || data.courses.length === 0) {
                 console.warn('No enrolled courses found with this instructor', instructorId);
-                showNotification('You are not enrolled in any courses with this instructor', 'warning');
+                if (typeof showNotification === 'function') {
+                    showNotification('You are not enrolled in any courses with this instructor', 'warning');
+                }
                 return;
             }
             
@@ -876,16 +1263,26 @@ function openBiometricRegistration(instructorId, instructorName) {
                     <!-- Scan Icon and Status -->
                     <div class="flex flex-col items-center justify-center py-6 mb-4 bg-purple-50 rounded-lg">
                         <i id="scanIcon" class="fas fa-fingerprint text-5xl text-purple-600 mb-3"></i>
-                        <p id="scanTitle" class="text-base font-semibold text-gray-800">Ready to Scan</p>
-                        <p id="scanSubtitle" class="text-xs text-gray-600 mt-1">0/5</p>
+                        <p id="scanTitle" class="text-base font-semibold text-gray-800" style="display: none;">Ready to Scan</p>
+                        <p id="scanSubtitle" class="text-xs text-gray-600 mt-1" style="display: none;">0/3</p>
                     </div>
                     
-                    <!-- Progress Display - Large Percentage -->
                     <div class="mb-4">
-                        <div class="flex flex-col items-center justify-center p-6 bg-purple-50 rounded-lg">
-                            <div class="text-6xl font-bold text-purple-600 mb-2" id="percentageDisplay">0%</div>
+                        <div class="flex flex-col items-center justify-center p-6 bg-purple-50 rounded-lg" id="progressContainer" style="display: none;">
+                            <!-- Progress Bar -->
+                            <div class="w-full mb-4">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="text-xs font-semibold text-gray-700">Scan Progress</span>
+                                    <span id="progressPercent" class="text-xs font-bold text-purple-600">0%</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                    <div id="progressBar" class="bg-gradient-to-r from-purple-500 to-purple-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="text-6xl font-bold text-purple-600 mb-2" id="percentageDisplay" style="display: none;">0%</div>
                             <div class="text-sm text-gray-600 text-center mb-2">
-                                <span id="enrollmentCounter" class="text-lg font-semibold text-purple-600">0/5</span> scans completed
+                                <span id="enrollmentCounter" class="text-lg font-semibold text-purple-600">0/3</span> scans completed
                             </div>
                             <div id="enrollmentStatus" class="text-xs text-gray-600 text-center">
                                 Ready to start
@@ -901,7 +1298,7 @@ function openBiometricRegistration(instructorId, instructorName) {
                     <!-- Buttons -->
                     <div class="space-y-2">
                         <button id="startEnrollBtn" onclick="startBiometricEnrollment('${instructorName.replace(/'/g, "\\'")}')" class="w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm rounded-lg transition">
-                            <i class="fas fa-play mr-1"></i> Start
+                            <i class="fas fa-fingerprint mr-1"></i> Start 3-Capture Enrollment
                         </button>
                         <button onclick="closeBiometricRegistrationModal()" class="w-full px-4 py-2 bg-gray-100 text-gray-700 font-medium text-sm rounded-lg hover:bg-gray-200 transition">
                             Cancel
@@ -919,32 +1316,163 @@ function openBiometricRegistration(instructorId, instructorName) {
         })
         .catch(error => {
             console.error('Error fetching courses:', error);
-            showNotification(`Error loading courses: ${error.message}`, 'error');
+            if (typeof showNotification === 'function') {
+                showNotification(`Error loading courses: ${error.message}`, 'error');
+            }
         });
 }
 
-// Close Biometric Registration Modal
 function closeBiometricRegistrationModal() {
+    console.log('[ENROLLMENT] ===== CLOSING BIOMETRIC MODAL =====');
     const modal = document.getElementById('biometricRegistrationModal');
     if (modal) {
         modal.classList.add('hidden');
     }
+
+    try {
+        if (window.enrollmentInProgress === true && window.enrollmentConfirmedSuccessfully !== true) {
+            const templateId = window.biometricTemplate;
+            const slot = window.currentEnrollmentSlot;
+            if (templateId) {
+                fetch('/dashboard/api/broadcast-enrollment/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        slot: slot,
+                        template_id: templateId,
+                        action: 'cancel'
+                    })
+                }).catch(() => {});
+            }
+        }
+    } catch (e) {
+        console.warn('[ENROLLMENT] Cancel on close failed:', e);
+    }
+    
+    // CRITICAL: Reset ALL enrollment state variables IMMEDIATELY
+    console.log('[ENROLLMENT] Resetting frontend state variables');
+    window.enrollmentCompleted = false;
+    window.fingerDetectedShown = false;
+    window.isProcessing = false;
+    window.enrollmentInErrorState = false;
+    window.enrollmentInProgress = false;
+    window.enrollmentConfirmedSuccessfully = false;
+    window.enrollmentAwaitingConfirmation = false;
+    confirmations = 0;
+    window.processedSteps = new Set();  // CRITICAL: Reset the processed steps set
+    lastEnrollmentCancelTime = Date.now();
+    
+    // CRITICAL: Close WebSocket IMMEDIATELY to stop any further UI updates
+    if (currentWebSocket) {
+        try {
+            console.log('[ENROLLMENT] Closing WebSocket connection');
+            // Remove all event handlers FIRST to prevent any pending messages from being processed
+            currentWebSocket.onopen = null;
+            currentWebSocket.onmessage = null;
+            currentWebSocket.onerror = null;
+            currentWebSocket.onclose = null;
+            // NOW close the socket
+            currentWebSocket.close();
+            currentWebSocket = null;
+        } catch (e) {
+            console.warn('[ENROLLMENT] Error closing WebSocket:', e);
+        }
+    }
+    
+    console.log('[ENROLLMENT] Modal closed - ESP32 will timeout and reset automatically');
 }
 
-// Start Biometric Enrollment with Real-Time WebSocket Updates
-function startBiometricEnrollment(instructorName) {
-    console.log('[ENROLLMENT] Starting biometric enrollment');
+// Proceed with actual enrollment - CRITICAL: Moved before checkExistingFingerprints to be available when called
+async function proceedWithEnrollment(courseIds) {
+    const btn = document.getElementById('startEnrollBtn');
+    const studentId = document.querySelector('[data-student-id]')?.getAttribute('data-student-id') || '';
     
-    // Get pre-stored enrolled course IDs
-    const courseIds = window.enrollmentCourseIds;
+    if (!studentId) {
+        showNotification('Student ID not found', 'danger');
+        return;
+    }
+    
+    console.log('[ENROLLMENT] Using Django API (network-agnostic)');
+    console.log('[ENROLLMENT] Student ID:', studentId);
+    
+    // CRITICAL SAFETY CHECK: Prevent multiple simultaneous enrollments
+    if (window.enrollmentInProgress === true) {
+        console.warn('[ENROLLMENT] ⚠️ Enrollment already in progress! Ignoring duplicate request');
+        return;
+    }
+    
+    // Set flag IMMEDIATELY to prevent re-entry
+    window.enrollmentInProgress = true;
+    console.log('[ENROLLMENT] ===== ENROLLMENT REQUEST STARTED =====');
+    
+    // CRITICAL: Check if enrollment was just cancelled - wait for ESP32 to reset (4 second minimum)
+    // Increased from 2.5s to 4s to allow ESP32 enrollment loop to fully exit and reset
+    const timeSinceCancel = Date.now() - lastEnrollmentCancelTime;
+    const REQUIRED_RESET_TIME = 4000;  // 4 seconds for ESP32 to fully exit enrollment and reset state
+    
+    if (timeSinceCancel < REQUIRED_RESET_TIME) {
+        const waitTime = REQUIRED_RESET_TIME - timeSinceCancel;
+        console.log(`[ENROLLMENT] Last enrollment cancelled ${timeSinceCancel}ms ago. Waiting ${waitTime}ms for ESP32 to fully reset...`);
+        
+        // Reset the in-progress flag since we're waiting
+        window.enrollmentInProgress = false;
+        
+        // Disable start button during reset
+        if (btn) {
+            btn.disabled = true;
+            const originalText = btn.innerHTML;
+            const remainSeconds = Math.ceil(waitTime / 1000);
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i> Sensor resetting (${remainSeconds}s)...`;
+            
+            // Update countdown every 500ms
+            const countdownInterval = setInterval(() => {
+                const remaining = Date.now() - lastEnrollmentCancelTime;
+                if (remaining >= REQUIRED_RESET_TIME) {
+                    clearInterval(countdownInterval);
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                } else {
+                    const secs = Math.ceil((REQUIRED_RESET_TIME - remaining) / 1000);
+                    btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i> Sensor resetting (${secs}s)...`;
+                }
+            }, 500);
+        }
+        
+        showNotification('Sensor is resetting. Please wait...', 'info');
+        setTimeout(() => {
+            proceedWithEnrollment(courseIds);
+        }, waitTime);
+        return;
+    }
+    
+    // CRITICAL: Only check lock if NOT confirming an existing enrollment
+    // When confirming, we're already in the middle of enrollment, so lock should be bypassed
+    if (!window.isConfirmingEnrollment && isInstructorEnrollmentInProgress()) {
+        console.warn('[ENROLLMENT] Enrollment already in progress for this instructor');
+        window.enrollmentInProgress = false;
+        showNotification('Enrollment is already in progress for your instructor. Please wait.', 'warning');
+        return;
+    }
+    
+    // Reset confirmation flag if we're starting a new enrollment
+    window.isConfirmingEnrollment = false;
+    
+    // Mark enrollment as in progress for THIS instructor
+    setInstructorEnrollmentInProgress(true);
+    
     if (!courseIds || courseIds.length === 0) {
+        console.error('[ENROLLMENT] No course IDs provided');
+        window.enrollmentInProgress = false;
+        setInstructorEnrollmentInProgress(false);
         showNotification('No courses found for enrollment', 'warning');
         return;
     }
     
     console.log(`[ENROLLMENT] Enrolling in ${courseIds.length} courses:`, courseIds);
     
-    const btn = document.getElementById('startEnrollBtn');
     const statusEl = document.getElementById('enrollmentStatus');
     const percentageDisplay = document.getElementById('percentageDisplay');
     const counter = document.getElementById('enrollmentCounter');
@@ -955,75 +1483,540 @@ function startBiometricEnrollment(instructorName) {
     // Check if all required elements exist
     if (!btn || !statusEl || !percentageDisplay || !counter || !scanIcon || !scanTitle || !scanSubtitle) {
         console.error('[ENROLLMENT] Missing required modal elements');
-        console.error('btn:', btn);
-        console.error('statusEl:', statusEl);
-        console.error('percentageDisplay:', percentageDisplay);
-        console.error('counter:', counter);
-        console.error('scanIcon:', scanIcon);
-        console.error('scanTitle:', scanTitle);
-        console.error('scanSubtitle:', scanSubtitle);
         showNotification('Error: Modal elements missing', 'danger');
+        setInstructorEnrollmentInProgress(false);
         return;
     }
     
     console.log('[ENROLLMENT] All modal elements found');
     
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Connecting...';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Sending request...';
+    
+    // CRITICAL: Hide cancel button during active enrollment to prevent user interruption
+    const cancelBtn = document.querySelector('button[onclick="closeBiometricRegistrationModal()"]');
+    if (cancelBtn) {
+        console.log('[ENROLLMENT] Hiding Cancel button during active enrollment');
+        cancelBtn.style.display = 'none';
+    }
+    
+    // Reset enrollment state flags
+    window.fingerDetectedShown = false;
+    window.enrollmentCompleted = false;  // Reset completion flag for new attempt
+    window.enrollmentAwaitingConfirmation = false;
+    window.enrollmentInErrorState = false;  // Reset error flag for new attempt
+    window.isProcessing = false;  // Track if we're currently processing a fingerprint
+    window.enrollmentConfirmedSuccessfully = false;  // Reset confirmation flag for new attempt
+    confirmations = 0;  // Reset scan counter for new enrollment
+    window.processedSteps = new Set();  // Track which steps have been processed to prevent duplicates
     
     // Generate unique enrollment ID
     const enrollmentId = `enrollment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const biometricTemplate = `template_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    console.log('[ENROLLMENT] Generated enrollment ID:', enrollmentId);
+    // Store biometric template globally for use in handleEnrollmentComplete
+    window.biometricTemplate = biometricTemplate;
     
+    console.log('[ENROLLMENT] Generated enrollment ID:', enrollmentId);
+    console.log('[ENROLLMENT] Step 1: UI setup...');
+    
+    // Update UI to show waiting for finger - MINIMAL DISPLAY
+    scanIcon.innerHTML = '<i class="fas fa-fingerprint text-5xl text-blue-500 mb-3 animate-pulse"></i>';
+    scanTitle.textContent = '';
+    scanTitle.style.display = 'none';
+    scanSubtitle.textContent = '';
+    scanSubtitle.style.display = 'none';
+    statusEl.innerHTML = '<i class="fas fa-fingerprint mr-2"></i> Waiting for finger on sensor...';
+    percentageDisplay.style.display = 'none';
+    counter.style.display = 'none';
+    counter.textContent = '';
+    
+    // Hide progress bar initially
+    const progressBar = document.getElementById('progressBar');
+    if (progressBar) {
+        progressBar.style.width = '0%';
+        const progressContainer = progressBar.parentElement;
+        if (progressContainer) {
+            progressContainer.style.display = 'none';
+        }
+    }
+
+    // Ensure progress UI container becomes visible once enrollment begins
+    const progressContainer = document.getElementById('progressContainer');
+    if (progressContainer) {
+        progressContainer.style.display = 'block';
+    }
+    
+    console.log('[ENROLLMENT] Step 1: ✓ UI setup complete - waiting for finger...');
+    
+    console.log('[ENROLLMENT] Step 2: Creating WebSocket URL...');
     // Create WebSocket connection for real-time updates
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     let wsHost = window.location.host;
-    // If running on localhost with different port, adjust
     if (!wsHost.includes(':') && window.location.hostname === 'localhost') {
-        wsHost = 'localhost:8000'; // Explicitly use port 8000 for development
+        wsHost = 'localhost:8000';
     }
     const wsUrl = `${protocol}//${wsHost}/ws/biometric/enrollment/${enrollmentId}/`;
     
-    console.log(`[ENROLLMENT] Connecting to WebSocket: ${wsUrl}`);
-    console.log(`[ENROLLMENT] Enrollment ID for group: ${enrollmentId}`);
+    console.log(`[ENROLLMENT] Step 2: ✓ WebSocket URL: ${wsUrl}`);
+    console.log(`[ENROLLMENT] Step 3: Closing previous WebSocket...`);
     
+    // Close any previous WebSocket connections
+    if (currentWebSocket) {
+        try {
+            currentWebSocket.close();
+        } catch (e) {
+            console.warn('[ENROLLMENT] Could not close previous socket:', e);
+        }
+    }
+    console.log('[ENROLLMENT] Step 3: ✓ Previous WebSocket closed');
+    
+    console.log('[ENROLLMENT] Step 4: Creating WebSocket FIRST before sending enrollment request...');
+    
+    // CRITICAL: Create WebSocket FIRST and wait for it to connect
+    // This ensures we're ready to receive messages BEFORE ESP32 starts scanning
     const socket = new WebSocket(wsUrl);
-    let confirmations = 0;
-    let confirmationResults = [];
-    const R307_IP = '192.168.1.26';
+    currentWebSocket = socket;
     
-    socket.onopen = async (event) => {
-        console.log('[WEBSOCKET] ✓ Connection established');
-        console.log('[WEBSOCKET] Socket ready state:', socket.readyState);
-        btn.innerHTML = '<i class="fas fa-fingerprint mr-1"></i> Starting scans...';
-        // Add small delay to ensure connection is fully ready
-        setTimeout(() => startNextScan(), 500);
-    };
+    let socketReady = false;
+    let enrollmentStartTime = Date.now();
     
+    console.log('[WEBSOCKET] Creating WebSocket connection to:', wsUrl);
+    
+    // Create a promise that resolves when socket is ready
+    const socketReadyPromise = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            reject(new Error('WebSocket connection timeout'));
+        }, 10000);  // 10 second timeout
+        
+        socket.onopen = (event) => {
+            clearTimeout(timeout);
+            console.log('[WEBSOCKET] ✓ Connection established');
+            console.log('[WEBSOCKET] Socket ready state:', socket.readyState);
+            socketReady = true;
+            resolve();
+        };
+        
+        socket.onerror = (event) => {
+            clearTimeout(timeout);
+            console.error('[WEBSOCKET] ✗ WebSocket error during connection:', event);
+            reject(new Error('WebSocket connection error'));
+        };
+    });
+    
+    // Wait for socket to be ready
+    try {
+        await socketReadyPromise;
+        console.log('[ENROLLMENT] Step 4: ✓ WebSocket connected and ready!');
+        
+        // CRITICAL: Wait LONGER to ensure group subscription is fully propagated
+        // This prevents race condition where MQTT message arrives before WebSocket group is ready
+        // Django Channels group_add is async and takes time to propagate across all workers
+        // FIXED: Increased from 1500ms to 3000ms to reliably catch EVERY scan even with slow networks
+        console.log('[ENROLLMENT] ⏳ Waiting 3000ms for WebSocket group subscription to fully propagate...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        console.log('[ENROLLMENT] ✓ Group subscription fully ready - will catch ALL scans now!');
+        
+    } catch (error) {
+        console.error('[ENROLLMENT] ✗ WebSocket failed to connect:', error.message);
+        showNotification('WebSocket connection failed: ' + error.message, 'danger');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-redo mr-1"></i> Retry';
+        setInstructorEnrollmentInProgress(false);
+        window.enrollmentInProgress = false;
+        return;
+    }
+    
+    console.log('[ENROLLMENT] Step 5: WebSocket ready - NOW sending enrollment request to ESP32...');
+    
+    // NOW that WebSocket is ready, send the enrollment request to ESP32
+    try {
+        const response = await fetch('/api/student/enroll/start/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                student_id: studentId,
+                enrollment_id: enrollmentId,
+                template_id: biometricTemplate,
+                course_id: courseIds[0] || 'CS101'
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'API error');
+        }
+
+        const data = await response.json();
+        console.log('[ENROLLMENT] ✓ Django API accepted enrollment:', data);
+        console.log('[ENROLLMENT] Slot assigned:', data.slot);
+        console.log('[ENROLLMENT] Enrollment ID mapped:', enrollmentId);
+
+        // Persist current enrollment identifiers for confirm/cancel actions
+        window.currentEnrollmentId = enrollmentId;
+        window.currentEnrollmentSlot = data.slot;
+    } catch (error) {
+        console.error('[ENROLLMENT] ✗ FAILED to start enrollment via Django API');
+        console.error('[ENROLLMENT] Error:', error.message);
+        showNotification('Enrollment failed: ' + error.message, 'danger');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-redo mr-1"></i> Retry';
+        setInstructorEnrollmentInProgress(false);
+        window.enrollmentInProgress = false;
+        return;
+    }
+
+    console.log('[ENROLLMENT] Step 6: ✓ Enrollment request sent to ESP32');
+    console.log('[ENROLLMENT] Step 7: WebSocket is ready - listening for scan updates...');
+    btn.innerHTML = '<i class="fas fa-fingerprint mr-1"></i> Place finger now...';
+    
+    // Set up message handler
     socket.onmessage = (event) => {
         try {
-            console.log('[WEBSOCKET] Raw message data received:', event.data);
+            console.log('\n' + '='.repeat(80));
+            console.log('[WEBSOCKET] ===== MESSAGE RECEIVED =====');
+            console.log('[WEBSOCKET] Raw data:', event.data);
             const message = JSON.parse(event.data);
-            console.log('[WEBSOCKET] Parsed message:', JSON.stringify(message));
+            console.log('[WEBSOCKET] Parsed JSON:', JSON.stringify(message, null, 2));
             console.log('[WEBSOCKET] Message type:', message.type);
+            console.log('[WEBSOCKET] Message slot:', message.slot);
+            console.log('[WEBSOCKET] Message step:', message.step);
+            console.log('[WEBSOCKET] Message success:', message.success);
+            console.log('[WEBSOCKET] Message progress:', message.progress);
+            console.log('='.repeat(80) + '\n');
             
-            switch(message.type) {
-                case 'scan_update':
-                    console.log('[WEBSOCKET] Handling scan_update with slot:', message.slot);
-                    handleScanUpdate(message);
-                    break;
-                case 'enrollment_complete':
-                    console.log('[WEBSOCKET] Handling enrollment_complete');
-                    handleEnrollmentComplete(message);
-                    break;
-                case 'enrollment_error':
-                    console.log('[WEBSOCKET] Handling enrollment_error');
-                    handleEnrollmentError(message);
-                    break;
-                default:
-                    console.log('[WEBSOCKET] Unknown message type:', message.type);
+            // CRITICAL: Ignore error messages that come in TOO EARLY (first 1 second)
+            // This filters out spurious/stale errors from ESP32 startup
+            const timeSinceStart = Date.now() - enrollmentStartTime;
+            if ((message.success === false || message.error) && timeSinceStart < 1000) {
+                console.log(`[WEBSOCKET] Ignoring early error (${timeSinceStart}ms after start) - likely stale message:`, message);
+                return;
+            }
+            
+            // CRITICAL: Only process messages if this is the current active socket
+            if (socket !== currentWebSocket) {
+                console.log('[WEBSOCKET] ✗ Ignoring message from old socket connection - current socket is different');
+                console.log('[WEBSOCKET] Message socket === currentWebSocket?', socket === currentWebSocket);
+                return;
+            }
+            
+            // CRITICAL: Only ignore further messages after final confirmation to DB
+            const btn = document.getElementById('startEnrollBtn');
+            if (window.enrollmentConfirmedSuccessfully === true) {
+                console.log('[ENROLLMENT] Enrollment confirmed successfully - ignoring further messages');
+                return;
+            }
+            
+            // Track if we've shown the "Finger Detected" message to avoid duplicates
+            window.fingerDetectedShown = window.fingerDetectedShown || false;
+            
+            console.log('[WEBSOCKET] ✓ Message passed validation - processing now');
+            
+            // ONLY PROCESS MESSAGES FROM ESP32 VIA BACKEND
+            // Do NOT show hardcoded messages - only show what ESP32 sends
+            const statusEl = document.getElementById('enrollmentStatus');
+            
+            // Check if enrollment is blocked (another user is enrolling)
+            if (message.status === 'blocked') {
+                console.log('[ENROLLMENT] ✗ Enrollment is BLOCKED - another student is enrolling');
+
+                // Allow retry attempts from this browser (we're not actively scanning)
+                window.enrollmentInProgress = false;
+                
+                const btn = document.getElementById('startEnrollBtn');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="fas fa-hourglass-half mr-1"></i> Another user is enrolling...';
+                    btn.className = 'w-full px-4 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold text-sm rounded-lg transition cursor-not-allowed';
+                }
+                
+                const statusEl = document.getElementById('enrollmentStatus');
+                if (statusEl) {
+                    statusEl.innerHTML = '<i class="fas fa-info-circle mr-2 text-yellow-500"></i> Another student is currently enrolling. Please wait...';
+                }
+                
+                showNotification('Another student is already enrolling. Please wait...', 'warning');
+                
+                // Set up a retry attempt after 5 seconds
+                setTimeout(() => {
+                    console.log('[ENROLLMENT] ✓ Retrying enrollment request (previous was blocked)');
+                    if (btn && !window.enrollmentCompleted) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-fingerprint mr-1"></i> Try Again';
+                        btn.className = 'w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-lg transition';
+                        btn.onclick = function() {
+                            setInstructorEnrollmentInProgress(false);
+                            proceedWithEnrollment(window.enrollmentCourseIds);
+                        };
+                    }
+                }, 5000);
+                return;
+            }
+            
+            // Check if enrollment is ready for confirmation (all 3 scans captured)
+            if (message.status === 'ready_for_confirmation') {
+                console.log('[ENROLLMENT] ✓✓✓ All 3 scans captured - showing confirm button');
+
+                // Scanning phase is done; allow another start if user closes/reopens modal
+                window.enrollmentInProgress = false;
+                
+                window.enrollmentAwaitingConfirmation = true;
+                
+                const btn = document.getElementById('startEnrollBtn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check mr-1"></i> Confirm & Save';
+                    btn.className = 'w-full px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm rounded-lg transition';
+                    
+                    // Set the click handler to send confirmation to ESP32
+                    btn.onclick = async function() {
+                        console.log('[CONFIRM] User clicked confirm button - sending confirmation to ESP32');
+                        btn.disabled = true;
+                        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Confirming...';
+                        window.isConfirmingEnrollment = true;
+                        
+                        try {
+                            // Send confirmation message to ESP32 via MQTT
+                            const confirmPayload = {
+                                'slot': message.slot,
+                                'template_id': message.template_id,
+                                'action': 'confirm'
+                            };
+                            
+                            // Publish confirmation via Django
+                            const confirmResponse = await fetch('/dashboard/api/broadcast-enrollment/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                                },
+                                body: JSON.stringify(confirmPayload)
+                            });
+
+                            if (!confirmResponse.ok) {
+                                throw new Error('Confirm request failed');
+                            }
+                            
+                            console.log('[CONFIRM] ✓ Confirmation sent to ESP32');
+                        } catch (err) {
+                            console.error('[CONFIRM] Failed to send confirmation:', err);
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="fas fa-check mr-1"></i> Confirm & Save';
+                            window.isConfirmingEnrollment = false;
+                        }
+                    };
+                }
+                
+                // Update progress bar to 100%
+                const progressBar = document.getElementById('progressBar');
+                if (progressBar) {
+                    progressBar.style.width = '100%';
+                    console.log('[PROGRESS] ✓ Set progress bar to 100%');
+                }
+                
+                // Update progress percentage
+                const progressPercentEl = document.getElementById('progressPercent');
+                if (progressPercentEl) {
+                    progressPercentEl.textContent = '100%';
+                }
+                
+                // Update scan title
+                const scanTitle = document.getElementById('scanTitle');
+                if (scanTitle) {
+                    scanTitle.textContent = 'Capture 3/3';
+                    scanTitle.style.display = 'block';
+                }
+                
+                if (statusEl) {
+                    statusEl.innerHTML = '<i class="fas fa-check-circle mr-2 text-green-500"></i> Ready to confirm - click button to save';
+                }
+                return;
+            }
+            
+            // If successful enrollment - CHECK THIS FIRST BEFORE ERROR CHECKS
+            // CRITICAL: Only process enrollment_complete events, NOT scan_update events
+            if (message.success === true && message.type === 'enrollment_complete') {
+                console.log('[ENROLLMENT] ✓✓✓ Fingerprint enrolled successfully! ✓✓✓');
+                console.log('[ENROLLMENT] WebSocket received enrollment_complete - calling handleEnrollmentComplete');
+
+                // Enrollment is no longer actively scanning
+                window.enrollmentInProgress = false;
+                
+                // Call handleEnrollmentComplete which will call submitBiometricEnrollment
+                // This saves the biometric data for all courses and reloads the page
+                handleEnrollmentComplete(message);
+                
+                // LOCK THE STATE: Set a flag so retry handler won't override
+                window.enrollmentCompleted = true;
+                return;  // Stop processing any further messages
+            }
+            // Handle scan_update messages - individual fingerprint captures
+            else if (message.type === 'scan_update') {
+                console.log('[WEBSOCKET] Processing scan_update message:', message);
+                handleScanUpdate(message);
+                return;
+            }
+            // If enrollment failed - ONLY if not already successful
+            // CRITICAL: Do NOT show error if we're currently processing a fingerprint
+            // Also ignore errors that are just status messages (like quality warnings)
+            // Only show errors that indicate actual failure (bad image, model creation failed, etc.)
+            else if (!window.enrollmentCompleted && !window.isProcessing && (message.success === false || message.error)) {
+                // CRITICAL: Filter out non-critical error messages that should be ignored during processing
+                const msgLower = (message.message || '').toLowerCase();
+                const isCriticalError = 
+                    msgLower.includes('failed') || 
+                    msgLower.includes('bad') || 
+                    msgLower.includes('timeout') ||
+                    msgLower.includes('error') ||
+                    message.error_code; // Has explicit error code
+                
+                // If it's not a critical error, just log it and ignore
+                if (!isCriticalError && message.message) {
+                    console.log('[ENROLLMENT] Ignoring non-critical error/warning:', message);
+                    return;
+                }
+                
+                console.log('[ENROLLMENT] Fingerprint capture failed (critical error):', message);
+
+                // Clear in-progress guard so the user can retry
+                window.enrollmentInProgress = false;
+                
+                // CRITICAL: Mark that we're in error state (prevents retry from being shown prematurely)
+                window.enrollmentInErrorState = true;
+                
+                // Only show error message - not intermediate messages
+                // Update icon to error
+                const scanIcon = document.getElementById('scanIcon');
+                if (scanIcon) {
+                    scanIcon.innerHTML = '<i class="fas fa-exclamation-circle text-5xl text-red-500 mb-3"></i>';
+                }
+                
+                // Update status message with error
+                if (statusEl) {
+                    statusEl.innerHTML = `<i class="fas fa-exclamation mr-2"></i> ${message.message || 'Failed to create model'}`;
+                }
+                
+                // Update counter
+                const counter = document.getElementById('enrollmentCounter');
+                if (counter) counter.textContent = '0/1';
+                
+                // Update title
+                const scanTitle = document.getElementById('scanTitle');
+                if (scanTitle) {
+                    scanTitle.textContent = 'Capture Failed';
+                }
+                
+                // Show error notification
+                showNotification(`✗ ${message.message || 'Failed to create fingerprint model'}`, 'danger');
+                
+                // Wait 2 seconds before enabling retry to give ESP32 time to reset
+                setTimeout(() => {
+                    // Double-check we haven't succeeded in the meantime
+                    if (window.enrollmentCompleted) {
+                        console.log('[ENROLLMENT] Enrollment already completed - skipping retry button');
+                        return;
+                    }
+                    
+                    // Update button to Retry (orange) - ONLY IF NOT ALREADY SUCCESSFUL
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-redo mr-1"></i> Retry';
+                        btn.className = 'w-full px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm rounded-lg transition';
+                        btn.onclick = function() {
+                            // Disable button immediately to prevent double-clicks
+                            btn.disabled = true;
+                            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Restarting...';
+                            
+                            // Close old WebSocket connection completely
+                            if (socket && socket.readyState === WebSocket.OPEN) {
+                                socket.close();
+                            }
+                            if (currentWebSocket) {
+                                try {
+                                    currentWebSocket.close();
+                                } catch (e) {
+                                    console.warn('[ENROLLMENT] Could not close socket:', e);
+                                }
+                            }
+                            
+                            // Reset enrollment state for this instructor
+                            setInstructorEnrollmentInProgress(false);
+                            window.fingerDetectedShown = false;  // Reset for next attempt
+                            window.enrollmentCompleted = false;  // Reset completion flag
+                            window.enrollmentInErrorState = false;  // Clear error state
+                            window.isProcessing = false;  // Clear processing flag
+                            
+                            // Cancel via Django API instead of direct ESP32 call
+                            fetch('/api/student/enroll/cancel/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': getCookie('csrftoken')
+                                },
+                                body: JSON.stringify({student_id: studentId})
+                            }).catch(e => console.warn('[RETRY] Cancel request failed:', e));
+                            
+                            // Wait 3 seconds for ESP32 to fully reset before retry
+                            setTimeout(() => {
+                                console.log('[RETRY] Starting new enrollment attempt after ESP32 reset');
+                                proceedWithEnrollment(window.enrollmentCourseIds);
+                            }, 3000);
+                        };
+                        console.log('[ENROLLMENT] Button set to RETRY (orange) - FAILURE STATE');
+                    }
+                }, 2000);  // Give ESP32 2 seconds to reset before enabling retry
+            }
+            // For intermediate messages - only show "Finger Detected" and "Processing"
+            // CRITICAL: Do NOT show retry button during processing - only on actual errors
+            else if (!window.enrollmentCompleted && !window.enrollmentInErrorState && message.message) {
+                const msgLower = message.message.toLowerCase();
+                
+                console.log('[ENROLLMENT] Processing intermediate message:', {
+                    original: message.message,
+                    lowercase: msgLower,
+                    fingerDetectedShown: window.fingerDetectedShown,
+                    isProcessing: window.isProcessing
+                });
+                
+                // Only show "Finger Detected" once
+                // Check for multiple variations: "detected", "finger", "placement", "ready"
+                if ((msgLower.includes('detected') || msgLower.includes('finger') || msgLower.includes('placement')) && !window.fingerDetectedShown) {
+                    console.log('[ENROLLMENT] ✓ Finger Detected message identified:', message.message);
+                    
+                    if (statusEl) {
+                        statusEl.innerHTML = `<i class="fas fa-check-circle mr-2 text-green-500"></i> ${message.message}`;
+                        console.log('[ENROLLMENT] Updated UI with message from ESP32:', message.message);
+                    }
+                    
+                    // Show notification popup using fallback if needed
+                    const notifyFunc = typeof showNotification === 'function' ? showNotification : window.showNotificationFallback;
+                    notifyFunc('✓ Finger Detected - Processing...', 'success');
+                    console.log('[ENROLLMENT] Notification triggered');
+                    
+                    window.fingerDetectedShown = true;
+                    window.isProcessing = true;  // Mark that we're now processing a fingerprint
+                    console.log('[ENROLLMENT] Finger detected - message shown, marking as processing');
+                    
+                    // Schedule to reset the status back to "Waiting for finger" after a short delay
+                    setTimeout(() => {
+                        if (statusEl && window.enrollmentInProgress) {
+                            statusEl.innerHTML = '<i class="fas fa-fingerprint mr-2"></i> Waiting for finger on sensor...';
+                            window.fingerDetectedShown = false;  // Reset so waiting message shows again for next scan
+                        }
+                    }, 1500);  // Show detected message for 1.5 seconds, then back to waiting
+                }
+                // Show any processing or quality messages from ESP32
+                else if ((msgLower.includes('processing') || msgLower.includes('quality') || msgLower.includes('waiting')) && !window.fingerDetectedShown) {
+                    if (statusEl && message.message) {
+                        statusEl.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> ${message.message}`;
+                    }
+                    window.isProcessing = true;  // Mark that we're processing
+                    console.log('[ENROLLMENT] Showing message from ESP32:', message.message);
+                }
+                // Ignore other intermediate messages to avoid message clutter
             }
         } catch (error) {
             console.error('[WEBSOCKET] Error parsing message:', error, 'Raw:', event.data);
@@ -1042,86 +2035,346 @@ function startBiometricEnrollment(instructorName) {
         console.log('[WEBSOCKET] Close reason:', event.reason);
     };
     
+    // Send acknowledgment back to Django that frontend received a scan
+    // This triggers Django to publish acknowledgment to ESP32 via MQTT
+    function sendScanAcknowledgment(step, enrollmentId) {
+        console.log(`[ACK] Sending acknowledgment to Django for scan ${step}/3...`);
+        
+        fetch('/dashboard/api/scan-acknowledged/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                enrollment_id: enrollmentId,
+                step: step,
+                success: true
+            })
+        })
+        .then(response => {
+            if (response.ok) {
+                console.log(`[ACK] ✓ Acknowledgment sent for scan ${step} - Django will notify ESP32`);
+                return response.json();
+            } else {
+                console.log(`[ACK] HTTP error: ${response.status} - continuing anyway`);
+                return null;
+            }
+        })
+        .catch(error => {
+            console.log(`[ACK] Network error sending ack: ${error.message} - continuing anyway`);
+        });
+    }
+    
     // Handle scan update from server
     function handleScanUpdate(message) {
-        console.log('[SCAN] Processing update with data:', message);
+        console.log('[SCAN] ===== PROCESSING SCAN UPDATE =====');
+        console.log('[SCAN] Raw message:', JSON.stringify(message));
         
-        // Extract fields from message
-        const slot = message.slot || message.scan_step || 0;
-        const success = message.success || false;
-        const quality = message.quality || message.quality_score || 0;
-        const progress = message.progress || (slot / 5) * 100;
+        // Extract fields from message - be very careful about types
+        const slot = message.slot || 0;
+        let step = message.step || message.slot || 0;  // Use step, fall back to slot if not provided
+        const success = message.success === true;  // Strict equality check
+        const quality = message.quality || 0;
+        const progress = message.progress || 0;
+        const status = message.status || '';
         
-        console.log(`[SCAN] Extracted: slot=${slot}, success=${success}, quality=${quality}, progress=${progress}%`);
+        console.log(`[SCAN] Extracted values:`);
+        console.log(`[SCAN]   slot: ${slot} (type: ${typeof slot})`);
+        console.log(`[SCAN]   step: ${step} (type: ${typeof step})`);
+        console.log(`[SCAN]   success: ${success} (type: ${typeof success})`);
+        console.log(`[SCAN]   quality: ${quality}`);
+        console.log(`[SCAN]   progress: ${progress}`);
+        console.log(`[SCAN]   message.progress in payload: ${message.progress}`);
         
-        if (!success) {
-            console.warn('[SCAN] Scan failed');
-            showNotification(`Scan failed: ${message.message}`, 'warning');
-            return;
-        }
-        
-        confirmations = slot;
-        confirmationResults.push({success: true, quality: quality, message: message.message});
-        
-        // Update percentage display - THIS IS THE KEY PART
-        const percentageDisplay = document.getElementById('percentageDisplay');
-        if (percentageDisplay) {
-            const newPercentage = Math.round(progress);
-            percentageDisplay.textContent = newPercentage + '%';
-            percentageDisplay.style.color = newPercentage === 100 ? '#10b981' : '#9333ea';
-            console.log('[PROGRESS] Updated percentage to:', newPercentage + '%');
+        // Only count scans when the ESP32 explicitly reports a successful capture
+        if (success === true && step > 0) {
+            console.log(`[SCAN] ✓ Processing scan - step=${step}, success=${success}`);
+            
+            // Normalize step to be between 1-3 (matching slot 101-103 pattern if needed)
+            if (step > 100) {
+                // If step is a slot number (101, 102, 103), convert to scan number (1, 2, 3)
+                step = step - 100;
+                console.log(`[SCAN] ✓ Converted slot-based numbering: ${step + 100} → ${step}`);
+            }
+            
+            // Ensure step is a valid number (1, 2, or 3)
+            step = Math.max(1, Math.min(3, Math.round(step)));
+            console.log(`[SCAN] Normalized step: ${step}`);
+            
+            // CRITICAL: Only count each step ONCE - prevent duplicate processing
+            console.log(`[SCAN] Checking if step ${step} already processed...`);
+            console.log(`[SCAN]   window.processedSteps: ${window.processedSteps}`);
+            
+            if (window.processedSteps && window.processedSteps.has(step)) {
+                console.log(`[SCAN] ⚠️ Step ${step} already processed - ignoring duplicate`);
+                return;
+            }
+            
+            // Mark this step as processed
+            if (!window.processedSteps) {
+                window.processedSteps = new Set();
+            }
+            window.processedSteps.add(step);
+            console.log(`[SCAN] ✓ Marked step ${step} as processed. Set now contains: ${JSON.stringify(Array.from(window.processedSteps))}`);
+            
+            // This is a confirmed successful capture
+            // Count is the number of unique steps processed, not a simple increment
+            confirmations = window.processedSteps.size;
+            console.log(`[SCAN] ✓✓✓ COUNTER (based on unique steps): ${confirmations}/3 (just processed step ${step})`);
+            
+            // SEND ACKNOWLEDGMENT BACK TO DJANGO THAT WE RECEIVED THIS SCAN
+            // This tells the ESP32 via MQTT that frontend got the scan and it can proceed
+            sendScanAcknowledgment(step, enrollmentId);
+            
+            // SOUND EFFECT: Play capture sound immediately when scan is confirmed
+            playScanCaptureSound();
+            
+            // Show success notification
+            const scanMessage = message.message || `Scan ${step}/3 captured`;
+            showNotification(`✓ ${scanMessage}`, 'success');
+            console.log('[NOTIFICATION] Showed notification for scan:', step);
+            
+            // UPDATE PROGRESS BAR IMMEDIATELY - NO DELAYS
+            // Calculate progress based on step number, not confirmations counter
+            // Use the progress field from backend if available, otherwise calculate
+            const progressPercent = progress > 0 ? progress : (step / 3) * 100;
+            
+            console.log(`[PROGRESS] Calculating progress:`);
+            console.log(`[PROGRESS]   message.progress: ${progress}`);
+            console.log(`[PROGRESS]   step: ${step}`);
+            console.log(`[PROGRESS]   calculated: ${(step / 3) * 100}%`);
+            console.log(`[PROGRESS]   final: ${progressPercent}%`);
+            
+            // SHOW PROGRESS UI ONLY AFTER FIRST SCAN
+            // Show title with scan progress
+            const scanTitle = document.getElementById('scanTitle');
+            if (scanTitle) {
+                scanTitle.textContent = `Capture ${confirmations}/3`;
+                scanTitle.style.display = 'block';
+            }
+            
+            // Update counter
+            const counter = document.getElementById('enrollmentCounter');
+            if (counter) {
+                counter.style.display = 'block';
+                counter.textContent = `${confirmations}/3 scans completed`;
+                console.log('[PROGRESS] Updated counter to:', counter.textContent);
+            }
+            
+            // Update progress bar width and show it
+            const progressBar = document.getElementById('progressBar');
+            if (progressBar) {
+                const progressContainer = progressBar.parentElement;
+                if (progressContainer) {
+                    progressContainer.style.display = 'block';
+                }
+                progressBar.style.width = progressPercent + '%';
+                console.log('[PROGRESS] Updated progress bar to:', progressPercent + '%');
+            }
+            
+            // Update progress percentage text
+            const progressPercentEl = document.getElementById('progressPercent');
+            if (progressPercentEl) {
+                progressPercentEl.textContent = Math.round(progressPercent) + '%';
+            }
+            
+            // Update percentage display - HIDDEN during enrollment, only show progress bar
+            const percentageDisplay = document.getElementById('percentageDisplay');
+            if (percentageDisplay) {
+                percentageDisplay.style.display = 'none';  // Hide percentage, just show bar
+                console.log('[PROGRESS] Percentage display hidden, showing bar only');
+            }
+            
+            // Check if all 3 captures are complete
+            if (confirmations >= 3 && !window.enrollmentCompleted && !window.enrollmentAwaitingConfirmation && !message.status) {
+                console.log('[SCAN] ✓✓✓ ALL 3 CAPTURES COMPLETE! ✓✓✓');
+                console.log('[SCAN] Showing Confirm button - waiting for user confirmation');
+                
+                // Mark as enrollment complete so this code doesn't run multiple times
+                window.enrollmentCompleted = true;
+                
+                // Update icon to success
+                const scanIcon = document.getElementById('scanIcon');
+                if (scanIcon) {
+                    scanIcon.innerHTML = '<i class="fas fa-circle-check text-5xl text-green-500 mb-3"></i>';
+                }
+                
+                // Update title
+                const scanTitle = document.getElementById('scanTitle');
+                if (scanTitle) {
+                    scanTitle.textContent = '3 Scans Complete!';
+                }
+                
+                // Update status
+                const statusEl = document.getElementById('enrollmentStatus');
+                if (statusEl) {
+                    statusEl.innerHTML = '<i class="fas fa-check-circle mr-2"></i> Ready to confirm';
+                }
+                
+                // Get course IDs and biometric template
+                const courseIds = window.enrollmentCourseIds || [];
+                const biometricTemplate = window.biometricTemplate || `template_${Date.now()}`;
+                
+                console.log('[SCAN] All 3 captures complete. Showing confirm button for user to click.');
+                console.log('[SCAN] Courses to register:', courseIds);
+                
+                // Show confirm button
+                const confirmBtn = document.getElementById('startEnrollBtn');
+                const cancelBtn = document.querySelector('button[onclick="closeBiometricRegistrationModal()"]');
+                
+                if (confirmBtn) {
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = '<i class="fas fa-check mr-1"></i> Confirm 3 Captures';
+                    confirmBtn.className = 'w-full px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm rounded-lg transition';
+                    
+                    confirmBtn.onclick = async function() {
+                        console.log('[CONFIRM] User clicked confirm button');
+                        console.log('[CONFIRM] ⚠️ CRITICAL: Setting enrollmentConfirmedSuccessfully flag IMMEDIATELY');
+                        
+                        // CRITICAL: Set flag IMMEDIATELY before any async operations
+                        // This prevents closeBiometricRegistrationModal from sending cancel
+                        window.enrollmentConfirmedSuccessfully = true;
+                        
+                        confirmBtn.disabled = true;
+                        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Confirming...';
+                        
+                        // Hide cancel button so user can't interrupt
+                        if (cancelBtn) {
+                            cancelBtn.style.display = 'none';
+                        }
+                        
+                        // SOUND EFFECT: Play confirmation sound and wait for it to complete
+                        console.log('[CONFIRM] Waiting for confirmation sound to complete...');
+                        await playConfirmationSound();
+                        console.log('[CONFIRM] Confirmation sound completed - now submitting enrollment');
+                        
+                        console.log('[CONFIRM] Submitting biometric enrollment with courses:', courseIds);
+                        console.log('[CONFIRM] Biometric template:', biometricTemplate);
+                        
+                        try {
+                            // Call submitBiometricEnrollment to save the biometric data
+                            // Await the promise to wait for completion
+                            await submitBiometricEnrollment(confirmations, biometricTemplate, courseIds);
+                            console.log('[CONFIRM] ✓ Enrollment submission succeeded');
+                        } catch (err) {
+                            console.error('[CONFIRM] Enrollment error:', err);
+                            confirmBtn.disabled = false;
+                            confirmBtn.innerHTML = '<i class="fas fa-check mr-1"></i> Confirm 3 Captures';
+                            if (cancelBtn) {
+                                cancelBtn.style.display = 'block';
+                            }
+                        }
+                    };
+                }
+                
+                // Hide cancel button during enrollment to prevent accidental clicks
+                if (cancelBtn) {
+                    console.log('[SCAN] Hiding Cancel button during enrollment');
+                    cancelBtn.style.display = 'none';
+                }
+                
+                return;
+            }
         } else {
-            console.error('[PROGRESS] percentageDisplay element not found!');
+            // Failed capture / non-progress status - do not increment the counter
+            console.log('[SCAN] Not counting scan (success=false or invalid step):', message.message);
+
+            if (status === 'capture_failed') {
+                showNotification(message.message || 'Image quality too low. Please try again.', 'warning');
+            }
         }
         
-        // Update counter
-        const counter = document.getElementById('enrollmentCounter');
-        if (counter) {
-            const newText = `${confirmations}/5`;
-            counter.textContent = newText;
-            console.log('[PROGRESS] Updated counter to:', newText);
-        } else {
-            console.error('[PROGRESS] counter element not found!');
-        }
-        
-        // Update status
+        // Update status - show current message from ESP32
         const statusEl = document.getElementById('enrollmentStatus');
-        if (statusEl) {
-            statusEl.innerHTML = `<i class="fas fa-fingerprint mr-2"></i> Scan ${confirmations}/5 captured - Quality: ${quality}%`;
+        if (statusEl && message.message) {
+            statusEl.innerHTML = `<i class="fas fa-fingerprint mr-2"></i> ${message.message}`;
         }
         
-        // Update icon
+        // Update icon - show green check for successful scans, pulse for in-progress
         const scanIcon = document.getElementById('scanIcon');
-        if (scanIcon) {
-            scanIcon.innerHTML = '<i class="fas fa-circle-check text-5xl text-green-500 mb-3"></i>';
+        if (scanIcon && success !== true) {
+            scanIcon.innerHTML = '<i class="fas fa-fingerprint text-5xl text-blue-500 mb-3 animate-pulse"></i>';
         }
+        
         const scanTitle = document.getElementById('scanTitle');
-        if (scanTitle) {
-            scanTitle.textContent = `Scan ${confirmations}/5`;
+        if (scanTitle && success !== true) {
+            // Show title with scan progress
+            scanTitle.textContent = `Capture ${confirmations}/3`;
         }
+        
         const scanSubtitle = document.getElementById('scanSubtitle');
         if (scanSubtitle) {
-            scanSubtitle.textContent = `Quality: ${quality}%`;
+            // Show quality if available, otherwise show message
+            if (quality > 0) {
+                scanSubtitle.textContent = `Quality: ${quality}%`;
+            } else if (message.message) {
+                scanSubtitle.textContent = message.message;
+            } else {
+                scanSubtitle.textContent = '';
+            }
         }
         
-        console.log('[SCAN] Update complete - slot:', confirmations, 'progress:', progress + '%');
-        
-        if (confirmations < 5) {
-            setTimeout(() => {
-                startNextScan();
-            }, 500);
-        } else {
-            handleEnrollmentComplete({success: true, courses_enrolled: courseIds.length});
-        }
+        console.log('[SCAN] Update complete - confirmations:', confirmations, '/3');
     }
     
     function handleEnrollmentComplete(message) {
-        console.log('[ENROLLMENT] Complete:', message);
-        statusEl.innerHTML = '<i class="fas fa-check mr-2"></i> Enrollment complete!';
-        scanTitle.textContent = 'Success!';
-        scanSubtitle.textContent = `${courseIds.length} course(s) enrolled`;
-        submitBiometricEnrollment(confirmations, biometricTemplate, courseIds);
-        if (socket.readyState === WebSocket.OPEN) socket.close();
+        console.log('[ENROLLMENT] ESP32 says enrollment is complete - showing confirm button');
+        
+        // Get DOM elements
+        const statusEl = document.getElementById('enrollmentStatus');
+        const scanTitle = document.getElementById('scanTitle');
+        const scanSubtitle = document.getElementById('scanSubtitle');
+        const scanIcon = document.getElementById('scanIcon');
+        const btn = document.getElementById('startEnrollBtn');
+        const cancelBtn = document.querySelector('button[onclick="closeBiometricRegistrationModal()"]');
+        const courseIds = window.enrollmentCourseIds || [];
+        
+        // Update UI to show 3 scans complete - but DON'T automatically save yet
+        if (scanIcon) scanIcon.innerHTML = '<i class="fas fa-circle-check text-5xl text-green-500 mb-3"></i>';
+        if (scanTitle) scanTitle.textContent = '3 Scans Complete!';
+        if (scanSubtitle) scanSubtitle.textContent = message.message || 'All scans captured successfully';
+        if (statusEl) statusEl.innerHTML = `<i class="fas fa-check-circle mr-2"></i> ${message.message || 'Ready to save'}`;
+        
+        // Update button to show Confirm button - wait for user click
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check mr-1"></i> Confirm & Save to Database';
+            btn.className = 'w-full px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm rounded-lg transition';
+            
+            // Set onclick to submit when user clicks
+            btn.onclick = async function() {
+                console.log('[CONFIRM] User clicked Confirm button - saving to database');
+                console.log('[CONFIRM] ⚠️ CRITICAL: Setting enrollmentConfirmedSuccessfully flag IMMEDIATELY');
+                
+                // CRITICAL: Set flag IMMEDIATELY before any async operations
+                window.enrollmentConfirmedSuccessfully = true;
+                
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Saving to database...';
+                
+                // Hide cancel button so user can't interrupt
+                if (cancelBtn) {
+                    cancelBtn.style.display = 'none';
+                }
+                
+                try {
+                    await playConfirmationSound();
+                    // Call submitBiometricEnrollment to save the biometric data
+                    await submitBiometricEnrollment(confirmations, window.biometricTemplate, courseIds);
+                    console.log('[CONFIRM] ✓ Enrollment submission succeeded');
+                } catch (err) {
+                    console.error('[CONFIRM] Enrollment error:', err);
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-redo mr-1"></i> Retry';
+                }
+            };
+        }
+        
+        // Show notification that scans are complete
+        showNotification('✓ All 3 scans complete! Click "Confirm & Save" to register.', 'success');
+        
+        console.log('[ENROLLMENT] Showing confirm button - waiting for user to click');
     }
     
     function handleEnrollmentError(message) {
@@ -1136,148 +2389,419 @@ function startBiometricEnrollment(instructorName) {
     
     // Start scanning for next fingerprint
     async function startNextScan() {
-        confirmations++;
-        console.log('[SCAN] Starting scan', confirmations);
+        const nextScanNumber = confirmations + 1;
+        console.log('[SCAN] Starting scan', nextScanNumber);
         
         scanIcon.innerHTML = '<i class="fas fa-fingerprint text-5xl text-blue-500 mb-3 animate-pulse"></i>';
-        scanTitle.textContent = `Scan ${confirmations} of 5`;
+        scanTitle.textContent = `Scan ${nextScanNumber} of 3`;
         scanSubtitle.textContent = 'Place your finger on sensor';
-        statusEl.innerHTML = `<i class="fas fa-fingerprint mr-2"></i> Ready for scan ${confirmations}...`;
+        statusEl.innerHTML = `<i class="fas fa-fingerprint mr-2"></i> Ready for scan ${nextScanNumber}...`;
         
         try {
             const enrollPayload = {
-                slot: confirmations,
+                slot: nextScanNumber,
                 template_id: enrollmentId
             };
             
             console.log('[SCAN] Sending to Arduino:', JSON.stringify(enrollPayload));
             
-            const response = await fetch(`http://${R307_IP}/enroll`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(enrollPayload)
-            });
+            // Poll ESP32 for finger detection in real-time
+            pollFingerDetection(nextScanNumber, enrollPayload);
             
-            const r307Data = await response.json();
-            console.log('[SCAN] Arduino response:', r307Data);
-            
-            if (r307Data.success) {
-                statusEl.innerHTML = `<i class="fas fa-fingerprint mr-2"></i> Scanning fingerprint ${confirmations}/5...`;
-            } else {
-                console.error('[SCAN] Arduino returned error:', r307Data.message);
-            }
         } catch (error) {
             console.error('[SCAN] Arduino error:', error);
-            showNotification(`Cannot reach Arduino at ${R307_IP}`, 'danger');
+            showNotification(`Cannot reach ESP32 at ${R307_IP}`, 'danger');
             scanIcon.innerHTML = '<i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-3"></i>';
             scanTitle.textContent = 'Connection Error';
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-redo mr-1"></i> Retry';
         }
     }
+    
+    // FALLBACK: Create simple notification if not available
+    window.showNotificationFallback = function(message, type) {
+        console.log(`[NOTIFICATION-FALLBACK] ${type.toUpperCase()}: ${message}`);
+        
+        // Create a simple alert-like notification
+        const notifDiv = document.createElement('div');
+        notifDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px 24px;
+            border-radius: 8px;
+            font-weight: bold;
+            z-index: 9999;
+            animation: slideIn 0.3s ease;
+            font-size: 16px;
+        `;
+        
+        if (type === 'success') {
+            notifDiv.style.backgroundColor = '#10b981';
+            notifDiv.style.color = 'white';
+        } else if (type === 'warning') {
+            notifDiv.style.backgroundColor = '#f59e0b';
+            notifDiv.style.color = 'white';
+        } else if (type === 'info') {
+            notifDiv.style.backgroundColor = '#3b82f6';
+            notifDiv.style.color = 'white';
+        } else {
+            notifDiv.style.backgroundColor = '#ef4444';
+            notifDiv.style.color = 'white';
+        }
+        
+        notifDiv.textContent = message;
+        document.body.appendChild(notifDiv);
+        
+        setTimeout(() => notifDiv.remove(), 3000);
+    };
+    
+    // Poll for enrollment status via Django API
+    async function pollEnrollmentStatus() {
+        let pollCount = 0;
+        const maxPolls = 600; // 60 seconds at 100ms intervals
+        const pollInterval = 100;
+        
+        console.log('[POLLING] Starting enrollment status polling via Django API');
+        
+        const pollTimer = setInterval(async () => {
+            pollCount++;
+            
+            if (pollCount % 10 === 1) {
+                console.log(`[POLLING] Checking enrollment status... (${pollCount}/${maxPolls})`);
+            }
+            
+            try {
+                const response = await fetch(`/api/student/enroll/status/?student_id=${studentId}`, {
+                    method: 'GET',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const enrollments = data.enrollments || [];
+                    
+                    if (enrollments.length > 0) {
+                        const latest = enrollments[enrollments.length - 1];
+                        if (latest.fingerprint_id) {
+                            console.log('[POLLING] ✓ Enrollment completed with fingerprint ID:', latest.fingerprint_id);
+                            clearInterval(pollTimer);
+                            return true;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('[POLLING] Status check failed:', e);
+            }
+            
+            if (pollCount >= maxPolls) {
+                console.log('[POLLING] Max polls reached, enrollment timeout');
+                clearInterval(pollTimer);
+                return false;
+            }
+        }, pollInterval);
+    };
+    
+    // Simple delay for scan completion
+    async function pollFingerDetection(scanNumber, enrollPayload) {
+        console.log(`[POLLING] Waiting for finger scan ${scanNumber}...`);
+        // Just wait for 30 seconds - Django/MQTT will handle the actual enrollment
+        // The WebSocket will notify us when complete
+        await new Promise(resolve => setTimeout(resolve, 30000));
+    }
 }
 
-// Submit biometric enrollment to backend
-function submitBiometricEnrollment(confirmations, biometricTemplate, courseIds) {
-    // Get CSRF token
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
-        }
-        return cookieValue;
+// Check for existing fingerprints for this student-instructor combination
+function checkExistingFingerprints(courseIds) {
+    const studentId = document.querySelector('[data-student-id]')?.getAttribute('data-student-id') || '';
+    
+    if (!studentId || !courseIds || courseIds.length === 0) {
+        // Proceed without checking if no student ID or courses
+        proceedWithEnrollment(courseIds);
+        return;
     }
     
-    // Submit for each selected course
-    let successCount = 0;
-    let failureCount = 0;
-    const totalCourses = courseIds.length;
+    console.log('[FINGERPRINT CHECK] Checking for existing fingerprints for student:', studentId);
     
-    courseIds.forEach((courseId, index) => {
-        const enrollmentData = {
-            course_id: courseId,
-            biometric_data: biometricTemplate,
-            biometric_type: 'fingerprint',
-            confirmations: confirmations
-        };
-        
-        console.log(`Submitting biometric enrollment for course ${courseId}:`, enrollmentData);
-        
-        fetch('{% url "dashboard:api_biometric_enroll" %}', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'),
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(enrollmentData)
+    // Check if student has existing biometric enrollment
+    fetch('{% url "dashboard:api_check_biometric" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            student_id: studentId,
+            course_ids: courseIds
         })
-        .then(response => response.json())
-        .then(data => {
-            console.log(`Enrollment response for course ${courseId}:`, data);
-            
-            if (data.success) {
-                successCount++;
-            } else {
-                failureCount++;
-            }
-            
-            // Update UI when all courses are processed
-            if (successCount + failureCount === totalCourses) {
-                const statusEl = document.getElementById('enrollmentStatus');
-                const scanTitle = document.getElementById('scanTitle');
-                const scanSubtitle = document.getElementById('scanSubtitle');
-                const scanIcon = document.getElementById('scanIcon');
-                
-                if (failureCount === 0) {
-                    // All successful
-                    scanIcon.innerHTML = '<i class="fas fa-check-circle text-6xl text-green-500 mb-4"></i>';
-                    scanTitle.textContent = 'Enrollment Successful!';
-                    scanSubtitle.textContent = `Fingerprint registered in ${successCount} course(s)`;
-                    statusEl.innerHTML = `<i class="fas fa-check mr-2 text-green-600"></i> <span class="text-green-700">Fingerprint enrolled successfully</span>`;
-                    
-                    showNotification(`Fingerprint enrolled in ${successCount} course(s) with 5 confirmations!`, 'success');
-                    
-                    setTimeout(() => {
-                        closeBiometricRegistrationModal();
-                    }, 2000);
-                } else {
-                    // Partial or complete failure
-                    scanIcon.innerHTML = '<i class="fas fa-exclamation-circle text-6xl text-orange-500 mb-4"></i>';
-                    scanTitle.textContent = failureCount === totalCourses ? 'Enrollment Failed' : 'Partial Enrollment';
-                    scanSubtitle.textContent = `Success: ${successCount}/${totalCourses}`;
-                    statusEl.innerHTML = `<i class="fas fa-warning mr-2 text-orange-600"></i> <span class="text-orange-700">Enrolled in ${successCount}/${totalCourses} courses</span>`;
-                    
-                    showNotification(`Enrolled in ${successCount}/${totalCourses} courses`, failureCount === totalCourses ? 'error' : 'warning');
-                    
-                    // Re-enable start button
-                    const btn = document.getElementById('startEnrollBtn');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-play mr-2"></i> Start Enrollment';
-                }
-            }
-        })
-        .catch(error => {
-            console.error(`Enrollment error for course ${courseId}:`, error);
-            failureCount++;
-            
-            if (successCount + failureCount === totalCourses) {
-                showNotification(`Error during enrollment: ${error.message}`, 'error');
-                
-                // Re-enable start button
-                const btn = document.getElementById('startEnrollBtn');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-play mr-2"></i> Start Enrollment';
-            }
-        });
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('[FINGERPRINT CHECK] Response:', data);
+        
+        if (data.has_existing_registration) {
+            // Show warning that they can re-register and old fingerprint will be replaced
+            showExistingFingerprintWarning(courseIds, data.instructor_name || 'this instructor');
+        } else {
+            // No existing fingerprint, proceed normally
+            // Defer to next tick to ensure proceedWithEnrollment is loaded
+            setTimeout(() => proceedWithEnrollment(courseIds), 0);
+        }
+    })
+    .catch(error => {
+        console.warn('[FINGERPRINT CHECK] Could not check existing fingerprints, proceeding anyway:', error);
+        // Proceed even if check fails - don't block enrollment
+        // Defer to next tick to ensure proceedWithEnrollment is loaded
+        setTimeout(() => proceedWithEnrollment(courseIds), 0);
     });
 }
+
+// Show warning if student already has a fingerprint registered
+function showExistingFingerprintWarning(courseIds, instructorName) {
+    const modal = document.createElement('div');
+    modal.id = 'existingFingerprintWarningModal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[999]';
+    modal.innerHTML = `
+        <div class="bg-white rounded-lg shadow-2xl max-w-md w-full mx-4 p-6">
+            <div class="text-center mb-4">
+                <i class="fas fa-fingerprint text-5xl text-orange-500 mb-2 block"></i>
+                <h2 class="text-xl font-bold text-gray-800">Existing Fingerprint Detected</h2>
+            </div>
+            
+            <p class="text-gray-600 text-center mb-6">
+                You have already registered a fingerprint for <strong>${instructorName}</strong>. 
+                <br><br>
+                If you register a different fingerprint now, your previous fingerprint will be <strong>automatically deleted</strong> and replaced with the new one.
+            </p>
+            
+            <p class="text-sm text-gray-500 text-center mb-6 bg-blue-50 p-3 rounded">
+                <i class="fas fa-info-circle mr-1"></i>
+                The old fingerprint will be removed from the sensor, freeing up space for future registrations.
+            </p>
+            
+            <div class="flex gap-3">
+                <button onclick="closeExistingFingerprintWarning()" 
+                        class="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold rounded-lg transition">
+                    <i class="fas fa-arrow-left mr-1"></i> Go Back
+                </button>
+                <button onclick="proceedWithEnrollmentAfterWarning()" 
+                        class="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg transition">
+                    <i class="fas fa-fingerprint mr-1"></i> Continue
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    console.log('[ENROLLMENT] Showing existing fingerprint warning');
+}
+
+function closeExistingFingerprintWarning() {
+    const modal = document.getElementById('existingFingerprintWarningModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+function proceedWithEnrollmentAfterWarning() {
+    closeExistingFingerprintWarning();
+    const courseIds = window.enrollmentCourseIds;
+    // Defer to next tick to ensure proceedWithEnrollment is loaded
+    setTimeout(() => proceedWithEnrollment(courseIds), 0);
+}
+
+// ============================================================
+// CRITICAL: Define getInstructorId FIRST before it's used by other functions
+// ============================================================
+function getInstructorId() {
+    // First try: look for instructor ID in the enrollment context (most reliable)
+    if (window.currentInstructorId) {
+        console.log('[INSTRUCTOR] Using cached instructor ID:', window.currentInstructorId);
+        return window.currentInstructorId;
+    }
+    
+    // Second try: look for data attribute on body
+    if (document.body.dataset.instructorId) {
+        window.currentInstructorId = document.body.dataset.instructorId;
+        console.log('[INSTRUCTOR] Found instructor ID from body data:', window.currentInstructorId);
+        return window.currentInstructorId;
+    }
+    
+    // Third try: look for element with instructor ID
+    const instructorIdElement = document.getElementById('instructorId');
+    if (instructorIdElement) {
+        const id = instructorIdElement.textContent || instructorIdElement.value;
+        if (id) {
+            window.currentInstructorId = id;
+            console.log('[INSTRUCTOR] Found instructor ID from element:', window.currentInstructorId);
+            return window.currentInstructorId;
+        }
+    }
+    
+    // Fourth try: from URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('instructor_id')) {
+        window.currentInstructorId = urlParams.get('instructor_id');
+        console.log('[INSTRUCTOR] Found instructor ID from URL:', window.currentInstructorId);
+        return window.currentInstructorId;
+    }
+    
+    // Fifth try: from page title or heading
+    const heading = document.querySelector('h1, h2, h3');
+    if (heading && heading.textContent) {
+        const text = heading.textContent;
+        const match = text.match(/(\d+)/);
+        if (match) {
+            window.currentInstructorId = 'instructor_' + match[1];
+            console.log('[INSTRUCTOR] Extracted instructor ID from heading:', window.currentInstructorId);
+            return window.currentInstructorId;
+        }
+    }
+    
+    // Fallback
+    console.warn('[INSTRUCTOR] Could not detect instructor ID - using fallback');
+    window.currentInstructorId = 'default_instructor';
+    return window.currentInstructorId;
+}
+
+function getCurrentStudentId() {
+    const studentId = document.querySelector('[data-student-id]')?.getAttribute('data-student-id');
+    return studentId || 'unknown_student';
+}
+
+// Helper function to get unique enrollment state key for this instructor
+function getEnrollmentStateKey() {
+    const instructorId = getInstructorId();
+    return `enrollment_in_progress_instructor_${instructorId}`;
+}
+
+// Helper function to check if ANOTHER STUDENT is currently enrolling
+// Returns true only if a DIFFERENT student is enrolling
+// Returns false if THIS student is enrolling or no one is (allows same user through)
+function isInstructorEnrollmentInProgress() {
+    const key = getEnrollmentStateKey();
+    const enrollingStudentId = sessionStorage.getItem(key);
+    const currentStudentId = getCurrentStudentId();
+    
+    // If no one is enrolling, allow through
+    if (!enrollingStudentId) {
+        return false;
+    }
+    
+    // CRITICAL: If THE SAME student is enrolling, allow them through
+    // This prevents blocking a user's own confirmation
+    if (enrollingStudentId === currentStudentId) {
+        console.log('[ENROLLMENT] Same student enrolling - allowing. Student:', currentStudentId);
+        return false;
+    }
+    
+    // A DIFFERENT student is enrolling - block
+    console.log('[ENROLLMENT] Different student enrolling! Current:', currentStudentId, 'Enrolling:', enrollingStudentId);
+    return true;
+}
+
+// Helper function to set enrollment status for THIS instructor
+function setInstructorEnrollmentInProgress(status) {
+    const key = getEnrollmentStateKey();
+    const currentStudentId = getCurrentStudentId();
+    
+    if (status) {
+        console.log('[ENROLLMENT] SETTING lock - Student:', currentStudentId);
+        sessionStorage.setItem(key, currentStudentId);
+    } else {
+        console.log('[ENROLLMENT] CLEARING lock - Student:', currentStudentId);
+        sessionStorage.removeItem(key);
+    }
+}
+
+// Start Biometric Enrollment - Main entry point for Start button
+function startBiometricEnrollment(instructorName) {
+    console.log('[ENROLLMENT] Starting biometric enrollment');
+    
+    // CRITICAL: Only check lock if NOT confirming an existing enrollment
+    // When confirming, we're already in the middle of enrollment, so lock should be bypassed
+    if (!window.isConfirmingEnrollment && isInstructorEnrollmentInProgress()) {
+        const instructorId = getInstructorId();
+        const key = getEnrollmentStateKey();
+        console.warn('[ENROLLMENT] Enrollment is in progress for instructor:', instructorId, 'Key:', key);
+        if (typeof showNotification === 'function') {
+            showNotification('Another student is currently registering under this instructor. Please wait for them to finish.', 'warning');
+        }
+        console.log('[ENROLLMENT] Enrollment blocked - another student under same instructor is in progress');
+        return;
+    }
+    
+    // Reset confirmation flag if we're starting a new enrollment
+    window.isConfirmingEnrollment = false;
+    
+    // Get pre-stored enrolled course IDs
+    const courseIds = window.enrollmentCourseIds;
+    if (!courseIds || courseIds.length === 0) {
+        if (typeof showNotification === 'function') {
+            showNotification('No courses found for enrollment', 'warning');
+        }
+        return;
+    }
+    
+    console.log(`[ENROLLMENT] Enrolling in ${courseIds.length} courses:`, courseIds);
+    
+    // Check for existing fingerprints
+    checkExistingFingerprints(courseIds);
+}
+</script>
+
+<!-- Registration Instructors Functions -->
+<script>
+// ============================================================
+// SOUND EFFECTS - Defined first at global scope
+// ============================================================
+// Note: The following functions are now defined in the first script block for early availability:
+// - openInstructorRegistration
+// - closeInstructorRegistrationModal
+// - openQRCodeRegistration
+// - openBiometricRegistration
+// - closeBiometricRegistrationModal
+// - playScanCaptureSound
+// - playConfirmationSound
+// - playEnrollmentSuccessSound
+// - playEnrollmentErrorSound
+// ============================================================
+
+// NOTE: Global variables are now declared at the top of the script block for early availability
+
+// Clear enrollment lock if page unloads (only for the student who initiated it)
+window.addEventListener('beforeunload', () => {
+    const key = getEnrollmentStateKey();
+    const enrollingStudentId = sessionStorage.getItem(key);
+    const currentStudentId = getCurrentStudentId();
+    if (enrollingStudentId === currentStudentId) {
+        setInstructorEnrollmentInProgress(false);
+    }
+});
+
+// Also clear old stale locks on page load (older than 30 minutes)
+window.addEventListener('load', () => {
+    const key = getEnrollmentStateKey();
+    const timestamp = sessionStorage.getItem(key + '_timestamp');
+    if (timestamp) {
+        const ageMinutes = (Date.now() - parseInt(timestamp)) / 60000;
+        if (ageMinutes > 30) {
+            console.log('[ENROLLMENT] Stale lock detected (age:', ageMinutes.toFixed(1), 'min) - clearing');
+            setInstructorEnrollmentInProgress(false);
+        }
+    }
+})
+
+// ============================================================
+// Note: The following functions are now defined in the first script block for early availability:
+// - checkExistingFingerprints
+// - showExistingFingerprintWarning
+// - closeExistingFingerprintWarning
+// - proceedWithEnrollmentAfterWarning
+// - startBiometricEnrollment
+// - submitBiometricEnrollment (now defined early in first script block)
+// ============================================================
+
 
 function openRegistrationMethods(instructorId, instructorName) {
     // Close modals first
@@ -1360,6 +2884,182 @@ function safeOpenDroppedModal() {
         console.error('safeOpenDroppedModal error', e);
     }
 }
+
+/**
+ * Update enrolled course cards to show biometric registration status after successful enrollment
+ */
+function updateEnrolledCoursesAfterBiometricRegistration(courseIds) {
+    console.log('[UPDATE] Updating course cards for courses:', courseIds);
+    console.log('[UPDATE] Window location:', window.location.pathname);
+    
+    if (!courseIds || courseIds.length === 0) {
+        console.warn('[UPDATE] No course IDs provided');
+        return;
+    }
+    
+    // Add a small delay to ensure database writes are complete
+    setTimeout(() => {
+        const url = '{% url "dashboard:get_enrolled_courses_status" %}?course_ids=' + courseIds.join(',');
+        console.log('[UPDATE] Fetching from URL:', url);
+        
+        // Fetch updated enrollment data
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => {
+            console.log('[UPDATE] Response status:', response.status);
+            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            return response.json();
+        })
+        .then(data => {
+            console.log('[UPDATE] Received updated enrollment data:', data);
+            
+            if (!data.success || !data.enrollments) {
+                console.warn('[UPDATE] Failed to get updated enrollment data:', data.message);
+                // Fallback: reload page if we can't get data
+                setTimeout(() => {
+                    console.log('[UPDATE] Falling back to page reload (no data). Will reload in 1.5s');
+                    window.location.reload();
+                }, 1500);
+                return;
+            }
+            
+            console.log('[UPDATE] Attempting to update cards...');
+            
+            // Update each enrollment card in the DOM
+            let updatedCount = 0;
+            data.enrollments.forEach((enrollment, idx) => {
+                console.log(`[UPDATE] Processing enrollment ${idx + 1}/${data.enrollments.length}:`, enrollment);
+                const updated = updateCourseCardStatus(enrollment.id, enrollment.has_biometric, enrollment.has_qr);
+                if (updated) updatedCount++;
+            });
+            
+            console.log(`[UPDATE] Updated ${updatedCount} of ${data.enrollments.length} course cards`);
+            
+            // If we couldn't update any cards, reload page as fallback
+            if (updatedCount === 0 && data.enrollments.length > 0) {
+                console.warn('[UPDATE] No cards were updated - falling back to page reload');
+                setTimeout(() => {
+                    console.log('[UPDATE] Reloading page due to 0 cards updated');
+                    window.location.reload();
+                }, 1500);
+            } else if (updatedCount > 0) {
+                console.log('[UPDATE] ✓ Successfully updated cards without reload');
+            }
+        })
+        .catch(error => {
+            console.error('[UPDATE] Error updating course cards:', error);
+            // Fallback: reload page after 2 seconds if update fails
+            setTimeout(() => {
+                console.log('[UPDATE] Falling back to page reload (error). Will reload in 2s');
+                window.location.reload();
+            }, 2000);
+        });
+    }, 500); // Wait 500ms to ensure database is updated
+}
+
+/**
+ * Update a specific course card's biometric and QR status
+ * Returns true if card was found and updated, false otherwise
+ */
+function updateCourseCardStatus(enrollmentId, hasBiometric, hasQR) {
+    console.log(`[UPDATE-CARD] Updating card for enrollment ${enrollmentId}: biometric=${hasBiometric}, QR=${hasQR}`);
+    
+    // Find all course cards and update the one matching this enrollment
+    const cards = document.querySelectorAll('.course-card-student');
+    console.log(`[UPDATE-CARD] Found ${cards.length} total course cards`);
+    
+    let found = false;
+    
+    cards.forEach((card, index) => {
+        // Get the onclick attributes to find matching card
+        const onclick = card.getAttribute('onclick');
+        if (!onclick) {
+            console.log(`[UPDATE-CARD] Card ${index} has no onclick`);
+            return;
+        }
+        
+        // Check if this onclick contains the enrollment ID
+        const hasEnrollmentId = onclick.includes(`(${enrollmentId},`) || onclick.includes(`(${enrollmentId} `) || onclick.indexOf(enrollmentId.toString()) !== -1;
+        
+        if (!hasEnrollmentId) {
+            console.log(`[UPDATE-CARD] Card ${index} doesn't match enrollment ${enrollmentId}`);
+            return;
+        }
+        
+        console.log(`[UPDATE-CARD] ✓ Found matching card for enrollment ${enrollmentId} at index ${index}`);
+        found = true;
+        
+        // Find the registration status indicators
+        const statusDiv = card.querySelector('.flex.items-center.gap-4.mt-2');
+        if (!statusDiv) {
+            console.warn(`[UPDATE-CARD] Could not find status div for enrollment ${enrollmentId}`);
+            return;
+        }
+        
+        console.log(`[UPDATE-CARD] Found status div with children:`, statusDiv.children.length);
+        
+        // Find all status indicator pairs
+        const indicators = statusDiv.querySelectorAll('.flex.items-center.gap-1');
+        console.log(`[UPDATE-CARD] Found ${indicators.length} status indicators`);
+        
+        if (indicators.length >= 2) {
+            // Update QR status (first indicator)
+            const qrIndicator = indicators[0];
+            if (qrIndicator) {
+                if (hasQR) {
+                    qrIndicator.innerHTML = `
+                        <i class="fas fa-qrcode text-xs text-white opacity-70"></i>
+                        <span class="text-xs font-semibold text-white flex items-center gap-0.5">
+                            <i class="fas fa-check-circle" style="color: #22c55e; text-shadow: 0 0 2px rgba(255,255,255,0.8), 0 0 4px rgba(255,255,255,0.6); filter: drop-shadow(0 0 1px white);"></i> Registered
+                        </span>
+                    `;
+                    console.log(`[UPDATE-CARD] ✓ QR status updated to REGISTERED`);
+                } else {
+                    qrIndicator.innerHTML = `
+                        <i class="fas fa-qrcode text-xs text-white opacity-70"></i>
+                        <span class="text-xs font-semibold text-white opacity-60 flex items-center gap-0.5">
+                            <i class="fas fa-times-circle" style="color: #ef4444; text-shadow: 0 0 2px rgba(255,255,255,0.8), 0 0 4px rgba(255,255,255,0.6); filter: drop-shadow(0 0 1px white);"></i> Not Registered
+                        </span>
+                    `;
+                    console.log(`[UPDATE-CARD] QR status remains Not Registered`);
+                }
+            }
+            
+            // Update biometric status (second indicator)
+            const biometricIndicator = indicators[1];
+            if (biometricIndicator) {
+                if (hasBiometric) {
+                    biometricIndicator.innerHTML = `
+                        <i class="fas fa-fingerprint text-xs text-white opacity-70"></i>
+                        <span class="text-xs font-semibold text-white flex items-center gap-0.5">
+                            <i class="fas fa-check-circle" style="color: #22c55e; text-shadow: 0 0 2px rgba(255,255,255,0.8), 0 0 4px rgba(255,255,255,0.6); filter: drop-shadow(0 0 1px white);"></i> Registered
+                        </span>
+                    `;
+                    console.log(`[UPDATE-CARD] ✓ Fingerprint status updated to REGISTERED`);
+                } else {
+                    biometricIndicator.innerHTML = `
+                        <i class="fas fa-fingerprint text-xs text-white opacity-70"></i>
+                        <span class="text-xs font-semibold text-white opacity-60 flex items-center gap-0.5">
+                            <i class="fas fa-times-circle" style="color: #ef4444; text-shadow: 0 0 2px rgba(255,255,255,0.8), 0 0 4px rgba(255,255,255,0.6); filter: drop-shadow(0 0 1px white);"></i> Not Registered
+                        </span>
+                    `;
+                    console.log(`[UPDATE-CARD] Fingerprint status remains Not Registered`);
+                }
+            }
+        } else {
+            console.warn(`[UPDATE-CARD] Expected 2+ indicators but found ${indicators.length}`);
+        }
+        
+        console.log(`[UPDATE-CARD] ✓ Card updated successfully`);
+    });
+    
+    return found;
+}
+
 
 </script>
 

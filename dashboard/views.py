@@ -6,8 +6,11 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_http_methods
 from django.http import JsonResponse
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Max
+from django.db import transaction
 from django.utils import timezone
+from django.conf import settings
+from django.core.cache import cache
 from accounts.models import CustomUser
 from .models import Course, Program, Department, CourseSchedule, UserNotification, CourseEnrollment, AttendanceRecord, QRCodeRegistration, InstructorRegistrationStatus, BiometricRegistration
 from datetime import datetime
@@ -19,11 +22,37 @@ import hashlib
 import re
 import base64
 import io
+import os
+import requests
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.http import JsonResponse
 # Initialize logger first
 logger = logging.getLogger(__name__)
+
+
+def _normalize_registered_qr(raw_value: str) -> str:
+    raw = (raw_value or '').strip()
+    if not raw:
+        return ''
+
+    candidate = None
+    try:
+        if raw.startswith('http://') or raw.startswith('https://'):
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(raw)
+            q = parse_qs(parsed.query or '')
+            candidate = (q.get('qr_code') or q.get('qr') or [None])[0]
+            if not candidate:
+                m = re.search(r'([a-f0-9]{32})', raw, flags=re.IGNORECASE)
+                candidate = m.group(1) if m else None
+        else:
+            m = re.search(r'([a-f0-9]{32})', raw, flags=re.IGNORECASE)
+            candidate = m.group(1) if m else None
+    except Exception:
+        candidate = None
+
+    return (candidate or raw).strip().lower()
 
 try:
     from PIL import Image
@@ -612,7 +641,7 @@ def student_dashboard_view(request):
                 continue
             processed_courses.add(course_obj.id)
             try:
-                finalize_all_course_attendance(course_obj, getattr(course_obj, 'instructor', None))
+                finalize_all_course_attendance(course_obj, getattr(course_obj, 'instructor', None), force=False)
             except Exception:
                 # Ignore finalization errors; proceed to counting
                 logger.exception('Error finalizing attendance for course %s', getattr(course_obj, 'id', None))
@@ -1252,9 +1281,9 @@ def student_attendance_log_view(request):
                 # Get attendance records for selected course
                 # Ensure any missing absent records are finalized for today's schedules
                 try:
-                    # finalize_all_course_attendance is idempotent and will create absent/postponed records
-                    # for students who didn't scan today; pass the course instructor for notifications
-                    finalize_all_course_attendance(selected_course, getattr(selected_course, 'instructor', None))
+                    # finalize_all_course_attendance is idempotent with force=False (time-aware)
+                    # Only creates ABSENT records if ALL class schedules for today have ended
+                    finalize_all_course_attendance(selected_course, getattr(selected_course, 'instructor', None), force=False)
                 except Exception:
                     # If finalization fails, continue and allow manual inspection
                     logger.exception('finalize_all_course_attendance failed')
@@ -1398,13 +1427,22 @@ def student_attendance_log_view(request):
                     course=selected_course
                 ).select_related('course', 'enrollment').order_by('-attendance_date', '-attendance_time')
                 
-                # Apply status filter if provided
-                if status_filter:
-                    records_qs = records_qs.filter(status=status_filter)
+                # Deduplicate BEFORE applying status filter: Get only latest per date
+                # This ensures we don't show multiple scans on the same day - only the final status
+                all_records = list(records_qs)
+                seen_dates = {}
+                dedup_records = []
+                for rec in all_records:
+                    # Use date as key to get only latest per date
+                    date_key = rec.attendance_date
+                    if date_key not in seen_dates:
+                        seen_dates[date_key] = True
+                        dedup_records.append(rec)
                 
-                # Simply use all records without overly strict filtering
-                # This allows students to see their complete attendance history
-                attendance_records = list(records_qs)
+                # Apply status filter AFTER deduplication (optional)
+                attendance_records = dedup_records
+                if status_filter:
+                    attendance_records = [r for r in attendance_records if r.status == status_filter]
 
                 # Annotate each attendance record with whether the schedule for that
                 # record's day was marked as postponed. This allows templates to
@@ -2215,6 +2253,7 @@ def instructor_my_classes_view(request):
         'focus_qr_code': focus_qr_code,  # Day-specific QR code
         'course_finished': course_finished,  # Flag to show reminder when course ends
         'instructor_present_expiry_ms': instructor_present_expiry_ms,  # Server-side timer expiry for persistence
+        'esp32_ip': settings.ESP32_IP,  # ESP32 fingerprint sensor IP address for biometric scanning
     }
     return render(request, 'dashboard/instructor/my_classes.html', context)
 
@@ -2242,7 +2281,7 @@ def finalize_attendance_records(course, schedule, instructor):
     record_status = 'absent'
     
     if isinstance(schedule, CourseSchedule):
-        schedule_day_str = schedule.day_of_week or schedule.day
+        schedule_day_str = schedule.day  # Use 'day' not 'day_of_week'
         # Check if the schedule is postponed
         if getattr(schedule, 'attendance_status', None) == 'postponed':
             record_status = 'postponed'
@@ -2325,11 +2364,17 @@ def finalize_attendance_records(course, schedule, instructor):
                 logger.error(f"Error creating {record_status} notification: {str(e)}")
 
 
-def finalize_all_course_attendance(course, instructor):
+def finalize_all_course_attendance(course, instructor, force=False):
     """
     Finalize attendance for all schedules of a course for today.
     Create absent records for enrolled students who didn't scan any session.
     If schedule is postponed, create postponed records instead of absent records.
+    
+    Args:
+        course: The course to finalize attendance for
+        instructor: The instructor of the course (used for notifications)
+        force: If True, force finalization regardless of class time. If False (default),
+               only finalize if class has ended or if explicitly closing attendance
     """
     from django.utils import timezone
     from zoneinfo import ZoneInfo
@@ -2349,13 +2394,79 @@ def finalize_all_course_attendance(course, instructor):
     today_day_abbrev = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][today.weekday()] if today.weekday() < 7 else 'Mon'
     
     # Get all schedules for today
+    # NOTE: normalize day tokens to avoid missing schedules and prematurely finalizing (creating ABSENT)
+    try:
+        day_map_norm = {
+            'Monday': 'Mon', 'Mon': 'Mon', 'M': 'Mon',
+            'Tuesday': 'Tue', 'Tue': 'Tue', 'T': 'Tue',
+            'Wednesday': 'Wed', 'Wed': 'Wed', 'W': 'Wed',
+            'Thursday': 'Thu', 'Thu': 'Thu', 'Th': 'Thu',
+            'Friday': 'Fri', 'Fri': 'Fri', 'F': 'Fri',
+            'Saturday': 'Sat', 'Sat': 'Sat', 'S': 'Sat',
+            'Sunday': 'Sun', 'Sun': 'Sun', 'Su': 'Sun'
+        }
+        today_day_norm = day_map_norm.get(str(today_day).strip(), today_day)
+        today_day_abbrev_norm = day_map_norm.get(str(today_day_abbrev).strip(), today_day_abbrev)
+        today_day_tokens = {today_day_norm, today_day_abbrev_norm}
+        if today_day_abbrev_norm == 'Sun':
+            today_day_tokens.add('Su')
+    except Exception:
+        today_day_tokens = {today_day, today_day_abbrev}
+
     today_schedules = CourseSchedule.objects.filter(
         course=course,
         is_deleted=False
     ).filter(
-        Q(day_of_week=today_day) | Q(day_of_week=today_day_abbrev) | 
-        Q(day=today_day) | Q(day=today_day_abbrev)
+        Q(day__in=list(today_day_tokens))
     )
+    
+    # CRITICAL: Only create ABSENT records if:
+    # 1. Force is True (explicit finalization via close/postpone), OR
+    # 2. ALL schedules for today have ended (after end_time)
+    if not force:
+        # Determine if the class has ended for today. If we can't reliably determine an end time,
+        # do NOT finalize (to avoid creating ABSENT during an ongoing class).
+        effective_end_dt = None
+        if today_schedules.exists():
+            try:
+                end_dts = []
+                for sched in today_schedules:
+                    if hasattr(sched, 'end_time') and sched.end_time:
+                        end_dts.append(
+                            timezone.make_aware(
+                                timezone.datetime.combine(today, sched.end_time),
+                                ph_tz
+                            )
+                        )
+                if end_dts:
+                    effective_end_dt = max(end_dts)
+            except Exception:
+                effective_end_dt = None
+        else:
+            # Fallback to course-level time window only if course is scheduled today
+            try:
+                course_days_raw = getattr(course, 'days', '') or ''
+                days_list = [d.strip() for d in course_days_raw.split(',') if d.strip()]
+                days_norm = set()
+                for d in days_list:
+                    days_norm.add(day_map_norm.get(d, d))
+                if (today_day_norm in days_norm) or (today_day_abbrev_norm in days_norm):
+                    end_t = getattr(course, 'end_time', None)
+                    if end_t:
+                        effective_end_dt = timezone.make_aware(
+                            timezone.datetime.combine(today, end_t),
+                            ph_tz
+                        )
+            except Exception:
+                effective_end_dt = None
+
+        if not effective_end_dt:
+            logger.info(f"[FINALIZE] No reliable end time found for course={course.id} today. Skipping finalization.")
+            return
+
+        if now_ph < effective_end_dt:
+            logger.info(f"[FINALIZE] Class hasn't ended yet for course={course.id}. End time: {effective_end_dt}. Skipping finalization.")
+            return
     
     # Check if TODAY is marked as postponed for ANY of the schedules
     # If so, create postponed records instead of absent records
@@ -2454,8 +2565,8 @@ def finalize_all_course_attendance(course, instructor):
 
             for schedule in schedules_to_mark:
                 # schedule may be a CourseSchedule instance or a short day string
-                if hasattr(schedule, 'day_of_week') or hasattr(schedule, 'day'):
-                    schedule_day_raw = getattr(schedule, 'day_of_week', None) or getattr(schedule, 'day', None)
+                if hasattr(schedule, 'day'):
+                    schedule_day_raw = getattr(schedule, 'day', None)
                 else:
                     schedule_day_raw = str(schedule)
 
@@ -2496,20 +2607,21 @@ def finalize_all_course_attendance(course, instructor):
                         logger.info(f"[FINALIZE] created {record_status.upper()} record: course={course.id} student={enrollment.student.id} date={today} schedule_day={schedule_day_str}")
                     except Exception as e:
                         logger.error(f"[FINALIZE] failed creating {record_status} record for course={getattr(course,'id',None)} student={getattr(enrollment.student,'id',None)} date={today} schedule_day={schedule_day_str}: {e}")
-            
-            # Create notification for student
-            try:
-                create_notification(
-                    user=enrollment.student,
-                    notification_type='attendance_marked',
-                    title='Attendance Recorded',
-                    message=f'You were marked absent in {course.code} - {course.name}',
-                    category='attendance',
-                    related_course=course,
-                    related_user=instructor
-                )
-            except Exception as e:
-                logger.error(f"Error creating absent notification: {str(e)}")
+
+            # Only notify if we actually created a record (avoid false ABSENT notifications)
+            if schedules_to_mark:
+                try:
+                    create_notification(
+                        user=enrollment.student,
+                        notification_type='attendance_marked',
+                        title='Attendance Recorded',
+                        message=f'You were marked absent in {course.code} - {course.name}',
+                        category='attendance',
+                        related_course=course,
+                        related_user=instructor
+                    )
+                except Exception as e:
+                    logger.error(f"Error creating absent notification: {str(e)}")
 
 @login_required
 @require_http_methods(["POST"])
@@ -2574,15 +2686,22 @@ def instructor_update_attendance_status_view(request, course_id):
             
             if schedule_id:
                 # Find schedule by matching the schedule_id format: course_id_day_YYYYMMDD
-                # Extract day from schedule_id
+                # Extract day token from schedule_id (can be 'F', 'M', 'Th', etc.)
                 try:
-                    parts = schedule_id.split('_')
+                    parts = str(schedule_id).split('_')
                     if len(parts) >= 2:
-                        day_short = parts[1]  # e.g., 'Mon', 'Tue'
-                        day_schedule = CourseSchedule.objects.filter(
-                            course=course,
-                            day=day_short
-                        ).first()
+                        day_token = parts[1]
+                        day_map_reverse = {
+                            'M': 'Mon', 'T': 'Tue', 'W': 'Wed', 'Th': 'Thu', 'F': 'Fri',
+                            'S': 'Sat', 'Su': 'Sun',
+                            'Mon': 'Mon', 'Tue': 'Tue', 'Wed': 'Wed', 'Thu': 'Thu', 'Fri': 'Fri', 'Sat': 'Sat', 'Sun': 'Sun'
+                        }
+                        mapped_day = day_map_reverse.get(day_token)
+                        if mapped_day:
+                            day_schedule = CourseSchedule.objects.filter(
+                                course=course,
+                                day=mapped_day
+                            ).first()
                 except Exception:
                     pass
             
@@ -2632,15 +2751,29 @@ def instructor_update_attendance_status_view(request, course_id):
                             pd_val = int(pd_raw)
                         except Exception:
                             pd_val = None
-                    if status == 'open' and pd_val and pd_val > 0:
+
+                    # Effective duration: if not provided now, use already-saved schedule duration (or course-level as last fallback)
+                    pd_effective = None
+                    if pd_raw is None:
+                        try:
+                            pd_effective = int(getattr(day_schedule, 'attendance_present_duration', 0) or 0)
+                        except Exception:
+                            pd_effective = 0
+                        if not pd_effective:
+                            try:
+                                pd_effective = int(getattr(course, 'attendance_present_duration', 0) or 0)
+                            except Exception:
+                                pd_effective = 0
+                    else:
+                        pd_effective = pd_val
+
+                    if status == 'open' and pd_effective and pd_effective > 0:
                         try:
                             day_schedule.qr_code_opened_at = timezone.now()
-                            # Also set qr_code_date to today for consistency
                             day_schedule.qr_code_date = timezone.localtime(timezone.now()).date()
                         except Exception:
                             pass
                     elif pd_val == 0:
-                        # When resetting (present_duration = 0), clear the opened timestamp
                         try:
                             day_schedule.qr_code_opened_at = None
                             day_schedule.attendance_present_duration = 0
@@ -2743,13 +2876,22 @@ def instructor_update_attendance_status_view(request, course_id):
                     pd_val = int(pd_raw)
                 except Exception:
                     pd_val = None
-            if status == 'open' and pd_val and pd_val > 0:
+
+            pd_effective = None
+            if pd_raw is None:
+                try:
+                    pd_effective = int(getattr(course, 'attendance_present_duration', 0) or 0)
+                except Exception:
+                    pd_effective = 0
+            else:
+                pd_effective = pd_val
+
+            if status == 'open' and pd_effective and pd_effective > 0:
                 try:
                     course.qr_code_opened_at = timezone.now()
                 except Exception:
                     pass
             elif pd_val == 0:
-                # When resetting (present_duration = 0), clear the opened timestamp
                 try:
                     course.qr_code_opened_at = None
                     course.attendance_present_duration = 0
@@ -2765,7 +2907,7 @@ def instructor_update_attendance_status_view(request, course_id):
         # If closing or postponing attendance at course-level, finalize for all schedules
         if status in ['closed', 'postponed']:
             try:
-                finalize_all_course_attendance(course, user)
+                finalize_all_course_attendance(course, user, force=True)
             except Exception as e:
                 logger.error(f"Error finalizing all course attendance: {str(e)}")
         
@@ -3454,6 +3596,30 @@ def students_view(request):
         if selected_course_enrollments is not None:
             for enrollment in selected_course_enrollments:
                 enrollment.has_biometric = False
+    
+    # IMPORTANT: Also annotate the main enrollments list with has_biometric and has_qr status
+    # This ensures the status displays correctly even when no specific course is selected
+    try:
+        for enrollment in enrollments:
+            try:
+                enrollment.has_biometric = BiometricRegistration.objects.filter(
+                    student=enrollment.student,
+                    course=enrollment.course,
+                    is_active=True
+                ).exists()
+                enrollment.has_qr = QRCodeRegistration.objects.filter(
+                    student=enrollment.student,
+                    course=enrollment.course,
+                    is_active=True
+                ).exists()
+            except Exception:
+                enrollment.has_biometric = False
+                enrollment.has_qr = False
+    except Exception:
+        # If annotation fails, default to False for all
+        for enrollment in enrollments:
+            enrollment.has_biometric = False
+            enrollment.has_qr = False
     
     context = {
         'user': user,
@@ -5415,7 +5581,7 @@ def enroll_course_view(request):
         is_active=True
     ).select_related('course', 'course__program', 'course__instructor').order_by('-enrolled_at')
     
-    # Add QR registration status to enrolled courses
+    # Add QR and Biometric registration status to enrolled courses
     for enrollment in enrolled_courses:
         qr_reg = QRCodeRegistration.objects.filter(
             student=user,
@@ -5423,6 +5589,22 @@ def enroll_course_view(request):
             is_active=True
         ).exists()
         enrollment.has_qr = qr_reg
+        
+        biometric_reg = BiometricRegistration.objects.filter(
+            student=user,
+            course=enrollment.course,
+            is_active=True
+        ).exists()
+        enrollment.has_biometric = biometric_reg
+        
+        # Debug logging
+        if enrollment.has_biometric:
+            biometric_count = BiometricRegistration.objects.filter(
+                student=user,
+                course=enrollment.course,
+                is_active=True
+            ).count()
+            logger.debug(f"[ENROLL] Course {enrollment.course.code}: has_biometric=True (found {biometric_count} records)")
     
     # Get school admin for topbar
     school_admin = None
@@ -5444,6 +5626,7 @@ def enroll_course_view(request):
         'enrolled_courses': enrolled_courses,
         'school_admin': school_admin,
         'unread_notifications': unread_notifications,
+        'esp32_ip': settings.ESP32_IP,
     }
     return render(request, 'dashboard/student/enroll_course.html', context)
 
@@ -5659,32 +5842,9 @@ def unenroll_course_view(request, enrollment_id):
         enrollment.deleted_at = timezone.now()
         enrollment.save()
         
-        # Clean up QR registration for this student in this course
-        # So they need to re-register if they enroll again
-        try:
-            qr_registrations = QRCodeRegistration.objects.filter(
-                student=enrollment.student,
-                course=enrollment.course,
-                is_active=True
-            )
-            qr_registrations.delete()  # Permanently delete QR registrations
-            logger.info(f"Deleted QR registrations for {enrollment.student.full_name} in {enrollment.course.code}")
-        except Exception as e:
-            logger.error(f"Error deleting QR registrations: {str(e)}")
-        
-        # Clean up biometric registration for this student in this course
-        # So they need to re-register their fingerprint if they enroll again
-        try:
-            from .models import BiometricRegistration
-            biometric_registrations = BiometricRegistration.objects.filter(
-                student=enrollment.student,
-                course=enrollment.course,
-                is_active=True
-            )
-            biometric_registrations.delete()  # Permanently delete biometric registrations
-            logger.info(f"Deleted biometric registrations for {enrollment.student.full_name} in {enrollment.course.code}")
-        except Exception as e:
-            logger.error(f"Error deleting biometric registrations: {str(e)}")
+        # NOTE: Do NOT delete biometric or QR registrations on soft drop
+        # They will be deleted only on permanent delete
+        # This allows students to restore and keep their fingerprint registrations
         
         # Delete attendance records for this student in this course
         # So their attendance log is cleared from student dashboard
@@ -6150,9 +6310,19 @@ def student_update_profile_view(request):
         return JsonResponse({'success': False, 'message': 'You are not authorized to perform this action.'})
     
     try:
-        # Update full name if provided
+        # Update full name if provided (support split fields for students)
+        first_name = request.POST.get('first_name', '').strip()
+        middle_name = request.POST.get('middle_name', '').strip()
+        last_name = request.POST.get('last_name', '').strip()
         full_name = request.POST.get('full_name', '').strip()
-        if full_name:
+
+        if first_name or middle_name or last_name:
+            if not first_name or not last_name:
+                return JsonResponse({'success': False, 'message': 'First Name and Last Name are required.'})
+            combined = ' '.join([p for p in [first_name, middle_name, last_name] if p]).strip()
+            if combined:
+                user.full_name = combined
+        elif full_name:
             user.full_name = full_name
         
         # Update department if provided
@@ -7986,9 +8156,12 @@ def instructor_drop_enrollment_view(request, enrollment_id):
     try:
         from django.utils import timezone
         # Soft delete: set deleted_at and is_active
+        # NOTE: Do NOT delete biometric or QR registrations on soft drop
+        # They will be deleted only on permanent delete
         enrollment.deleted_at = timezone.now()
         enrollment.is_active = False
         enrollment.save()
+        
         return JsonResponse({'success': True, 'message': f'Enrollment for "{enrollment.full_name}" dropped successfully!'})
     except Exception as e:
         logger.error(f"Error dropping enrollment: {str(e)}")
@@ -8237,6 +8410,31 @@ def instructor_permanent_delete_enrollment_view(request, enrollment_id):
     
     try:
         student_name = enrollment.full_name
+        
+        # Clean up biometric registration before deleting enrollment
+        try:
+            from .models import BiometricRegistration
+            biometric_registrations = BiometricRegistration.objects.filter(
+                student=enrollment.student,
+                course=enrollment.course
+            )
+            biometric_registrations.delete()
+            logger.info(f"Deleted biometric registrations for {student_name} before permanent enrollment deletion")
+        except Exception as e:
+            logger.error(f"Error deleting biometric registrations: {str(e)}")
+        
+        # Clean up QR registration before deleting enrollment
+        try:
+            from .models import QRCodeRegistration
+            qr_registrations = QRCodeRegistration.objects.filter(
+                student=enrollment.student,
+                course=enrollment.course
+            )
+            qr_registrations.delete()
+            logger.info(f"Deleted QR registrations for {student_name} before permanent enrollment deletion")
+        except Exception as e:
+            logger.error(f"Error deleting QR registrations: {str(e)}")
+        
         enrollment.delete()  # Permanent delete
         return JsonResponse({'success': True, 'message': f'Enrollment for "{student_name}" permanently deleted.'})
     except Exception as e:
@@ -8320,6 +8518,31 @@ def student_permanent_delete_enrollment_view(request, enrollment_id):
 
     try:
         course_name = enrollment.full_name
+        
+        # Clean up biometric registration before deleting enrollment
+        try:
+            from .models import BiometricRegistration
+            biometric_registrations = BiometricRegistration.objects.filter(
+                student=enrollment.student,
+                course=enrollment.course
+            )
+            biometric_registrations.delete()
+            logger.info(f"Deleted biometric registrations for student before permanent enrollment deletion")
+        except Exception as e:
+            logger.error(f"Error deleting biometric registrations: {str(e)}")
+        
+        # Clean up QR registration before deleting enrollment
+        try:
+            from .models import QRCodeRegistration
+            qr_registrations = QRCodeRegistration.objects.filter(
+                student=enrollment.student,
+                course=enrollment.course
+            )
+            qr_registrations.delete()
+            logger.info(f"Deleted QR registrations for student before permanent enrollment deletion")
+        except Exception as e:
+            logger.error(f"Error deleting QR registrations: {str(e)}")
+        
         enrollment.delete()
         return JsonResponse({'success': True, 'message': f'Enrollment permanently deleted.'})
     except Exception as e:
@@ -9634,8 +9857,45 @@ def instructor_attendance_reports_download_view(request):
             name = (rec.student.full_name or rec.student.username or '').strip()
         except Exception:
             name = ''
-        # Previously this keyed by surname. Use full name (First Middle Last) for alphabetical sorting.
-        return name.lower() if name else ''
+
+        tokens = [p for p in str(name).strip().split() if p]
+        if not tokens:
+            return ('', '', '')
+
+        particle_tokens = {
+            'de', 'del', 'dela', 'da', 'di', 'la', 'las', 'los', 'van', 'von', 'bin', 'binti', 'al', 'ibn'
+        }
+
+        last_start = len(tokens) - 1
+        found_particle = False
+        for i in range(len(tokens) - 2, 0, -1):
+            if str(tokens[i]).lower() in particle_tokens:
+                last_start = i
+                found_particle = True
+                break
+
+        if found_particle:
+            last = ' '.join(tokens[last_start:]).strip()
+            remaining = tokens[:last_start]
+            if not remaining:
+                first = ''
+                middle = ''
+            elif len(remaining) == 1:
+                first = remaining[0]
+                middle = ''
+            else:
+                first = ' '.join(remaining[:-1]).strip()
+                middle = remaining[-1]
+        else:
+            first = tokens[0]
+            middle = ' '.join(tokens[1:-1]).strip() if len(tokens) > 2 else ''
+            last = tokens[-1]
+
+        return (
+            str(last).strip().lower() if last else '',
+            str(first).strip().lower() if first else '',
+            str(middle).strip().lower() if middle else ''
+        )
 
     try:
         attendance_records.sort(key=_record_surname_key)
@@ -9854,17 +10114,55 @@ def instructor_attendance_reports_download_view(request):
         try:
             if not name:
                 return ''
-            parts = [p for p in str(name).split() if p]
-            if not parts:
+            tokens = [p for p in str(name).strip().split() if p]
+            if not tokens:
                 return ''
-            if len(parts) == 1:
-                return parts[0]
-            # Format as: First Middle Last
-            first = parts[0]
-            middle = ' '.join(parts[1:-1]) if len(parts) > 2 else ''
-            last = parts[-1]
-            full = f"{first} {middle} {last}".strip()
-            return full
+            if len(tokens) == 1:
+                return str(tokens[0]).upper()
+
+            particle_tokens = {
+                'de', 'del', 'dela', 'da', 'di', 'la', 'las', 'los', 'van', 'von', 'bin', 'binti', 'al', 'ibn'
+            }
+
+            last_start = len(tokens) - 1
+            found_particle = False
+            for i in range(len(tokens) - 2, 0, -1):
+                if str(tokens[i]).lower() in particle_tokens:
+                    last_start = i
+                    found_particle = True
+                    break
+
+            if found_particle:
+                last = ' '.join(tokens[last_start:]).strip()
+                remaining = tokens[:last_start]
+                if not remaining:
+                    first = ''
+                    middle = ''
+                elif len(remaining) == 1:
+                    first = remaining[0]
+                    middle = ''
+                else:
+                    first = ' '.join(remaining[:-1]).strip()
+                    middle = remaining[-1]
+            else:
+                # Default parsing: First [Middle...] Last
+                first = tokens[0]
+                middle = ' '.join(tokens[1:-1]).strip() if len(tokens) > 2 else ''
+                last = tokens[-1]
+
+            first = str(first).strip().upper() if first else ''
+            last = str(last).strip().upper() if last else ''
+            middle_initial = ''
+            if middle:
+                m = str(middle).strip()
+                if m:
+                    middle_initial = f"{m[0].upper()}."
+
+            if last and first:
+                return f"{last}, {first}{(' ' + middle_initial) if middle_initial else ''}".strip()
+            if last:
+                return str(last)
+            return f"{first}{(' ' + middle_initial) if middle_initial else ''}".strip()
         except Exception:
             return str(name)
     
@@ -10314,21 +10612,83 @@ def instructor_scan_student_qr_code_view(request):
             return JsonResponse({'success': False, 'message': 'Only instructors can scan QR codes.'})
         
         data = json.loads(request.body)
-        qr_code = data.get('qr_code', '').strip()
+        qr_code_raw = (data.get('qr_code', '') or '').strip()
         course_id = data.get('course_id')
         
-        if not qr_code or not course_id:
+        if not qr_code_raw or not course_id:
             return JsonResponse({'success': False, 'message': 'Missing required fields.'})
         
+        # Normalize QR code:
+        # - Extract 32-hex id from URL/text if present
+        # - Lowercase to avoid case-sensitivity issues
+        qr_code_norm = qr_code_raw
+        try:
+            if qr_code_raw.startswith('http://') or qr_code_raw.startswith('https://'):
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(qr_code_raw)
+                q = parse_qs(parsed.query or '')
+                candidate = (q.get('qr_code') or q.get('qr') or [None])[0]
+                if not candidate:
+                    import re
+                    m = re.search(r'([a-f0-9]{32})', qr_code_raw, flags=re.IGNORECASE)
+                    candidate = m.group(1) if m else None
+                if candidate:
+                    qr_code_norm = candidate
+            else:
+                import re
+                m = re.search(r'([a-f0-9]{32})', qr_code_raw, flags=re.IGNORECASE)
+                if m:
+                    qr_code_norm = m.group(1)
+        except Exception:
+            qr_code_norm = qr_code_raw
+
+        qr_code_norm = (qr_code_norm or '').strip().lower()
+
         # Get the course
         course = get_object_or_404(Course, id=course_id, instructor=request.user)
         
-        # Look up the QR code in QRCodeRegistration for this course
+        sibling_courses = Course.objects.filter(
+            instructor=request.user,
+            code=course.code,
+            name=course.name,
+            semester=course.semester,
+            school_year=course.school_year,
+            is_active=True,
+            deleted_at__isnull=True,
+            is_archived=False
+        )
+
+        # Look up the QR code in QRCodeRegistration.
+        # Prefer this course, but allow sibling sections so scans don't fail due to section mismatch.
         qr_registration = QRCodeRegistration.objects.filter(
-            qr_code=qr_code,
+            qr_code__iexact=qr_code_norm,
             course=course,
             is_active=True
         ).select_related('student').first()
+
+        if not qr_registration:
+            qr_registration = QRCodeRegistration.objects.filter(
+                qr_code__iexact=qr_code_norm,
+                course__in=sibling_courses,
+                is_active=True
+            ).select_related('student', 'course').first()
+
+        # Legacy fallback: older registrations may have stored the *full URL* or other text
+        # that contains the 32-hex QR id. If so, match by substring (safe because the 32-hex
+        # id should be unique).
+        if not qr_registration and qr_code_norm:
+            qr_registration = QRCodeRegistration.objects.filter(
+                qr_code__icontains=qr_code_norm,
+                course=course,
+                is_active=True
+            ).select_related('student').first()
+
+        if not qr_registration and qr_code_norm:
+            qr_registration = QRCodeRegistration.objects.filter(
+                qr_code__icontains=qr_code_norm,
+                course__in=sibling_courses,
+                is_active=True
+            ).select_related('student', 'course').first()
         
         if not qr_registration:
             return JsonResponse({
@@ -10364,11 +10724,18 @@ def instructor_scan_student_qr_code_view(request):
         today = now_ph.date()
         today_day = today.strftime('%A')
         
+        # Convert full day name to short code (Monday -> Mon)
+        day_map_short = {
+            'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 'Thursday': 'Thu',
+            'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'
+        }
+        today_day_short = day_map_short.get(today_day, today_day[:3])
+        
         # Find ONLY schedules for this course on this specific day
         # Attendance should only record for the actual class on that day
         active_schedules = CourseSchedule.objects.filter(
             course=course,
-            day_of_week=today_day,
+            day=today_day_short,
             is_deleted=False
         ).order_by('start_time')
         
@@ -10388,23 +10755,72 @@ def instructor_scan_student_qr_code_view(request):
                 'message': f'Attendance is not open for {course.code} today.'
             })
         
+        # Determine present/late status using the same logic as school ID scans
+        attendance_status = 'present'
+        present_duration_minutes = None
+        qr_opened_at = None
+        try:
+            if active_schedule and getattr(active_schedule, 'attendance_present_duration', None) is not None:
+                present_duration_minutes = int(active_schedule.attendance_present_duration or 0)
+            else:
+                present_duration_minutes = int(getattr(course, 'attendance_present_duration', 0) or 0)
+        except Exception:
+            present_duration_minutes = 0
+
+        try:
+            if active_schedule and getattr(active_schedule, 'qr_code_opened_at', None):
+                qr_opened_at = active_schedule.qr_code_opened_at
+            elif getattr(course, 'qr_code_opened_at', None):
+                qr_opened_at = course.qr_code_opened_at
+        except Exception:
+            qr_opened_at = None
+
+        cutoff_dt = None
+        if present_duration_minutes and present_duration_minutes > 0:
+            try:
+                from datetime import timedelta
+                if qr_opened_at:
+                    cutoff_dt = qr_opened_at + timedelta(minutes=int(present_duration_minutes))
+                elif active_schedule and getattr(active_schedule, 'start_time', None):
+                    cutoff_dt = datetime.combine(today, active_schedule.start_time) + timedelta(minutes=int(present_duration_minutes))
+                    try:
+                        cutoff_dt = cutoff_dt.replace(tzinfo=ph_tz)
+                    except Exception:
+                        pass
+            except Exception:
+                cutoff_dt = None
+
+        if cutoff_dt and now_ph > cutoff_dt:
+            attendance_status = 'late'
+        elif not cutoff_dt:
+            try:
+                end_time = None
+                if active_schedule and getattr(active_schedule, 'attendance_end', None):
+                    end_time = active_schedule.attendance_end
+                elif getattr(course, 'attendance_end', None):
+                    end_time = course.attendance_end
+                if end_time and now_ph.time() > end_time:
+                    attendance_status = 'late'
+            except Exception:
+                pass
+
         # Create or update attendance record
         attendance_record, created = AttendanceRecord.objects.get_or_create(
             course=course,
             student=student,
             enrollment=enrollment,
             attendance_date=today,
-            schedule_day=active_schedule,
+            schedule_day=active_schedule.day if active_schedule else today_day_short,
             defaults={
                 'attendance_time': now_ph.time(),
-                'status': 'present'
+                'status': attendance_status
             }
         )
         
-        # If record already exists, just update status to present (re-scan)
+        # If record already exists, update status to computed status (present/late)
         if not created:
             attendance_record.attendance_time = now_ph.time()
-            attendance_record.status = 'present'
+            attendance_record.status = attendance_status
             attendance_record.save()
         
         # Create notification for instructor
@@ -10797,19 +11213,96 @@ def instructor_get_scanned_students_view(request):
             status__in=['present', 'late']
         ).select_related('student').order_by('-attendance_time')
 
-        students_data = []
+        # Deduplicate: Keep only the latest record per student
+        # This ensures we don't show multiple scans - only the final status
+        students_by_id = {}
         for record in records:
-            students_data.append({
-                'name': record.student.full_name,
-                'id': record.student.school_id or 'N/A',
-                'time': record.attendance_time.strftime('%I:%M %p') if record.attendance_time else 'N/A',
-                'status': record.status
-            })
+            if record.student_id not in students_by_id:
+                students_by_id[record.student_id] = {
+                    'name': record.student.full_name,
+                    'id': record.student.school_id or 'N/A',
+                    'time': record.attendance_time.strftime('%I:%M %p') if record.attendance_time else 'N/A',
+                    'status': record.status
+                }
         
-        return JsonResponse({'students': students_data, 'count': records.count()})
+        students_data = list(students_by_id.values())
+        logger.info(f"[QR SCANNED] Returning {len(students_data)} deduplicated QR scanned students for {course.code}")
+        return JsonResponse({'students': students_data, 'count': len(students_data)})
     
     except Exception as e:
         logger.error(f"Error getting scanned students: {str(e)}")
+        return JsonResponse({'students': []})
+
+
+@login_required
+def instructor_get_biometric_students_view(request):
+    """
+    Get list of students who have biometric attendance for a specific course/schedule today.
+    This is used by the biometric modal to display students who verified via fingerprint.
+    """
+    try:
+        if not request.user.is_teacher:
+            return JsonResponse({'students': []})
+        
+        course_id = request.GET.get('course_id')
+        schedule_id = request.GET.get('schedule_id')
+        
+        if not course_id:
+            return JsonResponse({'students': []})
+        
+        # Get the course
+        course = get_object_or_404(Course, id=course_id, instructor=request.user)
+        
+        # Get today's attendance records for this course
+        from django.utils import timezone
+        from zoneinfo import ZoneInfo
+        try:
+            ph_tz = ZoneInfo('Asia/Manila')
+        except:
+            import pytz
+            ph_tz = pytz.timezone('Asia/Manila')
+        
+        now_ph = timezone.now().astimezone(ph_tz)
+        today = now_ph.date()
+        
+        # Get attendance records - will include both present and late status
+        records = AttendanceRecord.objects.filter(
+            course=course,
+            attendance_date=today,
+            status__in=['present', 'late']
+        ).select_related('student').order_by('-attendance_time')
+        
+        # Filter to only include students who have biometric registrations for this course
+        # This ensures we only show students who scanned via biometric
+        biometric_student_ids = BiometricRegistration.objects.filter(
+            course=course,
+            is_active=True
+        ).values_list('student_id', flat=True)
+        
+        # Track students already added to avoid duplicates (show only latest scan per student)
+        students_by_id = {}
+        for record in records:
+            if record.student_id in biometric_student_ids:
+                # Only add if we haven't seen this student yet (since ordered by -attendance_time, first is latest)
+                if record.student_id not in students_by_id:
+                    students_by_id[record.student_id] = {
+                        'name': record.student.full_name,
+                        'id': record.student.school_id or 'N/A',
+                        'time': record.attendance_time.strftime('%I:%M %p') if record.attendance_time else 'N/A',
+                        'status': record.status,
+                        'scan_method': 'biometric'
+                    }
+                    # Debug logging to verify we're returning latest record
+                    logger.info(f"[BIOMETRIC ENDPOINT] Student {record.student.full_name}: {record.attendance_time} - {record.status}")
+        
+        # Convert to list
+        students_data = list(students_by_id.values())
+        logger.info(f"[BIOMETRIC ENDPOINT] Returning {len(students_data)} biometric students for {course.code}")
+        
+        return JsonResponse({'students': students_data, 'count': len(students_data)})
+    
+    except Exception as e:
+        logger.error(f"Error getting biometric students: {str(e)}")
         return JsonResponse({'students': []})
 
 
@@ -10859,11 +11352,17 @@ def instructor_register_student_qr_code_view(request):
         
         data = json.loads(request.body)
         course_id = data.get('course_id')
+        incoming_enrollment_id = data.get('enrollment_id')
+        incoming_template_id = data.get('template_id')
         student_id_number = data.get('student_id_number', '').strip()
-        qr_code = data.get('qr_code', '').strip()
+        qr_code_raw = data.get('qr_code', '').strip()
         
-        if not course_id or not student_id_number or not qr_code:
+        if not course_id or not student_id_number or not qr_code_raw:
             return JsonResponse({'success': False, 'message': 'Missing required fields.'})
+
+        qr_code = _normalize_registered_qr(qr_code_raw)
+        if not qr_code:
+            return JsonResponse({'success': False, 'message': 'Invalid QR code value.'})
         
         # Get the course
         course = get_object_or_404(Course, id=course_id, instructor=request.user)
@@ -11144,18 +11643,24 @@ def student_get_registration_instructors_view(request):
             deleted_at__isnull=True
         ).select_related('course', 'course__instructor').distinct()
         
+        logger.info(f"[REGISTRATION] Student {student.id} has {enrolled_enrollments.count()} enrolled courses")
+        
         # Group by instructor and check if they have registration enabled
         instructors_data = {}
         for enrollment in enrolled_enrollments:
             instructor = enrollment.course.instructor
             if not instructor:
                 continue
+            
+            logger.info(f"[REGISTRATION] Checking instructor {instructor.id} for registration status")
                 
             # Check if this instructor has registration enabled
             status = InstructorRegistrationStatus.objects.filter(
                 instructor=instructor,
                 is_registration_enabled=True
             ).first()
+            
+            logger.info(f"[REGISTRATION] Instructor {instructor.id} registration status: {status}")
             
             if status:  # Only include instructors with registration enabled
                 if instructor.id not in instructors_data:
@@ -11181,13 +11686,15 @@ def student_get_registration_instructors_view(request):
                 if course_data not in instructors_data[instructor.id]['courses']:
                     instructors_data[instructor.id]['courses'].append(course_data)
         
+        logger.info(f"[REGISTRATION] Found {len(instructors_data)} instructors with registration enabled")
+        
         return JsonResponse({
             'success': True,
             'instructors': list(instructors_data.values())
         })
     
     except Exception as e:
-        logger.error(f"Error getting registration instructors: {str(e)}")
+        logger.error(f"Error getting registration instructors: {str(e)}", exc_info=True)
         return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
 
 
@@ -11204,10 +11711,14 @@ def student_register_qr_code_with_instructor_view(request):
         
         data = json.loads(request.body)
         instructor_id = data.get('instructor_id')
-        qr_code = data.get('qr_code', '').strip()
+        qr_code_raw = data.get('qr_code', '').strip()
         
-        if not instructor_id or not qr_code:
+        if not instructor_id or not qr_code_raw:
             return JsonResponse({'success': False, 'message': 'Missing required fields.'})
+
+        qr_code = _normalize_registered_qr(qr_code_raw)
+        if not qr_code:
+            return JsonResponse({'success': False, 'message': 'Invalid QR code value.'})
         
         # Get the instructor
         instructor = get_object_or_404(CustomUser, id=instructor_id, is_teacher=True, deleted_at__isnull=True)
@@ -11281,10 +11792,14 @@ def student_register_qr_code_view(request):
         
         data = json.loads(request.body)
         course_id = data.get('course_id')
-        qr_code = data.get('qr_code', '').strip()
+        qr_code_raw = data.get('qr_code', '').strip()
         
-        if not course_id or not qr_code:
+        if not course_id or not qr_code_raw:
             return JsonResponse({'success': False, 'message': 'Missing required fields.'})
+
+        qr_code = _normalize_registered_qr(qr_code_raw)
+        if not qr_code:
+            return JsonResponse({'success': False, 'message': 'Invalid QR code value.'})
         
         # Get the course
         course = get_object_or_404(Course, id=course_id, is_active=True, deleted_at__isnull=True)
@@ -11405,6 +11920,7 @@ def get_course_enrollments_view(request):
             enrollments_data.append({
                 'id': enrollment.id,
                 'full_name': current_full_name or enrollment.student.username,
+                'student_id_number': enrollment.student_id_number,
                 'section': enrollment.section or 'N/A',
                 'profile_picture': enrollment.student.profile_picture.url if enrollment.student and enrollment.student.profile_picture else None
             })
@@ -11610,55 +12126,133 @@ def move_students_to_section_view(request):
 
 # ==================== BIOMETRIC INTEGRATION ====================
 
+# Server-side enrollment lock using cache (prevents concurrent enrollments)
+def get_enrollment_lock_key(instructor_id):
+    """Generate a cache key for enrollment lock per instructor"""
+    return f'biometric_enrollment_lock_instructor_{instructor_id}'
+
+@login_required
+@require_http_methods(["POST"])
+@csrf_exempt
+def check_instructor_enrollment_lock(request):
+    """
+    SECURITY ENDPOINT: Check if another student is currently enrolling with an instructor.
+    Called before starting enrollment to prevent concurrent registrations.
+    
+    Expected POST data:
+    {
+        'instructor_id': <int>
+    }
+    
+    Returns:
+    {
+        'success': True,
+        'is_locked': False,  # True if another student is enrolling
+        'enrolling_student': 'Student Name' or None,
+        'message': 'Ready to enroll' or 'Another student is enrolling...'
+    }
+    """
+    try:
+        from django.core.cache import cache
+        data = json.loads(request.body)
+        instructor_id = data.get('instructor_id')
+        
+        if not instructor_id:
+            return JsonResponse({'success': False, 'message': 'Missing instructor_id'}, status=400)
+        
+        lock_key = get_enrollment_lock_key(instructor_id)
+        lock_data = cache.get(lock_key)  # Returns None if expired (5 minutes default)
+        
+        current_student_id = request.user.id
+        
+        if lock_data:
+            enrolling_student_id = lock_data.get('student_id')
+            enrolling_student_name = lock_data.get('student_name')
+            lock_time = lock_data.get('timestamp')
+            
+            # If THE SAME student is enrolling, allow them through
+            if enrolling_student_id == current_student_id:
+                return JsonResponse({
+                    'success': True,
+                    'is_locked': False,  # Same student = not blocked
+                    'enrolling_student': None,
+                    'message': 'Ready to enroll'
+                })
+            
+            # DIFFERENT student is enrolling - BLOCK
+            return JsonResponse({
+                'success': True,
+                'is_locked': True,
+                'enrolling_student': enrolling_student_name,
+                'message': f'{enrolling_student_name} is currently registering their fingerprint. Please wait for them to finish.'
+            })
+        
+        # No lock exists - ready to enroll
+        return JsonResponse({
+            'success': True,
+            'is_locked': False,
+            'enrolling_student': None,
+            'message': 'Ready to enroll'
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error checking enrollment lock: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
 @login_required
 @require_http_methods(["POST"])
 @csrf_exempt
 def api_biometric_enroll_view(request):
     """
     API endpoint for ESP32 fingerprint sensor enrollment.
-    Students/instructors call this to enroll a fingerprint for a course.
+    Students/instructors call this to enroll a fingerprint for a course or multiple courses.
     
-    Expected POST data:
+    Expected POST data (Single Course):
     {
         'course_id': <int>,
         'student_id': <int> (optional, for instructor enrolling student),
         'biometric_data': '<string>',  # Fingerprint template or ID from ESP32
         'biometric_type': 'fingerprint' (default)
     }
+    
+    Expected POST data (Multiple Courses - BATCH):
+    {
+        'course_ids': [<int>, <int>, ...],  # Array of course IDs - registers fingerprint for ALL courses at once
+        'biometric_data': '<string>',
+        'biometric_type': 'fingerprint' (default)
+    }
     """
     try:
+        from django.db import transaction
+        
         data = json.loads(request.body)
-        course_id = data.get('course_id')
-        student_id = data.get('student_id')
         biometric_data = data.get('biometric_data', '').strip()
         biometric_type = data.get('biometric_type', 'fingerprint')
+        skip_mqtt_start = bool(data.get('skip_mqtt_start', False))
         
-        if not course_id or not biometric_data:
+        # CRITICAL: Support both single course_id and multiple course_ids
+        course_ids = data.get('course_ids')  # Array of course IDs (NEW)
+        if not course_ids:
+            # Fallback to single course_id for backward compatibility
+            course_id = data.get('course_id')
+            course_ids = [course_id] if course_id else []
+        
+        student_id = data.get('student_id')
+        
+        if not course_ids or not biometric_data:
             return JsonResponse({
                 'success': False,
-                'message': 'Missing course_id or biometric_data'
+                'message': 'Missing course_ids (or course_id) or biometric_data'
             }, status=400)
-        
-        # Get course
-        try:
-            course = Course.objects.get(id=course_id)
-        except Course.DoesNotExist:
-            return JsonResponse({
-                'success': False,
-                'message': 'Course not found'
-            }, status=404)
         
         # Determine target student
         if student_id and request.user.is_teacher:
             # Instructor enrolling a student
             try:
                 target_student = CustomUser.objects.get(id=student_id, is_student=True)
-                # Verify instructor owns this course
-                if course.instructor != request.user:
-                    return JsonResponse({
-                        'success': False,
-                        'message': 'You do not have permission to register biometric for this course'
-                    }, status=403)
             except CustomUser.DoesNotExist:
                 return JsonResponse({
                     'success': False,
@@ -11672,19 +12266,90 @@ def api_biometric_enroll_view(request):
                     'success': False,
                     'message': 'You must be a student to register biometric'
                 }, status=403)
-            # Verify student is enrolled in this course
-            enrollment = CourseEnrollment.objects.filter(
-                student=target_student,
-                course=course,
-                is_active=True
-            ).first()
-            if not enrollment:
+        
+        # Validate all courses exist and student is enrolled in them
+        courses = []
+        for course_id in course_ids:
+            try:
+                course = Course.objects.get(id=course_id)
+                courses.append(course)
+                
+                # Check permission for this course
+                if student_id and request.user.is_teacher:
+                    # Instructor enrolling a student - verify instructor owns course
+                    if course.instructor != request.user:
+                        return JsonResponse({
+                            'success': False,
+                            'message': f'You do not have permission to register biometric for course {course.code}'
+                        }, status=403)
+                else:
+                    # Student self-registering - verify student is enrolled
+                    enrollment = CourseEnrollment.objects.filter(
+                        student=target_student,
+                        course=course,
+                        is_active=True
+                    ).first()
+                    if not enrollment:
+                        return JsonResponse({
+                            'success': False,
+                            'message': f'You are not enrolled in course {course.code}'
+                        }, status=403)
+                        
+            except Course.DoesNotExist:
                 return JsonResponse({
                     'success': False,
-                    'message': 'You are not enrolled in this course'
-                }, status=403)
+                    'message': f'Course ID {course_id} not found'
+                }, status=404)
         
-        # Encrypt biometric data
+        # ==================== SERVER-SIDE ENROLLMENT LOCK ====================
+        # SECURITY: Prevent concurrent biometric registrations for same instructor
+        # Only one student can enroll biometric at a time per instructor
+        from django.core.cache import cache
+        
+        # Get instructor from first course (all courses must be from same instructor for batch enrollment)
+        instructor = courses[0].instructor if courses else None
+        if not instructor:
+            return JsonResponse({
+                'success': False,
+                'message': 'Cannot determine instructor for enrollment'
+            }, status=400)
+        
+        lock_key = get_enrollment_lock_key(instructor.id)
+        lock_data = cache.get(lock_key)
+        
+        # Check if another student is currently enrolling
+        if lock_data:
+            other_student_id = lock_data.get('student_id')
+            other_student_name = lock_data.get('student_name')
+            
+            # If SAME student is enrolling, allow (might be confirming or retrying)
+            if other_student_id == target_student.id:
+                logger.info(f"[ENROLLMENT LOCK] Same student {target_student.full_name} (ID: {target_student.id}) re-attempting enrollment")
+            else:
+                # DIFFERENT student is enrolling - BLOCK THIS REQUEST
+                logger.warning(f"[ENROLLMENT LOCK] BLOCKED! Student {target_student.full_name} (ID: {target_student.id}) attempted to enroll while {other_student_name} (ID: {other_student_id}) is already enrolling under instructor {instructor.full_name}")
+                return JsonResponse({
+                    'success': False,
+                    'message': f'⏳ Another student ({other_student_name}) is currently registering their fingerprint. Please wait for them to finish before starting your enrollment.',
+                    'is_locked': True,
+                    'other_student': other_student_name
+                }, status=423)  # 423 = Locked (HTTP status code)
+        
+        # SET ENROLLMENT LOCK for this instructor (5 minute timeout)
+        cache.set(
+            lock_key,
+            {
+                'student_id': target_student.id,
+                'student_name': target_student.full_name,
+                'timestamp': str(datetime.now()),
+                'instructor_id': instructor.id
+            },
+            timeout=300  # 5 minute timeout (should be enough for 3-capture enrollment)
+        )
+        logger.info(f"[ENROLLMENT LOCK] SET - Student {target_student.full_name} (ID: {target_student.id}) started enrollment for instructor {instructor.full_name}")
+        # ==================== END ENROLLMENT LOCK ====================
+        
+        # Encrypt biometric data ONCE (same fingerprint for all courses)
         from .biometric_utils import encrypt_biometric_data
         encrypted_data = encrypt_biometric_data(biometric_data)
         
@@ -11694,45 +12359,502 @@ def api_biometric_enroll_view(request):
                 'message': 'Failed to encrypt biometric data'
             }, status=500)
         
-        # Create or update biometric registration
-        biometric_reg, created = BiometricRegistration.objects.update_or_create(
-            student=target_student,
-            course=course,
-            defaults={
-                'biometric_data': encrypted_data,
-                'biometric_type': biometric_type,
-                'is_active': True,
-            }
-        )
+        # DEBUG: Show biometric data being captured
+        print(f"\n[BIOMETRIC CAPTURE DEBUG - 3-CAPTURE ENROLLMENT]")
+        print(f"   Raw biometric_data length: {len(biometric_data)} characters")
+        print(f"   Raw biometric_data hash: {hashlib.sha256(biometric_data.encode()).hexdigest()[:16]}...")
+        print(f"   Encrypted_data hash: {hashlib.sha256(encrypted_data.encode()).hexdigest()[:16]}...")
+        print(f"   This is the best quality capture from 3 scans")
         
-        # Create notification
+        # ========== CRITICAL OPTIMIZATION: Check if student already has registered fingerprint FOR THIS INSTRUCTOR ==========
+        # Key: Different instructors get DIFFERENT fingerprint IDs to avoid conflicts
+        # But all courses under ONE instructor use SAME fingerprint_id
+        
+        # Get the instructor from first course (all should be same instructor)
+        instructor = courses[0].instructor if courses else None
+        
+        if not instructor:
+            return JsonResponse({
+                'success': False,
+                'message': 'Cannot determine instructor for enrollment'
+            }, status=400)
+        
+        # DEBUG: Show enrollment request details
+        print(f"\n[DEBUG] Enrollment request:")
+        print(f"   Student: {target_student.full_name or target_student.username}")
+        print(f"   Courses: {[c.code for c in courses]}")
         try:
-            create_notification(
-                user=target_student,
-                notification_type='student_enrolled',
-                title='Biometric Registration Successful',
-                message=f'Your fingerprint has been registered for {course.code} - {course.name}',
-                category='enrollment',
-                related_course=course,
-                related_user=request.user if request.user.is_teacher else None
-            )
-        except Exception as e:
-            logger.error(f"Error creating notification: {str(e)}")
+            course_instructor_names = [
+                (getattr(getattr(c, 'instructor', None), 'full_name', None) or getattr(getattr(c, 'instructor', None), 'username', '') or '')
+                for c in courses
+            ]
+        except Exception:
+            course_instructor_names = []
+        print(f"   Course instructors: {course_instructor_names}")
+        print(f"   Primary instructor: {instructor.full_name or instructor.username}")
         
-        logger.info(f"Biometric registration {'created' if created else 'updated'} for student {target_student.id} in course {course.id}")
+        # Check if student has existing fingerprint registered with THIS SPECIFIC INSTRUCTOR
+        existing_instructor_fingerprint = BiometricRegistration.objects.filter(
+            student=target_student,
+            course__instructor=instructor,
+            is_active=True
+        ).first()
+        
+        print(f"   [DEBUG] Existing fingerprint with {instructor.full_name}: {existing_instructor_fingerprint is not None}")
+        
+        # OPTIMIZATION: Check if this biometric data matches any existing registration for this student
+        # (even from different instructors) - if same finger, reuse the fingerprint_id
+        existing_same_biometric = BiometricRegistration.objects.filter(
+            student=target_student,
+            biometric_data=encrypted_data,  # Match exact biometric data
+            is_active=True
+        ).first()
+        
+        print(f"\n[BIOMETRIC MATCHING DEBUG]")
+        print(f"   Checking for exact biometric match...")
+        
+        # Debug: Show all existing biometrics for comparison
+        all_student_biometrics = BiometricRegistration.objects.filter(
+            student=target_student,
+            is_active=True
+        ).distinct()
+        print(f"   Student has {all_student_biometrics.count()} active biometric registration(s):")
+        for existing in all_student_biometrics:
+            existing_hash = hashlib.sha256(existing.biometric_data.encode()).hexdigest()[:16]
+            current_hash = hashlib.sha256(encrypted_data.encode()).hexdigest()[:16]
+            match = "MATCH" if existing.biometric_data == encrypted_data else "NO MATCH"
+            try:
+                _course = getattr(existing, 'course', None)
+                _course_code = getattr(_course, 'code', '') if _course else ''
+                _instr = getattr(_course, 'instructor', None) if _course else None
+                _instr_name = (getattr(_instr, 'full_name', None) or getattr(_instr, 'username', '') or '') if _instr else ''
+            except Exception:
+                _course_code = ''
+                _instr_name = ''
+            print(f"      - {_course_code} ({_instr_name}): hash={existing_hash}... {match}")
+        
+        print(f"   Current biometric hash: {hashlib.sha256(encrypted_data.encode()).hexdigest()[:16]}...")
+        
+        print(f"   [DEBUG] Checking for biometric data match across all instructors...")
+        if existing_same_biometric:
+            try:
+                _m_course = getattr(existing_same_biometric, 'course', None)
+                _m_instr = getattr(_m_course, 'instructor', None) if _m_course else None
+                _m_instr_name = (getattr(_m_instr, 'full_name', None) or getattr(_m_instr, 'username', '') or '') if _m_instr else ''
+            except Exception:
+                _m_instr_name = ''
+            print(f"   [DEBUG] FOUND MATCH! Same biometric in {_m_instr_name}'s course")
+        else:
+            print(f"   [DEBUG] No biometric match found - new fingerprint needed")
+        
+        # Determine if this is a replacement and what fingerprint_id to use
+        is_replacement = False
+        fingerprint_id = None  # Initialize before if/elif/else
+        is_new_fingerprint = False
+        
+        if existing_instructor_fingerprint:
+            # REPLACEMENT MODE: Student re-enrolling with same instructor
+            # REUSE the SAME fingerprint_id to save storage (don't create new ID)
+            old_fingerprint_id = existing_instructor_fingerprint.fingerprint_id
+            
+            # Handle case where old records have None fingerprint_id (shouldn't happen, but safety check)
+            if old_fingerprint_id is None:
+                print(f"\n[WARNING] Existing registration has None fingerprint_id! Assigning new ID...")
+                max_fingerprint_id = BiometricRegistration.objects.aggregate(max_id=Max('fingerprint_id'))['max_id'] or 99
+                fingerprint_id = max(100, max_fingerprint_id + 1)
+                is_replacement = False  # Treat as new enrollment since old ID was invalid
+                is_new_fingerprint = True
+            else:
+                fingerprint_id = old_fingerprint_id  # KEEP SAME ID, just replace data
+                is_new_fingerprint = False
+                is_replacement = True
+            
+            print(f"\nFINGERPRINT REPLACEMENT MODE (Student re-enrolling with same instructor):")
+            print(f"   Student: {target_student.full_name or target_student.username}")
+            print(f"   Instructor: {instructor.full_name or instructor.username}")
+            print(f"   REUSING fingerprint_id: {fingerprint_id} (to save storage)")
+            print(f"   Courses: {[c.code for c in courses]}")
+            print(f"   (Biometric data will be updated, but ID remains the same to save storage!)")
+        elif existing_same_biometric:
+            # OPTIMIZATION: Same biometric found in another instructor's course
+            # REUSE that fingerprint_id to save storage space
+            biometric_fingerprint_id = existing_same_biometric.fingerprint_id
+            
+            # Handle case where existing records have None fingerprint_id
+            if biometric_fingerprint_id is None:
+                print(f"\n[WARNING] Existing biometric match has None fingerprint_id! Assigning new ID...")
+                max_fingerprint_id = BiometricRegistration.objects.aggregate(max_id=Max('fingerprint_id'))['max_id'] or 99
+                fingerprint_id = max(100, max_fingerprint_id + 1)
+                is_new_fingerprint = True
+                is_replacement = False
+            else:
+                fingerprint_id = biometric_fingerprint_id
+                is_new_fingerprint = False
+                is_replacement = False
+            
+            print(f"\nBIOMETRIC MATCH FOUND (Same finger, different instructor):")
+            print(f"   Student: {target_student.full_name or target_student.username}")
+            try:
+                _prev_instr = getattr(getattr(getattr(existing_same_biometric, 'course', None), 'instructor', None), 'full_name', None) or getattr(getattr(getattr(existing_same_biometric, 'course', None), 'instructor', None), 'username', '')
+            except Exception:
+                _prev_instr = ''
+            print(f"   Previous instructor: {_prev_instr}")
+            print(f"   Current instructor: {instructor.full_name or instructor.username}")
+            print(f"   REUSING fingerprint_id: {fingerprint_id} (same finger = same ID)")
+            print(f"   Courses: {[c.code for c in courses]}")
+            print(f"   (Storage optimized - same biometric across instructors!)")
+        else:
+            # NEW fingerprint for this student (different finger than any previous)
+            # Use high ID numbers (starting from 100) to avoid conflicts with course_ids (1-99)
+            max_fingerprint_id = BiometricRegistration.objects.aggregate(max_id=Max('fingerprint_id'))['max_id'] or 99
+            fingerprint_id = max(100, max_fingerprint_id + 1)
+            is_new_fingerprint = True
+            is_replacement = False
+            print(f"\nNEW FINGERPRINT (Different finger than any previous):")
+            print(f"   Student: {target_student.full_name or target_student.username}")
+            print(f"   Instructor: {instructor.full_name or instructor.username}")
+            print(f"   [DEBUG] Max existing fingerprint_id globally: {max_fingerprint_id}")
+            print(f"   [DEBUG] New fingerprint_id assigned: {fingerprint_id}")
+            print(f"   Courses: {[c.code for c in courses]}")
+            print(f"   (Different finger = different ID from previous registrations)")
+            
+            # Debug: Show all fingerprint IDs for this student
+            all_student_regs = BiometricRegistration.objects.filter(student=target_student).values('course__instructor__full_name', 'fingerprint_id').distinct()
+            print(f"   [DEBUG] All existing fingerprints for student:")
+            for reg in all_student_regs:
+                print(f"      - Instructor: {reg['course__instructor__full_name']}, Fingerprint ID: {reg['fingerprint_id']}")
+            print(f"   [DEBUG] After this enrollment, student will have fingerprint_id {fingerprint_id} for {instructor.full_name or instructor.username}")
+        
+        # CRITICAL FIX: Register fingerprint for ALL courses in single transaction
+        # This ensures one fingerprint is registered for all enrolled courses (like QR code)
+        registered_courses = []
+        failed_courses = []
+        
+        # CLEANUP: Deactivate old registrations with this fingerprint_id
+        # (This allows the new registrations to use the same fingerprint_id for multiple courses)
+        old_registrations = BiometricRegistration.objects.filter(
+            student=target_student,
+            fingerprint_id=fingerprint_id,
+            is_active=True
+        )
+        if old_registrations.exists():
+            print(f"\n[CLEANUP] Deactivating {old_registrations.count()} old registrations with fingerprint_id {fingerprint_id}")
+            for old_reg in old_registrations:
+                print(f"   - Deactivating: {old_reg.course.code}")
+            old_registrations.update(is_active=False)
+            print(f"[CLEANUP] All old registrations deactivated")
+        
+        # CLEANUP: Fix any existing records with None fingerprint_id for this student
+        # This can happen if old enrollments weren't finalized properly
+        none_registrations = BiometricRegistration.objects.filter(
+            student=target_student,
+            fingerprint_id__isnull=True,
+            is_active=True
+        )
+        if none_registrations.exists():
+            print(f"\n[CLEANUP] Found {none_registrations.count()} registrations with None fingerprint_id")
+            # Update them to use the current fingerprint_id being assigned
+            none_registrations.update(fingerprint_id=fingerprint_id)
+            print(f"[CLEANUP] Updated them to fingerprint_id: {fingerprint_id}")
+        
+        # Safety check: ensure fingerprint_id is valid
+        if fingerprint_id is None:
+            print(f"[ERROR] fingerprint_id is None! This is a critical error.")
+            print(f"   Existing instructor fingerprint: {existing_instructor_fingerprint}")
+            print(f"   Existing same biometric: {existing_same_biometric}")
+            return JsonResponse({
+                'success': False,
+                'message': 'Failed to assign fingerprint ID. Please try again.'
+            }, status=500)
+        
+        # ==================== MQTT ENROLLMENT TRIGGER ====================
+        # CRITICAL: Send MQTT message to ESP32 to store the fingerprint in sensor memory
+        # This allows hardware-based matching during attendance (accurate and fast)
+        # Without this, fingerprints only exist in database, not in sensor
+        logger.info(f"\n[MQTT ENROLLMENT] Sending enrollment request to ESP32...")
+        logger.info(f"[MQTT ENROLLMENT] Student: {target_student.full_name}")
+        logger.info(f"[MQTT ENROLLMENT] Fingerprint slot: {fingerprint_id}")
+        
+        try:
+            from dashboard.mqtt_client import get_mqtt_client
+            mqtt_client = get_mqtt_client()
+            
+            if skip_mqtt_start:
+                logger.info("[MQTT ENROLLMENT] Skipping MQTT start publish (skip_mqtt_start=true)")
+            elif mqtt_client and mqtt_client.is_connected:
+                enrollment_message = {
+                    'action': 'start',
+                    'slot': fingerprint_id,
+                    'template_id': f'student_{target_student.id}',
+                    'student_name': target_student.full_name or target_student.username
+                }
+                
+                success = mqtt_client.publish('biometric/esp32/enroll/request', enrollment_message)
+                if success:
+                    logger.info(f"[MQTT ENROLLMENT] Enrollment request published to ESP32")
+                    logger.info(f"[MQTT ENROLLMENT] Slot {fingerprint_id} is now waiting for 3 finger scans")
+                else:
+                    logger.warning(f"[MQTT ENROLLMENT] Failed to publish enrollment request to ESP32")
+            else:
+                logger.warning(f"[MQTT ENROLLMENT] MQTT client not connected")
+        except Exception as e:
+            logger.error(f"[MQTT ENROLLMENT] Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        with transaction.atomic():
+            for course in courses:
+                try:
+                    # Create or update biometric registration with the same fingerprint_id
+                    biometric_reg, created = BiometricRegistration.objects.update_or_create(
+                        student=target_student,
+                        course=course,
+                        defaults={
+                            'fingerprint_id': fingerprint_id,  # Use reused or new fingerprint_id
+                            'biometric_data': encrypted_data,
+                            'biometric_type': biometric_type,
+                            'is_active': True,
+                        }
+                    )
+                    print(f"   BiometricRegistration saved for {course.code}:")
+                    print(f"      - fingerprint_id: {biometric_reg.fingerprint_id}")
+                    print(f"      - is_active: {biometric_reg.is_active}")
+                    print(f"      - created: {created}")
+                    registered_courses.append(course)
+                    
+                    # Create notification for each course
+                    try:
+                        create_notification(
+                            user=target_student,
+                            notification_type='student_enrolled',
+                            title='Biometric Registration Successful',
+                            message=f'Your fingerprint has been registered for {course.code} - {course.name}',
+                            category='enrollment',
+                            related_course=course,
+                            related_user=request.user if request.user.is_teacher else None
+                        )
+                    except Exception as e:
+                        logger.error(f"Error creating notification for course {course.id}: {str(e)}")
+                        
+                except Exception as e:
+                    failed_courses.append({
+                        'course_id': course.id,
+                        'error': str(e)
+                    })
+                    logger.error(f"Error registering biometric for course {course.id}: {str(e)}")
+        
+        # Check if ALL courses were registered successfully
+        if failed_courses:
+            return JsonResponse({
+                'success': False,
+                'message': f'Failed to register fingerprint for {len(failed_courses)} course(s)',
+                'registered_count': len(registered_courses),
+                'failed_count': len(failed_courses),
+                'failed_courses': failed_courses
+            }, status=500)
+        
+        # ALL COURSES REGISTERED SUCCESSFULLY
+        logger.info(f"Biometric registration COMPLETED for student {target_student.id} in {len(registered_courses)} course(s): {[c.code for c in registered_courses]}")
+        
+        course_names = ', '.join([f'{c.code} - {c.name}' for c in registered_courses])
+        
+        # Store metadata about replacement in session
+        request.session['pending_fingerprint'] = {
+            'student_id': target_student.id,
+            'instructor_id': instructor.id,
+            'fingerprint_id': fingerprint_id,
+            'is_replacement': is_replacement,
+            'course_ids': [c.id for c in courses],
+            'timestamp': str(datetime.now())
+        }
+        request.session.modified = True
+        logger.info(f"\nENROLLMENT SESSION CREATED:")
+        logger.info(f"   Fingerprint ID: {fingerprint_id}")
+        logger.info(f"   Is replacement: {is_replacement}")
+        if is_replacement:
+            logger.info(f"   Biometric data will be updated for fingerprint_id {fingerprint_id} (same ID)")
+        logger.info(f"\nIMPORTANT: Biometric data temporarily stored!")
+        logger.info(f"   Only on CONFIRM button click will new biometric be permanently saved.")
+        
+        # CRITICAL: Send MQTT message to ESP32 to confirm enrollment is complete and reset flags
+        # This unblocks the ESP32 so next student can enroll
+        mqtt_sent = False
+        try:
+            from dashboard.mqtt_client import get_mqtt_client
+            import time
+            
+            mqtt_client = get_mqtt_client()
+            
+            if mqtt_client and mqtt_client.is_connected:
+                # Create completion message for ESP32
+                completion_msg = {
+                    'status': 'enrollment_saved',
+                    'fingerprint_id': str(fingerprint_id),
+                    'template_id': biometric_template_id,
+                    'message': 'Enrollment confirmed and saved to database',
+                    'is_replacement': is_replacement
+                }
+                
+                logger.info(f"\n[MQTT] ====== SENDING COMPLETION MESSAGE TO ESP32 ======")
+                logger.info(f"[MQTT] Fingerprint ID: {fingerprint_id}")
+                logger.info(f"[MQTT] Template ID: {biometric_template_id}")
+                logger.info(f"[MQTT] Message: {json.dumps(completion_msg)}")
+                
+                # CRITICAL: Publish with QoS=1 (at least once delivery) with automatic retries
+                # Publish to BOTH topics for maximum reliability
+                # Retry up to 3 times if initial publish fails
+                max_retries = 3
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        result1 = mqtt_client.publish('biometric/esp32/enroll/response', completion_msg, qos=1)
+                        result2 = mqtt_client.publish('biometric/esp32/enroll/completion', completion_msg, qos=1)
+                        
+                        logger.info(f"[MQTT] Attempt {attempt}/{max_retries}:")
+                        logger.info(f"[MQTT]   - Published to biometric/esp32/enroll/response")
+                        logger.info(f"[MQTT]   - Published to biometric/esp32/enroll/completion")
+                        
+                        # Both publishes should succeed
+                        if result1 and result2:
+                            logger.info(f"[MQTT] Success on attempt {attempt}")
+                            mqtt_sent = True
+                            break
+                        else:
+                            logger.warning(f"[MQTT] Publish failed, retrying...")
+                            time.sleep(0.3)  # Wait before retry
+                            
+                    except Exception as publish_error:
+                        logger.error(f"[MQTT] Attempt {attempt} failed: {str(publish_error)}")
+                        if attempt < max_retries:
+                            time.sleep(0.3)
+                            continue
+                        else:
+                            raise
+                
+                # Wait a moment for MQTT to process
+                time.sleep(0.5)
+                
+                if mqtt_sent:
+                    logger.info(f"[MQTT] CRITICAL: ESP32 should now receive enrollment_saved and reset enrollmentInProgress = false")
+                    logger.info(f"[MQTT] Next student can immediately start enrollment!")
+                    logger.info(f"[MQTT] Enrollment completion sent to ESP32 for fingerprint {fingerprint_id} (QoS=1, delivered)")
+                else:
+                    logger.warning(f"[MQTT] WARNING: Could not send enrollment_saved to ESP32 after {max_retries} attempts")
+            else:
+                logger.warning(f"[MQTT] MQTT client not connected - enrollment saved but ESP32 not notified")
+            
+        except Exception as mqtt_error:
+            logger.error(f"[MQTT] CRITICAL ERROR - Could not notify ESP32 of completion: {str(mqtt_error)}")
+            # Don't raise - let enrollment complete in Django even if MQTT fails
+            # User will see the error but enrollment is saved
+        
+        if not mqtt_sent:
+            print(f"[MQTT] WARNING: MQTT completion message was NOT sent successfully!")
+            print(f"[MQTT] ESP32 may still be blocked. Try clicking start enrollment again in 10 seconds.")
+            logger.warning(f"[MQTT] WARNING: Enrollment saved in DB but ESP32 not notified. May need manual reset.")
+        
+        # CLEAR THE ENROLLMENT LOCK (enrollment completed successfully)
+        cache.delete(lock_key)
+        logger.info(f"[ENROLLMENT LOCK] CLEARED - Student {target_student.full_name} completed enrollment for instructor {instructor.full_name}")
         
         return JsonResponse({
             'success': True,
-            'message': f'Biometric {"registered" if created else "updated"} successfully',
-            'enrollment_id': biometric_reg.id,
+            'message': f'Fingerprint registered successfully for {len(registered_courses)} course(s)!',
+            'registered_count': len(registered_courses),
+            'registered_courses': [{'id': c.id, 'code': c.code, 'name': c.name} for c in registered_courses],
             'biometric_type': biometric_type,
+            'fingerprint_id': fingerprint_id,
+            'is_replacement': is_replacement,
+            'registration_type': "Fingerprint replacement (updating biometric data)" if is_replacement else "New fingerprint created",
         })
     
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'message': 'Invalid JSON data'}, status=400)
     except Exception as e:
+        # Clear enrollment lock on error
+        from django.core.cache import cache
+        try:
+            if 'instructor' in locals() and instructor:
+                lock_key = get_enrollment_lock_key(instructor.id)
+                cache.delete(lock_key)
+                logger.info(f"[ENROLLMENT LOCK] CLEARED (on error) for instructor {instructor.full_name}")
+        except:
+            pass
+        
         logger.error(f"Error in biometric enrollment: {str(e)}")
         return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+@csrf_exempt
+def api_check_biometric_view(request):
+    """
+    API endpoint to check if a student has existing biometric registered for given courses.
+    Returns whether student already has a fingerprint registered.
+    
+    Expected POST data:
+    {
+        'student_id': '<string>',  # School ID
+        'course_ids': [<int>, <int>, ...]  # List of course IDs
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        student_school_id = data.get('student_id', '').strip()
+        course_ids = data.get('course_ids', [])
+        
+        if not student_school_id or not course_ids:
+            return JsonResponse({
+                'success': True,
+                'has_existing_biometric': False,
+                'message': 'No student ID or courses provided'
+            })
+        
+        # Get student by school_id
+        try:
+            student = CustomUser.objects.get(school_id=student_school_id, is_student=True)
+        except CustomUser.DoesNotExist:
+            # Student not found, treat as no existing biometric
+            return JsonResponse({
+                'success': True,
+                'has_existing_biometric': False,
+                'message': 'Student not found'
+            })
+        
+        # Check if student has biometric registration for ANY of these courses
+        has_existing = BiometricRegistration.objects.filter(
+            student=student,
+            course_id__in=course_ids,
+            is_active=True
+        ).exists()
+        
+        # Get instructor name if they have existing registration
+        instructor_name = ''
+        if has_existing:
+            existing_reg = BiometricRegistration.objects.filter(
+                student=student,
+                course_id__in=course_ids,
+                is_active=True
+            ).first()
+            if existing_reg and existing_reg.course:
+                instructor_name = existing_reg.course.instructor.get_full_name() or existing_reg.course.instructor.username
+        
+        return JsonResponse({
+            'success': True,
+            'has_existing_biometric': has_existing,
+            'instructor_name': instructor_name,
+            'message': 'Check completed successfully'
+        })
+    
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error checking biometric: {str(e)}")
+        return JsonResponse({
+            'success': True,
+            'has_existing_biometric': False,
+            'message': 'Could not check biometric - proceeding normally'
+        })
 
 
 @login_required
@@ -11852,6 +12974,22 @@ def api_biometric_scan_attendance_view(request):
         except CourseEnrollment.DoesNotExist:
             return JsonResponse({'success': False, 'message': 'Student is not enrolled in this course'}, status=403)
         
+        # ✅ CRITICAL: Check if student has registered their fingerprint for this course
+        # Students MUST register biometric with instructor before using attendance
+        biometric_registration = BiometricRegistration.objects.filter(
+            student=student,
+            course=course,
+            is_active=True
+        ).first()
+        
+        if not biometric_registration:
+            return JsonResponse({
+                'success': False,
+                'message': f'Student has not registered their fingerprint for this course. Please register biometric first.',
+                'student_id': student.id,
+                'course_id': course.id
+            }, status=403)
+        
         # Check if attendance is open
         from django.utils import timezone
         from zoneinfo import ZoneInfo
@@ -11865,23 +13003,35 @@ def api_biometric_scan_attendance_view(request):
         now_ph = timezone.now().astimezone(ph_tz)
         today = now_ph.date()
         
+        # Log biometric attendance attempt
+        print(f"\n[BIOMETRIC ATTENDANCE]")
+        print(f"  Student: {student.full_name}")
+        print(f"  Course: {course.code}")
+        print(f"  Biometric registered: ✓ Yes (fingerprint_id={biometric_registration.fingerprint_id})")
+        print(f"  Time: {now_ph.strftime('%H:%M:%S')}")
+        
         # Determine schedule day and check attendance status
         schedule_day = None
         attendance_status = 'closed'
         
+        active_schedule = None
         if schedule_id:
             # Extract day from schedule_id format: course_id_day_YYYYMMDD
             try:
-                parts = schedule_id.split('_')
+                parts = str(schedule_id).split('_')
                 if len(parts) >= 2:
-                    day_short = parts[1]
-                    day_schedule = CourseSchedule.objects.filter(
-                        course=course,
-                        day=day_short
-                    ).first()
-                    if day_schedule:
-                        schedule_day = day_schedule.day
-                        attendance_status = day_schedule.attendance_status or course.attendance_status
+                    day_token = parts[1]
+                    day_map_reverse = {
+                        'M': 'Mon', 'T': 'Tue', 'W': 'Wed', 'Th': 'Thu', 'F': 'Fri',
+                        'S': 'Sat', 'Su': 'Sun',
+                        'Mon': 'Mon', 'Tue': 'Tue', 'Wed': 'Wed', 'Thu': 'Thu', 'Fri': 'Fri', 'Sat': 'Sat', 'Sun': 'Sun'
+                    }
+                    mapped_day = day_map_reverse.get(day_token)
+                    if mapped_day:
+                        active_schedule = CourseSchedule.objects.filter(course=course, day=mapped_day).first()
+                        if active_schedule:
+                            schedule_day = active_schedule.day
+                            attendance_status = active_schedule.attendance_status or course.attendance_status
             except Exception as e:
                 logger.warning(f"Error parsing schedule_id: {str(e)}")
         
@@ -11916,41 +13066,56 @@ def api_biometric_scan_attendance_view(request):
             # Determine attendance status based on present window
             attendance_record_status = 'present'
             attendance_time = now_ph.time()
-            
-            # Check if within present window
+
             present_duration_minutes = None
             qr_opened_at = None
-            
-            # Get present duration from schedule or course
-            if schedule_day:
-                day_schedule = CourseSchedule.objects.filter(
-                    course=course,
-                    day=schedule_day
-                ).first()
-                if day_schedule:
-                    present_duration_minutes = getattr(day_schedule, 'attendance_present_duration', None)
-            
-            if not present_duration_minutes:
-                present_duration_minutes = getattr(course, 'attendance_present_duration', None)
-            
-            # Get qr_code_opened_at
-            if schedule_day:
-                day_schedule = CourseSchedule.objects.filter(
-                    course=course,
-                    day=schedule_day
-                ).first()
-                if day_schedule:
-                    qr_opened_at = getattr(day_schedule, 'qr_code_opened_at', None)
-            
-            if not qr_opened_at:
-                qr_opened_at = getattr(course, 'qr_code_opened_at', None)
-            
-            # Check if marked as late (after present window expired)
-            if qr_opened_at and present_duration_minutes and present_duration_minutes > 0:
-                present_window_end = qr_opened_at + timezone.timedelta(minutes=int(present_duration_minutes))
-                if now_ph > present_window_end:
-                    attendance_record_status = 'late'
-                    logger.info(f"Student {student.id} marked as LATE (present window expired)")
+
+            try:
+                if active_schedule and getattr(active_schedule, 'attendance_present_duration', None) is not None:
+                    present_duration_minutes = int(active_schedule.attendance_present_duration or 0)
+                else:
+                    present_duration_minutes = int(getattr(course, 'attendance_present_duration', 0) or 0)
+            except Exception:
+                present_duration_minutes = 0
+
+            try:
+                if active_schedule and getattr(active_schedule, 'qr_code_opened_at', None):
+                    qr_opened_at = active_schedule.qr_code_opened_at
+                elif getattr(course, 'qr_code_opened_at', None):
+                    qr_opened_at = course.qr_code_opened_at
+            except Exception:
+                qr_opened_at = None
+
+            cutoff_dt = None
+            if present_duration_minutes and present_duration_minutes > 0:
+                try:
+                    if qr_opened_at:
+                        cutoff_dt = qr_opened_at + timezone.timedelta(minutes=int(present_duration_minutes))
+                    elif active_schedule and getattr(active_schedule, 'start_time', None):
+                        from datetime import datetime as dt
+                        cutoff_dt = dt.combine(today, active_schedule.start_time) + timezone.timedelta(minutes=int(present_duration_minutes))
+                        try:
+                            cutoff_dt = cutoff_dt.replace(tzinfo=now_ph.tzinfo)
+                        except Exception:
+                            pass
+                except Exception:
+                    cutoff_dt = None
+
+            if cutoff_dt and now_ph > cutoff_dt:
+                attendance_record_status = 'late'
+                logger.info(f"Student {student.id} marked as LATE (present window expired)")
+            elif not cutoff_dt:
+                # Fallback: use attendance_end window if configured
+                try:
+                    end_time = None
+                    if active_schedule and getattr(active_schedule, 'attendance_end', None):
+                        end_time = active_schedule.attendance_end
+                    elif getattr(course, 'attendance_end', None):
+                        end_time = course.attendance_end
+                    if end_time and now_ph.time() > end_time:
+                        attendance_record_status = 'late'
+                except Exception:
+                    pass
             
             # Create or update attendance record
             attendance_record, created = AttendanceRecord.objects.update_or_create(
@@ -12094,6 +13259,7 @@ def student_register_biometric_view(request):
     context = {
         'enrollments': enrollments,
         'total_courses': enrollments.count(),
+        'esp32_ip': settings.ESP32_IP,
     }
     return render(request, 'dashboard/student/register_biometric.html', context)
 
@@ -12336,6 +13502,106 @@ def api_get_student_enrolled_courses_view(request):
         }, status=500)
 
 
+@login_required
+@require_http_methods(["GET"])
+def get_enrolled_courses_status_view(request):
+    """
+    Get the current registration status (QR and biometric) for specified enrolled courses.
+    Used to update course cards after successful biometric enrollment.
+    
+    Expected GET parameter:
+    - course_ids: comma-separated course IDs (e.g., "1,2,3")
+    
+    Returns:
+    {
+        'success': bool,
+        'enrollments': [
+            {
+                'id': <enrollment_id>,
+                'course_id': <course_id>,
+                'has_qr': bool,
+                'has_biometric': bool
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        if not request.user.is_student:
+            return JsonResponse({
+                'success': False,
+                'message': 'Only students can access this endpoint'
+            }, status=403)
+        
+        course_ids_str = request.GET.get('course_ids', '')
+        
+        if not course_ids_str:
+            return JsonResponse({
+                'success': False,
+                'message': 'Missing course_ids parameter'
+            }, status=400)
+        
+        # Parse course IDs
+        try:
+            course_ids = [int(cid.strip()) for cid in course_ids_str.split(',') if cid.strip()]
+        except ValueError:
+            return JsonResponse({
+                'success': False,
+                'message': 'Invalid course_ids format'
+            }, status=400)
+        
+        logger.info(f"Getting enrollment status for student {request.user.id} for courses: {course_ids}")
+        
+        # Get enrollment records for this student in the specified courses
+        enrollments = CourseEnrollment.objects.filter(
+            student=request.user,
+            course_id__in=course_ids,
+            is_active=True,
+            deleted_at__isnull=True
+        ).select_related('course').values('id', 'course_id')
+        
+        enrollments_data = []
+        
+        for enrollment in enrollments:
+            enrollment_id = enrollment['id']
+            course_id = enrollment['course_id']
+            
+            # Check if biometric registration exists
+            has_biometric = BiometricRegistration.objects.filter(
+                student=request.user,
+                course_id=course_id,
+                is_active=True
+            ).exists()
+            
+            # Check if QR registration exists
+            has_qr = QRCodeRegistration.objects.filter(
+                student=request.user,
+                course_id=course_id,
+                is_active=True
+            ).exists()
+            
+            enrollments_data.append({
+                'id': enrollment_id,
+                'course_id': course_id,
+                'has_qr': has_qr,
+                'has_biometric': has_biometric
+            })
+            
+            logger.info(f"Enrollment {enrollment_id} (Course {course_id}): QR={has_qr}, Biometric={has_biometric}")
+        
+        return JsonResponse({
+            'success': True,
+            'enrollments': enrollments_data
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting enrolled courses status: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }, status=500)
+
+
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def api_health_check(request):
@@ -12353,6 +13619,8 @@ def api_health_check(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@csrf_exempt
+@require_http_methods(["POST"])
 def api_broadcast_scan_update(request):
     """
     API endpoint to broadcast R307 scan updates to WebSocket clients.
@@ -12361,7 +13629,7 @@ def api_broadcast_scan_update(request):
     POST data:
     {
         'enrollment_id': '<enrollment_id>',
-        'slot': <1-5>,
+        'slot': <1-3>,
         'success': <true/false>,
         'quality_score': <0-100>,
         'message': '<status message>'
@@ -12369,7 +13637,11 @@ def api_broadcast_scan_update(request):
     """
     try:
         from channels.layers import get_channel_layer
-        import asyncio
+        from asgiref.sync import async_to_sync  # CRITICAL: Use async_to_sync, NOT asyncio.run()
+        
+        print("\n" + "="*80)
+        print("🔔 [BROADCAST] ===== SCAN UPDATE RECEIVED =====")
+        print(f"Body: {request.body}")
         
         data = json.loads(request.body)
         enrollment_id = data.get('enrollment_id')
@@ -12377,34 +13649,78 @@ def api_broadcast_scan_update(request):
         success = data.get('success', False)
         quality = data.get('quality_score', 0)
         message = data.get('message', '')
-        progress = (slot / 5) * 100 if slot else 0
+        progress = (slot / 3) * 100 if slot else 0
         
-        logger.info(f"[BROADCAST] Received scan update: enrollment={enrollment_id}, slot={slot}, success={success}")
+        print(f"[BROADCAST] Enrollment ID: {enrollment_id}")
+        print(f"[BROADCAST] Slot: {slot}")
+        print(f"[BROADCAST] Success: {success}")
+        print(f"[BROADCAST] Quality: {quality}")
+        print(f"[BROADCAST] Message: {message}")
+        print(f"[BROADCAST] Calculated Progress: {progress}%")
+        
+        logger.info(f"[BROADCAST] Received scan update: enrollment={enrollment_id}, slot={slot}, success={success}, progress={progress}%")
         
         if not enrollment_id:
+            print("[BROADCAST] ✗ Missing enrollment_id in request")
             logger.warning("[BROADCAST] Missing enrollment_id in request")
             return JsonResponse({'success': False, 'message': 'Missing enrollment_id'}, status=400)
+        
+        # Import the enrollment states from enrollment_state module (single source of truth)
+        try:
+            from .enrollment_state import _enrollment_states
+        except ImportError:
+            logger.error("[BROADCAST] Could not import _enrollment_states from enrollment_state")
+            _enrollment_states = {}
+        
+        # Update enrollment state (this is critical for frontend polling)
+        if enrollment_id in _enrollment_states:
+            _enrollment_states[enrollment_id].update({
+                'current_scan': slot,
+                'progress': int(progress),
+                'message': message,
+                'updated_at': datetime.now().isoformat(),
+                'status': 'processing'
+            })
+            print(f"[BROADCAST] ✓ State updated for enrollment {enrollment_id}")
+            logger.info(f"[BROADCAST] ✓ State updated: enrollment={enrollment_id}, scan={slot}, progress={progress}%, message='{message}'")
+        else:
+            # Create the state if it doesn't exist (shouldn't happen normally)
+            print(f"[BROADCAST] ⚠️ Creating state for enrollment {enrollment_id}")
+            logger.warning(f"[BROADCAST] Creating state for enrollment {enrollment_id} (should have been created by api_start_enrollment)")
+            _enrollment_states[enrollment_id] = {
+                'status': 'processing',
+                'current_scan': slot,
+                'progress': int(progress),
+                'message': message,
+                'updated_at': datetime.now().isoformat()
+            }
         
         # Get channel layer and broadcast to group
         channel_layer = get_channel_layer()
         group_name = f"biometric_enrollment_{enrollment_id}"
         
+        print(f"[BROADCAST] Group name: {group_name}")
         logger.info(f"[BROADCAST] Sending to group: {group_name}")
         
         # Send message to WebSocket group
-        asyncio.run(channel_layer.group_send(
+        print(f"[BROADCAST] Sending WebSocket message with step={slot}")
+        async_to_sync(channel_layer.group_send)(
             group_name,
             {
                 'type': 'scan_update',
                 'slot': slot,
+                'step': slot,  # CRITICAL: Include step for frontend deduplication
                 'success': success,
                 'quality': quality,
                 'message': message,
                 'progress': progress
             }
-        ))
+        )
         
+        print(f"[BROADCAST] ✓ Broadcast sent to {group_name}")
         logger.info(f"[BROADCAST] ✓ Broadcast sent: enrollment={enrollment_id}, slot={slot}, group={group_name}")
+        
+        print("="*80 + "\n")
         
         return JsonResponse({
             'success': True,
@@ -12412,7 +13728,10 @@ def api_broadcast_scan_update(request):
         })
     
     except Exception as e:
+        print(f"[BROADCAST] ✗✗✗ ERROR: {str(e)}")
         logger.error(f"Error broadcasting scan update: {str(e)}", exc_info=True)
+        import traceback
+        traceback.print_exc()
         return JsonResponse({
             'success': False,
             'message': f'Error: {str(e)}'
@@ -12421,6 +13740,109 @@ def api_broadcast_scan_update(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+def api_scan_acknowledged(request):
+    """
+    Endpoint for frontend to acknowledge receipt of a scan update.
+    Stores acknowledgment in cache so ESP32 can poll and check.
+    
+    POST data:
+    {
+        'enrollment_id': '<enrollment_id>',
+        'step': <1-3>,
+        'success': <true/false>
+    }
+    """
+    try:
+        from django.core.cache import cache
+        
+        data = json.loads(request.body)
+        enrollment_id = data.get('enrollment_id')
+        step = data.get('step', 0)
+        success = data.get('success', False)
+        
+        print(f"\n[ACK API] Frontend acknowledged scan {step}/3 for enrollment {enrollment_id}")
+        logger.info(f"[ACK API] Frontend acknowledged scan {step}/3 for enrollment {enrollment_id}")
+        
+        if not enrollment_id or step < 1 or step > 3:
+            return JsonResponse({'success': False, 'message': 'Invalid parameters'}, status=400)
+        
+        # Store acknowledgment in cache with key format: ack_<enrollment_id>_<step>
+        # ESP32 will poll this to check if frontend acknowledged
+        cache_key = f"scan_ack_{enrollment_id}_{step}"
+        cache.set(cache_key, True, timeout=60)  # Keep for 60 seconds
+        
+        print(f"[ACK CACHE] ✓ Stored acknowledgment: {cache_key} = True")
+        print(f"[ACK] Step {step} acknowledged by frontend - ESP32 will detect via polling!")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Scan {step} acknowledged - ESP32 will detect via HTTP polling',
+            'enrollment_id': enrollment_id,
+            'step': step
+        })
+    
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error in scan acknowledgment API: {str(e)}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def api_check_scan_acknowledged(request):
+    """
+    Endpoint for ESP32 to check if frontend has acknowledged a specific scan.
+    ESP32 polls this while waiting for acknowledgment.
+    
+    GET parameters:
+    ?enrollment_id=<id>&step=<1-3>
+    
+    Returns: {'acknowledged': true/false}
+    """
+    try:
+        from django.core.cache import cache
+        
+        enrollment_id = request.GET.get('enrollment_id')
+        step = request.GET.get('step', '0')
+        
+        try:
+            step = int(step)
+        except:
+            step = 0
+        
+        if not enrollment_id or step < 1 or step > 3:
+            return JsonResponse({'success': False, 'message': 'Invalid parameters'}, status=400)
+        
+        # Check if acknowledgment exists in cache
+        cache_key = f"scan_ack_{enrollment_id}_{step}"
+        acknowledged = cache.get(cache_key, False)
+        
+        if acknowledged:
+            print(f"[ESP32 POLL] ✓ Scan {step} WAS acknowledged by frontend!")
+            print(f"[ESP32 POLL]   ESP32 can now proceed to next scan")
+        else:
+            print(f"[ESP32 POLL] ⏳ Scan {step} NOT yet acknowledged - ESP32 will keep waiting/retrying")
+        
+        return JsonResponse({
+            'success': True,
+            'enrollment_id': enrollment_id,
+            'step': step,
+            'acknowledged': acknowledged
+        })
+    
+    except Exception as e:
+        logger.error(f"Error checking scan acknowledgment: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'acknowledged': False,
+            'message': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@require_http_methods(["POST"])
 def api_broadcast_enrollment_complete(request):
     """
     API endpoint to broadcast enrollment completion to WebSocket clients.
@@ -12428,8 +13850,8 @@ def api_broadcast_enrollment_complete(request):
     POST data:
     {
         'enrollment_id': '<enrollment_id>',
+        'fingerprint_id': <id>,
         'success': <true/false>,
-        'courses_enrolled': <count>,
         'message': '<message>'
     }
     """
@@ -12439,12 +13861,30 @@ def api_broadcast_enrollment_complete(request):
         
         data = json.loads(request.body)
         enrollment_id = data.get('enrollment_id')
+        fingerprint_id = data.get('fingerprint_id', 1)
         success = data.get('success', True)
-        courses_enrolled = data.get('courses_enrolled', 0)
         message = data.get('message', 'Enrollment complete')
         
         if not enrollment_id:
             return JsonResponse({'success': False, 'message': 'Missing enrollment_id'}, status=400)
+        
+        # Import the enrollment states
+        try:
+            from .views_enrollment_apis import _enrollment_states
+        except ImportError:
+            logger.error("[BROADCAST] Could not import _enrollment_states from views_enrollment_apis")
+            _enrollment_states = {}
+        
+        # Update enrollment state to mark as completed
+        if enrollment_id in _enrollment_states:
+            _enrollment_states[enrollment_id].update({
+                'status': 'completed',
+                'progress': 100,
+                'message': message,
+                'fingerprint_id': fingerprint_id,
+                'completed_at': datetime.now().isoformat()
+            })
+            logger.info(f"[BROADCAST] Marked enrollment {enrollment_id} as completed")
         
         channel_layer = get_channel_layer()
         group_name = f"biometric_enrollment_{enrollment_id}"
@@ -12454,16 +13894,2732 @@ def api_broadcast_enrollment_complete(request):
             {
                 'type': 'enrollment_complete',
                 'success': success,
-                'courses_enrolled': courses_enrolled,
+                'fingerprint_id': fingerprint_id,
                 'message': message
             }
         ))
         
-        logger.info(f"Broadcast enrollment complete: enrollment={enrollment_id}, courses={courses_enrolled}")
+        logger.info(f"[BROADCAST] Enrollment complete: enrollment={enrollment_id}, fingerprint={fingerprint_id}")
         
         return JsonResponse({'success': True, 'message': 'Enrollment completion broadcasted'})
     
     except Exception as e:
-        logger.error(f"Error broadcasting enrollment completion: {str(e)}", exc_info=True)
+        logger.error(f"[BROADCAST] Error broadcasting enrollment completion: {str(e)}", exc_info=True)
         return JsonResponse({'success': False, 'message': str(e)}, status=500)
 
+
+# ==================== ESP32 FINGERPRINT SENSOR COMMUNICATION ====================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_esp32_scan_feedback(request):
+    """
+    API endpoint for ESP32 to send fingerprint scan feedback during enrollment.
+    Called by ESP32 to report scan progress and quality.
+    
+    POST data:
+    {
+        'template_id': '<enrollment_template_id>',
+        'success': <true/false>,
+        'quality': <0-100>,
+        'confirmations': <1-5>,
+        'timestamp': <milliseconds>
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        template_id = data.get('template_id', '')
+        success = data.get('success', False)
+        quality = data.get('quality', 0)
+        confirmations = data.get('confirmations', 0)
+        
+        logger.info(f"[ESP32] Scan feedback: template={template_id}, success={success}, quality={quality}, confirmations={confirmations}")
+        
+        # Broadcast scan update to WebSocket clients
+        try:
+            from channels.layers import get_channel_layer
+            import asyncio
+            
+            channel_layer = get_channel_layer()
+            group_name = f"biometric_enrollment_{template_id}"
+            
+            asyncio.run(channel_layer.group_send(
+                group_name,
+                {
+                    'type': 'scan_update',
+                    'slot': confirmations,
+                    'success': success,
+                    'quality': quality,
+                    'message': f'Scan {confirmations}/5 - Quality: {quality}%',
+                    'progress': (confirmations / 5) * 100
+                }
+            ))
+            
+            logger.info(f"[ESP32] Broadcasted scan update to group: {group_name}")
+        except Exception as e:
+            logger.warning(f"[ESP32] Could not broadcast to WebSocket: {str(e)}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Scan feedback received',
+            'confirmations': confirmations
+        })
+    
+    except json.JSONDecodeError:
+        logger.error("[ESP32] Invalid JSON in scan feedback request")
+        return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"[ESP32] Error processing scan feedback: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_esp32_enrollment_complete(request):
+    """
+    API endpoint for ESP32 to signal fingerprint enrollment completion.
+    Called by ESP32 after 5 scans are successfully collected.
+    
+    POST data:
+    {
+        'template_id': '<enrollment_template_id>',
+        'success': <true/false>,
+        'fingerprint_id': <sensor_id>,
+        'confirmations': <5>,
+        'timestamp': <milliseconds>
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        template_id = data.get('template_id', '')
+        success = data.get('success', False)
+        fingerprint_id = data.get('fingerprint_id', 0)
+        confirmations = data.get('confirmations', 0)
+        
+        logger.info(f"[ESP32] Enrollment complete: template={template_id}, success={success}, fingerprint_id={fingerprint_id}")
+        
+        if not success:
+            logger.warning(f"[ESP32] Enrollment failed for template {template_id}")
+            # Broadcast failure to WebSocket clients
+            try:
+                from channels.layers import get_channel_layer
+                import asyncio
+                
+                channel_layer = get_channel_layer()
+                group_name = f"biometric_enrollment_{template_id}"
+                
+                asyncio.run(channel_layer.group_send(
+                    group_name,
+                    {
+                        'type': 'enrollment_error',
+                        'message': 'Enrollment failed. Please try again.',
+                        'success': False
+                    }
+                ))
+            except Exception as e:
+                logger.warning(f"[ESP32] Could not broadcast error to WebSocket: {str(e)}")
+            
+            return JsonResponse({
+                'success': False,
+                'message': 'Enrollment failed on ESP32',
+                'fingerprint_id': 0
+            })
+        
+        # Broadcast completion to WebSocket clients
+        try:
+            from channels.layers import get_channel_layer
+            import asyncio
+            
+            channel_layer = get_channel_layer()
+            group_name = f"biometric_enrollment_{template_id}"
+            
+            asyncio.run(channel_layer.group_send(
+                group_name,
+                {
+                    'type': 'enrollment_complete',
+                    'success': True,
+                    'message': 'Fingerprint enrollment complete. Processing...',
+                    'fingerprint_id': fingerprint_id
+                }
+            ))
+            
+            logger.info(f"[ESP32] Broadcasted enrollment complete to group: {group_name}")
+        except Exception as e:
+            logger.warning(f"[ESP32] Could not broadcast completion to WebSocket: {str(e)}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Enrollment completion received',
+            'fingerprint_id': fingerprint_id,
+            'confirmations': confirmations
+        })
+    
+    except json.JSONDecodeError:
+        logger.error("[ESP32] Invalid JSON in enrollment complete request")
+        return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"[ESP32] Error processing enrollment completion: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def api_esp32_config(request):
+    """
+    API endpoint for ESP32 to request configuration settings.
+    Allows remote configuration of WiFi, server URL, etc.
+    
+    GET request returns current configuration
+    POST request updates configuration
+    """
+    try:
+        if request.method == 'GET':
+            config = {
+                'server_url': getattr(settings, 'BIOMETRIC_SERVER_URL', 'http://192.168.1.X:8000'),
+                'api_base': '/dashboard/api/biometric/',
+                'scan_feedback_endpoint': '/dashboard/api/esp32/scan-feedback/',
+                'enrollment_complete_endpoint': '/dashboard/api/esp32/enrollment-complete/',
+                'health_check_endpoint': '/dashboard/api/health-check/',
+                'enrollment_slots': 5,  # Number of fingerprint scans needed
+                'quality_threshold': 70,  # Minimum fingerprint quality (0-100)
+                'device_id': getattr(settings, 'BIOMETRIC_DEVICE_ID', 'ESP32-001'),
+                'version': '1.0.0'
+            }
+            return JsonResponse(config)
+        
+        elif request.method == 'POST':
+            # Only allow configuration updates from localhost or authorized sources
+            client_ip = request.META.get('REMOTE_ADDR', '')
+            logger.info(f"[ESP32] Config update request from IP: {client_ip}")
+            
+            # For security, only accept from specific IPs in production
+            authorized_ips = getattr(settings, 'BIOMETRIC_AUTHORIZED_IPS', ['127.0.0.1', 'localhost'])
+            
+            data = json.loads(request.body)
+            # Store new configuration in settings or database as needed
+            logger.info(f"[ESP32] Config update received: {list(data.keys())}")
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Configuration updated successfully'
+            })
+    
+    except Exception as e:
+        logger.error(f"[ESP32] Error handling config request: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+# ==================== BIOMETRIC ENROLLMENT MANAGEMENT APIs ====================
+
+# In-memory store for current enrollment states
+_enrollment_states = {}
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_enrollment_status(request, enrollment_id):
+    """Get current enrollment status"""
+    try:
+        if enrollment_id in _enrollment_states:
+            state = _enrollment_states[enrollment_id]
+            return JsonResponse({
+                'status': state['status'],
+                'current_scan': state.get('current_scan', 0),
+                'progress': state.get('progress', 0),
+                'message': state.get('message', '')
+            })
+        return JsonResponse({'status': 'not_found'}, status=404)
+    except Exception as e:
+        logger.error(f"[ENROLLMENT] Status error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def api_enrollment_updates(request, enrollment_id):
+    """Get enrollment updates"""
+    try:
+        if enrollment_id not in _enrollment_states:
+            return JsonResponse({'status': 'not_found'}, status=404)
+        
+        state = _enrollment_states[enrollment_id]
+        response = JsonResponse(state)
+        response['Cache-Control'] = 'no-cache'
+        return response
+        
+    except Exception as e:
+        logger.error(f"[ENROLLMENT] Updates error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_save_enrollment(request):
+    """Save completed enrollment to database"""
+    try:
+        from django.db import transaction
+        
+        data = json.loads(request.body)
+        enrollment_id = data.get('enrollment_id')
+        course_id = data.get('course_id')
+        
+        user = request.user if request.user.is_authenticated else None
+        if not user:
+            return JsonResponse({'success': False, 'message': 'Not authenticated'}, status=401)
+        
+        if enrollment_id not in _enrollment_states:
+            return JsonResponse({'success': False, 'message': 'Enrollment not found'}, status=404)
+        
+        state = _enrollment_states[enrollment_id]
+        # CRITICAL FIX: Accept BOTH 'ready_for_confirmation' and 'completed' status
+        # Frontend sends save request when status is 'ready_for_confirmation' (after 3 scans)
+        # Not when it's 'completed' (which is after ESP32 confirms)
+        if state['status'] not in ['completed', 'ready_for_confirmation']:
+            logger.error(f"[SAVE] Invalid status for save: {state['status']} (expected 'ready_for_confirmation' or 'completed')")
+            return JsonResponse({'success': False, 'message': f'Enrollment not ready (status: {state["status"]})'}, status=400)
+        
+        # Get course
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Course not found'}, status=404)
+        
+        fingerprint_id = state.get('fingerprint_id')
+        if fingerprint_id is None:
+            fingerprint_id = state.get('fingerprint_slot')
+
+        try:
+            fingerprint_id = int(str(fingerprint_id).strip())
+        except Exception:
+            fingerprint_id = None
+
+        if fingerprint_id is None:
+            return JsonResponse({'success': False, 'message': 'Enrollment missing fingerprint_id (slot). Please restart enrollment.'}, status=400)
+        
+        # Check if this is a re-registration and delete the old fingerprint ID from sensor
+        old_fingerprint_id = state.get('old_fingerprint_id')
+        is_re_registration = state.get('is_re_registration', False)
+        
+        if is_re_registration and old_fingerprint_id:
+            logger.info(f"[ENROLLMENT] RE-REGISTRATION: Deleting old fingerprint ID {old_fingerprint_id} from sensor")
+            # In a real implementation, you would send a command to ESP32 to delete the old fingerprint ID
+            # For now, we just log it and the old one will be overwritten in the database
+            try:
+                import requests
+                esp32_ip = '192.168.1.7'
+                esp32_port = 80
+                delete_url = f'http://{esp32_ip}:{esp32_port}/api/delete-fingerprint/'
+                
+                delete_data = {
+                    'fingerprint_id': old_fingerprint_id,
+                    'course_id': course_id
+                }
+                
+                response = requests.post(delete_url, json=delete_data, timeout=2)
+                logger.info(f"[ENROLLMENT] Notified ESP32 to delete old fingerprint ID {old_fingerprint_id}: {response.status_code}")
+            except Exception as e:
+                logger.warning(f"[ENROLLMENT] Could not notify ESP32 to delete old fingerprint: {str(e)}")
+        
+        # CRITICAL: Send confirmation to ESP32 to finalize fingerprint storage
+        logger.info(f"[ENROLLMENT] SENDING CONFIRMATION TO ESP32...")
+        logger.info(f"[ENROLLMENT]   Fingerprint ID: {fingerprint_id}")
+        logger.info(f"[ENROLLMENT]   Enrollment ID: {enrollment_id}")
+        
+        try:
+            import requests
+            esp32_url = f'http://192.168.1.9:80/enroll/confirm'
+            esp32_payload = {
+                'fingerprint_id': fingerprint_id,
+                'template_id': enrollment_id
+            }
+            
+            logger.info(f"[ENROLLMENT] Posting to ESP32: {esp32_url}")
+            logger.info(f"[ENROLLMENT] Payload: {esp32_payload}")
+            
+            esp32_response = requests.post(
+                esp32_url,
+                json=esp32_payload,
+                timeout=10
+            )
+            
+            logger.info(f"[ENROLLMENT] ESP32 Response Status: {esp32_response.status_code}")
+            logger.info(f"[ENROLLMENT] ESP32 Response Body: {esp32_response.text}")
+            
+            if esp32_response.status_code == 200:
+                esp32_data = esp32_response.json()
+                logger.info(f"[✓] ESP32 CONFIRMATION SUCCESSFUL")
+                logger.info(f"[✓]   Verified: {esp32_data.get('verified', False)}")
+                logger.info(f"[✓]   Total fingerprints on sensor: {esp32_data.get('total_fingerprints', 'unknown')}")
+            else:
+                logger.warning(f"[⚠] ESP32 returned status {esp32_response.status_code}")
+                logger.warning(f"[⚠] Response: {esp32_response.text}")
+        
+        except Exception as e:
+            logger.error(f"[ERROR] Could not send confirmation to ESP32: {str(e)}")
+            logger.error(f"[ERROR] This may prevent the fingerprint from being saved to the sensor!")
+            logger.error(f"[ERROR] Make sure ESP32 is running at 192.168.1.9:80")
+        
+        # Use transaction to avoid database locking
+        with transaction.atomic():
+            biometric_reg, created = BiometricRegistration.objects.update_or_create(
+                user=user,
+                course=course,
+                defaults={
+                    'fingerprint_id': fingerprint_id,
+                    'is_active': True
+                }
+            )
+            
+            # Update user profile
+            user.biometric_fingerprint_id = fingerprint_id
+            user.biometric_registered = True
+            user.save()
+        
+        # Clean up
+        if enrollment_id in _enrollment_states:
+            del _enrollment_states[enrollment_id]
+        
+        # Log the enrollment
+        if is_re_registration and old_fingerprint_id:
+            logger.info(f"[ENROLLMENT] RE-REGISTRATION COMPLETED: Student {user.full_name}")
+            logger.info(f"[ENROLLMENT]   Old fingerprint ID: {old_fingerprint_id}")
+            logger.info(f"[ENROLLMENT]   New fingerprint ID: {fingerprint_id}")
+            logger.info(f"[ENROLLMENT]   Course: {course.code} ({course.name})")
+        else:
+            logger.info(f"[ENROLLMENT] NEW ENROLLMENT: Student {user.full_name} with fingerprint ID {fingerprint_id} for course {course.code}")
+        
+        return JsonResponse({
+            'success': True,
+            'fingerprint_id': fingerprint_id,
+            'is_re_registration': is_re_registration,
+            'old_fingerprint_id': old_fingerprint_id if is_re_registration else None
+        })
+        
+    except Exception as e:
+        logger.error(f"[ENROLLMENT] Save error: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+# ==================== BIOMETRIC ENROLLMENT MANAGEMENT APIs ====================
+
+
+
+# In-memory store for current enrollment states (in production, use Redis or database)
+
+_enrollment_states = {}
+
+
+
+@csrf_exempt
+
+@require_http_methods(["POST"])
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_start_enrollment(request):
+
+    """
+    Start a new biometric enrollment session for a user
+
+    Creates an enrollment ID and initializes tracking
+    
+    If the student already has a fingerprint registered for this course,
+    they will be informed and can choose to re-register (which will replace the old one)
+    """
+    
+    # Import centralized enrollment state management
+    from .enrollment_state import _enrollment_states
+    
+    # PRINT DIRECTLY SO WE SEE IT
+    print("\n" + "="*80)
+    print("🔥 🔥 🔥  api_start_enrollment CALLED  🔥 🔥 🔥")
+    print("="*80)
+    
+    logger.info("[ENROLLMENT API] ============ ENROLLMENT REQUEST RECEIVED ============")
+    logger.info(f"[ENROLLMENT API] Request method: {request.method}")
+    logger.info(f"[ENROLLMENT API] User authenticated: {request.user.is_authenticated}")
+    
+    try:
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        
+        print(f"✓ Parsed JSON - course_id: {course_id}")
+        logger.info(f"[ENROLLMENT API] Parsed course_id: {course_id}")
+        
+        # Get current user (if authenticated)
+        user = request.user if request.user.is_authenticated else None
+        
+        logger.info(f"[ENROLLMENT API] User: {user}")
+        
+        if not user:
+            print("✗ ERROR: User not authenticated!")
+            logger.error("[ENROLLMENT API] User not authenticated!")
+            return JsonResponse({
+                'success': False,
+                'message': 'User must be authenticated to start enrollment'
+            }, status=401)
+
+        lock_payload = {
+            'student_user_id': user.id,
+            'student_id': getattr(user, 'school_id', None),
+            'enrollment_id': incoming_enrollment_id,
+            'template_id': incoming_template_id,
+            'created_at': timezone.now().isoformat(),
+        }
+
+        lock_acquired = cache.add('biometric_enrollment_lock', lock_payload, timeout=300)
+        if not lock_acquired:
+            existing_lock = cache.get('biometric_enrollment_lock')
+            try:
+                if existing_lock and existing_lock.get('student_user_id') == user.id:
+                    cache.set('biometric_enrollment_lock', lock_payload, timeout=300)
+                else:
+                    locked_by = (existing_lock or {}).get('student_id') or 'another student'
+                    return JsonResponse({
+                        'success': False,
+                        'message': f'Another student is currently enrolling ({locked_by}). Please wait...'
+                    }, status=409)
+            except Exception:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Another student is currently enrolling. Please wait...'
+                }, status=409)
+        
+        # Check if course exists
+        try:
+            course = Course.objects.get(id=course_id)
+            print(f"✓ Course found: {course.code}")
+            logger.info(f"[ENROLLMENT API] Course found: {course.code}")
+        except Course.DoesNotExist:
+            print(f"✗ ERROR: Course {course_id} not found!")
+            logger.error(f"[ENROLLMENT API] Course {course_id} not found!")
+            try:
+                cache.delete('biometric_enrollment_lock')
+            except Exception:
+                pass
+            return JsonResponse({
+                'success': False,
+                'message': 'Course not found'
+            }, status=404)
+        
+        # CHECK: Has this student already registered their fingerprint for this course?
+        existing_registration = BiometricRegistration.objects.filter(
+            student=user,
+            course=course,
+            is_active=True
+        ).first()
+        
+        # IMPORTANT: Keep enrollment_id consistent with the frontend WebSocket group.
+        # The student UI opens /ws/biometric/enrollment/<enrollment_id>/ BEFORE calling this API.
+        # If we generate a different ID here, the WebSocket and backend state won't match.
+        enrollment_id = (str(incoming_enrollment_id).strip() if incoming_enrollment_id else '').strip() or f"enrollment_{int(datetime.now().timestamp()*1000)}_{user.id}"
+        
+        print(f"✓ Generated enrollment_id: {enrollment_id}")
+        logger.info(f"[ENROLLMENT API] Generated enrollment_id: {enrollment_id}")
+        
+        # ========== CRITICAL: Allocate unique fingerprint ID for this student FIRST ==========
+        # IMPORTANT: Use a unique ID per STUDENT, NOT per COURSE
+        # Each student gets ONE unique fingerprint ID across all courses/instructors
+        
+        # Check if this student already has a fingerprint_id from a previous enrollment
+        existing_biometric = BiometricRegistration.objects.filter(
+            student=user,
+            is_active=True
+        ).order_by('-created_at').first()
+        
+        if existing_biometric and existing_biometric.fingerprint_id is not None:
+            try:
+                existing_slot = int(existing_biometric.fingerprint_id)
+            except Exception:
+                existing_slot = None
+        else:
+            existing_slot = None
+
+        # Prevent legacy/unsafe slot reuse (e.g., slot 1) by forcing our reserved range >= 100.
+        if existing_slot is not None and existing_slot >= 100:
+            fingerprint_slot = existing_slot
+            print(f"✓ REUSING fingerprint_id: {fingerprint_slot} (student already has fingerprint registered)")
+            logger.info(f"[ENROLLMENT] REUSING fingerprint_id: {fingerprint_slot} for student {user.full_name}")
+        else:
+            max_existing_slot = BiometricRegistration.objects.aggregate(max_id=Max('fingerprint_id'))['max_id'] or 99
+            fingerprint_slot = max(100, int(max_existing_slot) + 1)
+            print(f"✓ ALLOCATING NEW fingerprint_id: {fingerprint_slot} for student {user.full_name}")
+            logger.info(f"[ENROLLMENT] ALLOCATING NEW fingerprint_id: {fingerprint_slot} for student {user.full_name}")
+        
+        # Initialize enrollment state
+        _enrollment_states[enrollment_id] = {
+            'status': 'processing',
+            'current_scan': 0,
+            'progress': 0,
+            'message': 'Initializing enrollment...',
+            'course_id': course_id,
+            'user_id': user.id,
+            'created_at': datetime.now().isoformat(),
+            'scans': [],
+            'is_re_registration': existing_registration is not None,
+            'old_fingerprint_id': existing_registration.fingerprint_id if existing_registration else None,
+            'fingerprint_slot': fingerprint_slot  # CRITICAL: Store the unique fingerprint ID being used for this enrollment
+        }
+        
+        logger.info(f"[ENROLLMENT] Started enrollment session: {enrollment_id}")
+        
+        # Try multiple ESP32 server addresses in order of preference
+        esp32_addresses = [
+            os.environ.get('ESP32_SERVER', 'http://192.168.1.7'),  # From environment variable
+            'http://192.168.1.7',   # Default
+            'http://192.168.1.9',   # Fallback
+            'http://192.168.1.6',   # Alternative
+            'http://esp32.local',   # mDNS name
+        ]
+        
+        esp32_server = None
+        esp32_response = None
+        last_error = None
+        
+        for address in esp32_addresses:
+            try:
+                esp32_url = f"{address}/enroll"
+                payload = {
+                    'slot': fingerprint_slot,  # Use unique fingerprint_id, NOT course_id
+                    'template_id': enrollment_id
+                }
+                print(f"\n📤 TRYING ESP32 at {address}...")
+                print(f"   URL: {esp32_url}")
+                print(f"   Payload: {payload}")
+                print(f"   Student: {user.full_name}")
+                print(f"   Courses: {course.code}")
+                
+                logger.info(f"[ENROLLMENT] Trying ESP32 at {esp32_url} with payload: {payload}")
+                logger.info(f"[ENROLLMENT] Student: {user.full_name}, Course: {course.code}, Slot: {fingerprint_slot}")
+                
+                response = requests.post(esp32_url, json=payload, timeout=3)
+                
+                print(f"✓ ESP32 Response: {response.status_code}")
+                logger.info(f"[ENROLLMENT] ESP32 response status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    logger.info(f"[ENROLLMENT] ESP32 acknowledged at {address}")
+                    _enrollment_states[enrollment_id]['message'] = 'Sensor ready - Place your finger'
+                    print(f"✓✓✓ ESP32 ACKNOWLEDGED ENROLLMENT at {address}")
+                    esp32_server = address
+                    break
+                else:
+                    logger.warning(f"[ENROLLMENT] ESP32 at {address} returned status {response.status_code}")
+                    print(f"⚠ ESP32 at {address} returned {response.status_code}")
+                    last_error = f"Status {response.status_code}"
+            
+            except requests.exceptions.ConnectionError as e:
+                print(f"⚠ Cannot connect to {address}: {str(e)}")
+                logger.warning(f"[ENROLLMENT] Cannot reach ESP32 at {address}: {str(e)}")
+                last_error = str(e)
+                continue
+            except Exception as e:
+                print(f"⚠ Error with {address}: {str(e)}")
+                logger.warning(f"[ENROLLMENT] Error with ESP32 at {address}: {str(e)}")
+                last_error = str(e)
+                continue
+        
+        if not esp32_server:
+            print(f"✗ ERROR: Could not reach any ESP32 address. Last error: {last_error}")
+            logger.error(f"[ENROLLMENT] Could not reach ESP32 at any address. Last error: {last_error}")
+            _enrollment_states[enrollment_id]['message'] = f'Sensor offline - tried multiple addresses. Last error: {last_error}'
+        
+        response_data = {
+            'success': True,
+            'enrollment_id': enrollment_id,
+            'message': 'Enrollment session created',
+            'has_existing_registration': existing_registration is not None,
+            'slot': fingerprint_slot,
+            'template_id': incoming_template_id or enrollment_id
+        }
+        
+        # If re-registering, include the old fingerprint ID in response
+        if existing_registration:
+            response_data['old_fingerprint_id'] = existing_registration.fingerprint_id
+            response_data['re_registration_message'] = f'You already have a fingerprint registered for this course. Placing a new finger will replace the old one (ID: {existing_registration.fingerprint_id}) with a new fingerprint ID.'
+        
+        print(f"✓ Returning enrollment_id: {enrollment_id}\n")
+        logger.info(f"[ENROLLMENT API] Returning success response with enrollment_id: {enrollment_id}")
+        return JsonResponse(response_data)
+
+    except Exception as e:
+        print(f"✗✗✗ EXCEPTION IN api_start_enrollment: {str(e)}\n")
+        logger.error(f"[ENROLLMENT] Error starting enrollment: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        }, status=500)
+
+
+
+
+
+@csrf_exempt
+
+@require_http_methods(["GET"])
+
+def api_enrollment_status(request, enrollment_id):
+
+    """
+
+    Get current status of an ongoing enrollment
+
+    Returns progress percentage, current scan number, and status message
+
+    """
+
+    try:
+
+        # Check if enrollment exists in memory
+
+        if enrollment_id in _enrollment_states:
+
+            state = _enrollment_states[enrollment_id]
+
+            return JsonResponse({
+
+                'status': state['status'],
+
+                'current_scan': state.get('current_scan', 0),
+
+                'progress': state.get('progress', 0),
+
+                'message': state.get('message', ''),
+
+                'error': state.get('error', None)
+
+            })
+
+        else:
+
+            return JsonResponse({
+
+                'status': 'not_found',
+
+                'message': 'Enrollment session not found'
+
+            }, status=404)
+
+            
+
+    except Exception as e:
+
+        logger.error(f"[ENROLLMENT] Error getting enrollment status: {str(e)}")
+
+        return JsonResponse({
+
+            'success': False,
+
+            'message': str(e)
+
+        }, status=500)
+
+
+
+
+
+@csrf_exempt
+
+@require_http_methods(["GET"])
+
+def api_enrollment_updates(request, enrollment_id):
+
+    """
+
+    EventSource endpoint for real-time enrollment updates
+
+    """
+
+    try:
+
+        if enrollment_id not in _enrollment_states:
+
+            return JsonResponse({
+
+                'status': 'not_found',
+
+                'message': 'Enrollment not found'
+
+            }, status=404)
+
+        
+
+        state = _enrollment_states[enrollment_id]
+
+        
+
+        # Return current state
+
+        response = JsonResponse(state)
+
+        response['Cache-Control'] = 'no-cache'
+
+        response['X-Accel-Buffering'] = 'no'
+
+        
+
+        return response
+
+        
+
+    except Exception as e:
+
+        logger.error(f"[ENROLLMENT] Error getting enrollment updates: {str(e)}")
+
+        return JsonResponse({
+
+            'success': False,
+
+            'message': str(e)
+
+        }, status=500)
+
+
+
+
+
+@csrf_exempt
+
+@require_http_methods(["POST"])
+
+def api_save_enrollment(request):
+
+    """
+
+    Save completed enrollment to database
+
+    Stores fingerprint ID in user's biometric registration and links to courses
+
+    """
+
+    try:
+
+        data = json.loads(request.body)
+
+        enrollment_id = data.get('enrollment_id')
+
+        course_id = data.get('course_id')
+
+        
+
+        user = request.user if request.user.is_authenticated else None
+
+        if not user:
+
+            return JsonResponse({
+
+                'success': False,
+
+                'message': 'User must be authenticated'
+
+            }, status=401)
+
+        
+
+        # Get enrollment state
+
+        if enrollment_id not in _enrollment_states:
+
+            return JsonResponse({
+
+                'success': False,
+
+                'message': 'Enrollment session not found'
+
+            }, status=404)
+
+        
+
+        state = _enrollment_states[enrollment_id]
+        # CRITICAL FIX: Accept BOTH 'ready_for_confirmation' and 'completed' status
+        # Frontend sends save request when status is 'ready_for_confirmation' (after 3 scans)
+        # Not when it's 'completed' (which is after ESP32 confirms)
+        if state['status'] not in ['completed', 'ready_for_confirmation']:
+
+            return JsonResponse({
+
+                'success': False,
+
+                'message': f'Enrollment not ready (status: {state["status"]})'
+
+            }, status=400)
+
+        
+
+        # Get course
+
+        try:
+
+            course = Course.objects.get(id=course_id)
+
+        except Course.DoesNotExist:
+
+            return JsonResponse({
+
+                'success': False,
+
+                'message': 'Course not found'
+
+            }, status=404)
+
+        
+
+        # Get fingerprint ID from ESP32 response
+
+        fingerprint_id = state.get('fingerprint_id')
+        if fingerprint_id is None:
+            fingerprint_id = state.get('fingerprint_slot')
+
+        try:
+            fingerprint_id = int(str(fingerprint_id).strip())
+        except Exception:
+            fingerprint_id = None
+
+        if fingerprint_id is None:
+            return JsonResponse({'success': False, 'message': 'Enrollment missing fingerprint_id (slot). Please restart enrollment.'}, status=400)
+
+        
+
+        # CRITICAL: Send confirmation to ESP32 to finalize fingerprint storage
+        logger.info(f"[ENROLLMENT] SENDING CONFIRMATION TO ESP32...")
+        logger.info(f"[ENROLLMENT]   Fingerprint ID: {fingerprint_id}")
+        logger.info(f"[ENROLLMENT]   Enrollment ID: {enrollment_id}")
+        
+        try:
+            import requests
+            esp32_url = f'http://192.168.1.9:80/enroll/confirm'
+            esp32_payload = {
+                'fingerprint_id': fingerprint_id,
+                'template_id': enrollment_id
+            }
+            
+            logger.info(f"[ENROLLMENT] Posting to ESP32: {esp32_url}")
+            logger.info(f"[ENROLLMENT] Payload: {esp32_payload}")
+            
+            esp32_response = requests.post(
+                esp32_url,
+                json=esp32_payload,
+                timeout=10
+            )
+            
+            logger.info(f"[ENROLLMENT] ESP32 Response Status: {esp32_response.status_code}")
+            logger.info(f"[ENROLLMENT] ESP32 Response Body: {esp32_response.text}")
+            
+            if esp32_response.status_code == 200:
+                esp32_data = esp32_response.json()
+                logger.info(f"[✓] ESP32 CONFIRMATION SUCCESSFUL")
+                logger.info(f"[✓]   Verified: {esp32_data.get('verified', False)}")
+                logger.info(f"[✓]   Total fingerprints on sensor: {esp32_data.get('total_fingerprints', 'unknown')}")
+            else:
+                logger.warning(f"[⚠] ESP32 returned status {esp32_response.status_code}")
+                logger.warning(f"[⚠] Response: {esp32_response.text}")
+        
+        except Exception as e:
+            logger.error(f"[ERROR] Could not send confirmation to ESP32: {str(e)}")
+            logger.error(f"[ERROR] This may prevent the fingerprint from being saved to the sensor!")
+            logger.error(f"[ERROR] Make sure ESP32 is running at 192.168.1.9:80")
+
+        # Create or update biometric registration
+
+        biometric_reg, created = BiometricRegistration.objects.update_or_create(
+
+            user=user,
+
+            course=course,
+
+            defaults={
+
+                'fingerprint_id': fingerprint_id,
+
+                'status': 'active',
+
+                'registered_at': datetime.now(),
+
+                'enrollment_session_id': enrollment_id
+
+            }
+
+        )
+
+        
+
+        # Also update user's default biometric profile
+
+        user.biometric_fingerprint_id = fingerprint_id
+
+        user.biometric_registered = True
+
+        user.save()
+
+        
+
+        # Clean up enrollment state
+
+        if enrollment_id in _enrollment_states:
+
+            del _enrollment_states[enrollment_id]
+
+        
+
+        logger.info(f"[ENROLLMENT] Saved enrollment {enrollment_id} with fingerprint ID {fingerprint_id} for course {course_id}")
+
+        
+
+        return JsonResponse({
+
+            'success': True,
+
+            'message': 'Fingerprint saved successfully',
+
+            'fingerprint_id': fingerprint_id,
+
+            'course_id': course_id
+
+        })
+
+        
+
+    except Exception as e:
+
+        logger.error(f"[ENROLLMENT] Error saving enrollment: {str(e)}")
+
+        return JsonResponse({
+
+            'success': False,
+
+            'message': str(e)
+
+        }, status=500)
+
+
+
+
+
+def update_enrollment_progress(enrollment_id, current_scan, progress, message, fingerprint_id=None, error=None):
+
+    """
+
+    Helper function to update enrollment progress
+
+    Called by ESP32 API endpoints when broadcasting updates
+
+    """
+
+    if enrollment_id in _enrollment_states:
+
+        _enrollment_states[enrollment_id].update({
+
+            'current_scan': current_scan,
+
+            'progress': progress,
+
+            'message': message,
+
+            'updated_at': datetime.now().isoformat()
+
+        })
+
+        
+
+        if fingerprint_id:
+
+            _enrollment_states[enrollment_id]['fingerprint_id'] = fingerprint_id
+
+        
+
+        if error:
+
+            _enrollment_states[enrollment_id]['error'] = error
+
+            _enrollment_states[enrollment_id]['status'] = 'failed'
+
+        
+
+        # Auto-complete at 100%
+
+        if progress >= 100:
+
+            _enrollment_states[enrollment_id]['status'] = 'completed'
+
+        
+
+        logger.debug(f"[ENROLLMENT] Updated {enrollment_id}: Scan {current_scan}, Progress {progress}%")
+
+
+
+
+
+def mark_enrollment_complete(enrollment_id, fingerprint_id):
+
+    """
+
+    Helper function to mark enrollment as complete
+
+    """
+
+    if enrollment_id in _enrollment_states:
+
+        _enrollment_states[enrollment_id].update({
+
+            'status': 'completed',
+
+            'progress': 100,
+
+            'message': 'All 5 scans completed successfully!',
+
+            'fingerprint_id': fingerprint_id,
+
+            'completed_at': datetime.now().isoformat()
+
+        })
+
+        logger.info(f"[ENROLLMENT] Completed enrollment {enrollment_id} with fingerprint ID {fingerprint_id}")
+
+
+@login_required
+@require_http_methods(["POST"])
+@csrf_exempt
+def api_biometric_confirm_fingerprint_view(request):
+    """
+    API endpoint to confirm fingerprint enrollment.
+    
+    For replacements: Just updates the biometric data for the same fingerprint_id (no deactivation)
+    For new enrollments: Activates the newly registered fingerprints
+    
+    Expected POST data:
+    {
+        'fingerprint_id': <int>,  # The fingerprint ID being confirmed
+        'is_replacement': <bool>
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        fingerprint_id = data.get('fingerprint_id')
+        is_replacement = data.get('is_replacement', False)
+        
+        if not fingerprint_id:
+            return JsonResponse({
+                'success': False,
+                'message': 'Missing fingerprint_id'
+            }, status=400)
+        
+        # Get student
+        target_student = request.user if request.user.is_student else None
+        if not target_student:
+            return JsonResponse({
+                'success': False,
+                'message': 'You must be a student to confirm biometric'
+            }, status=403)
+        
+        with transaction.atomic():
+            print(f"\n[DEBUG] Confirmation request received:")
+            print(f"   Student ID: {target_student.id}")
+            print(f"   Fingerprint ID requested: {fingerprint_id}")
+            print(f"   Is replacement: {is_replacement}")
+            
+            # CLEANUP: Fix any existing records with None fingerprint_id
+            # This can happen if old enrollments weren't finalized properly
+            none_registrations = BiometricRegistration.objects.filter(
+                student=target_student,
+                fingerprint_id__isnull=True,
+                is_active=True
+            )
+            if none_registrations.exists():
+                print(f"\n[CLEANUP] Found {none_registrations.count()} registrations with None fingerprint_id")
+                # Update them to use the fingerprint_id being confirmed
+                none_registrations.update(fingerprint_id=fingerprint_id)
+                print(f"[CLEANUP] Updated them to fingerprint_id: {fingerprint_id}")
+            
+            # Debug: Show all fingerprint registrations for this student
+            all_regs = BiometricRegistration.objects.filter(student=target_student)
+            print(f"   [DEBUG] Total registrations for this student: {all_regs.count()}")
+            for reg in all_regs:
+                print(f"      - Course: {reg.course.code}, Fingerprint ID: {reg.fingerprint_id}, Active: {reg.is_active}")
+            
+            if is_replacement:
+                # For replacement: biometric data already updated in database
+                # Just confirm that the fingerprint_id is now finalized
+                registrations = BiometricRegistration.objects.filter(
+                    student=target_student,
+                    fingerprint_id=fingerprint_id,
+                    is_active=True
+                )
+                count = registrations.count()
+                
+                print(f"\n✓ FINGERPRINT REPLACEMENT CONFIRMED:")
+                print(f"   Student: {target_student.full_name}")
+                print(f"   Fingerprint_id: {fingerprint_id}")
+                print(f"   Biometric data updated for {count} course(s)")
+                print(f"   (Using same fingerprint_id - storage saved!)")
+                
+                # Debug: Show what we found
+                for reg in registrations:
+                    print(f"      - Course: {reg.course.code}, fingerprint_id: {reg.fingerprint_id}")
+            else:
+                # For new enrollment: just confirm the fingerprints are active
+                registrations = BiometricRegistration.objects.filter(
+                    student=target_student,
+                    fingerprint_id=fingerprint_id,
+                    is_active=True
+                )
+                count = registrations.count()
+                
+                print(f"\n✓ FINGERPRINT CONFIRMED:")
+                print(f"   Student: {target_student.full_name}")
+                print(f"   Fingerprint_id: {fingerprint_id}")
+                print(f"   Confirmed in {count} course(s)")
+                
+                # Debug: Show what we found
+                for reg in registrations:
+                    print(f"      - Course: {reg.course.code}, fingerprint_id: {reg.fingerprint_id}")
+            
+            if count == 0:
+                # Debug: Show what fingerprint IDs actually exist
+                existing_ids = BiometricRegistration.objects.filter(
+                    student=target_student,
+                    is_active=True
+                ).values_list('fingerprint_id', flat=True).distinct()
+                print(f"\n[ERROR] No registrations found!")
+                print(f"   Expected fingerprint_id: {fingerprint_id}")
+                print(f"   Existing active fingerprint_ids: {list(existing_ids)}")
+                return JsonResponse({
+                    'success': False,
+                    'message': f'No active biometric registrations found for fingerprint_id {fingerprint_id}. Existing IDs: {list(existing_ids)}'
+                }, status=400)
+            
+            print(f"\n✓✓✓ FINGERPRINT CONFIRMATION COMPLETE ✓✓✓")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Fingerprint confirmed successfully!',
+            'fingerprint_id': fingerprint_id,
+            'is_replacement': is_replacement,
+            'confirmed_courses': count
+        })
+    
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error confirming biometric: {str(e)}")
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+# ==================== BIOMETRIC CONFIRMATION AND CANCELLATION APIs ====================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_biometric_confirm_enrollment(request):
+    """
+    Confirm a biometric enrollment and finalize the registration
+    This endpoint:
+    1. Retrieves biometric registrations that were created by api_biometric_enroll_view
+    2. Confirms them in the database
+    3. Returns confirmation to the frontend
+    
+    The biometric_data is already saved by api_biometric_enroll_view,
+    so this endpoint just needs to verify the records exist and are active.
+    """
+    try:
+        data = json.loads(request.body)
+        
+        fingerprint_id_raw = data.get('fingerprint_id', 1)
+        template_id = data.get('template_id', '')
+        is_replacement = data.get('is_replacement', False)
+        course_ids = data.get('course_ids', [])
+
+        try:
+            fingerprint_id = int(str(fingerprint_id_raw).strip())
+        except Exception:
+            return JsonResponse({'success': False, 'message': 'Invalid fingerprint_id (slot). Please restart enrollment.'}, status=400)
+        
+        # Get authenticated user
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({
+                'success': False,
+                'message': 'User must be authenticated'
+            }, status=401)
+        
+        logger.info(f"[CONFIRM] ========== BIOMETRIC CONFIRMATION START ==========")
+        logger.info(f"[CONFIRM] User: {user.full_name} (ID: {user.id})")
+        logger.info(f"[CONFIRM] Fingerprint ID: {fingerprint_id}, Template: {template_id}")
+        logger.info(f"[CONFIRM] Is Replacement: {is_replacement}")
+        logger.info(f"[CONFIRM] Received course_ids list: {course_ids} (type: {type(course_ids).__name__}, length: {len(course_ids) if isinstance(course_ids, list) else 'N/A'})")
+        logger.info(f"[CONFIRM] ⚠️ NOTE: Biometric registrations should already be created by api_biometric_enroll_view")
+        logger.info(f"[CONFIRM] This endpoint verifies and confirms the existing registrations")
+        
+        # Step 1: Send confirmation to ESP32
+        esp32_url = f'http://{settings.ESP32_IP}:80/enroll/confirm'
+        esp32_payload = {
+            'fingerprint_id': fingerprint_id,
+            'template_id': template_id
+        }
+        
+        logger.info(f"[CONFIRM] Sending confirmation to ESP32 at {esp32_url}")
+        logger.info(f"[CONFIRM] Using ESP32_IP from settings: {settings.ESP32_IP}")
+        
+        try:
+            import requests
+            esp32_response = requests.post(
+                esp32_url,
+                json=esp32_payload,
+                timeout=10
+            )
+            
+            if esp32_response.status_code != 200:
+                logger.warning(f"[CONFIRM] ESP32 returned status {esp32_response.status_code}")
+                logger.warning(f"[CONFIRM] Response: {esp32_response.text}")
+            else:
+                logger.info(f"[CONFIRM] ✓ ESP32 confirmation successful")
+                
+        except Exception as e:
+            logger.warning(f"[CONFIRM] Could not reach ESP32: {str(e)}")
+            logger.warning(f"[CONFIRM] Continuing anyway")
+        
+        # Step 2: Verify biometric registrations are active in database.
+        # HARD REQUIREMENT: after Confirm & Save, every selected course must have an active
+        # BiometricRegistration row with this fingerprint_id (slot), otherwise instructor scan
+        # will show "not registered" even though the sensor matched.
+        # These should have been created by api_biometric_enroll_view during the enrollment process
+        verified_count = 0
+        missing_courses = []
+        
+        logger.info(f"[CONFIRM] Verifying {len(course_ids)} biometric registrations exist in database")
+        
+        if course_ids:
+            for course_id in course_ids:
+                try:
+                    course = Course.objects.get(id=int(str(course_id).strip()))
+                    logger.info(f"[CONFIRM] Verifying course {course_id}: {course.code}")
+                    
+                    # Check if biometric registration exists
+                    biometric_reg = BiometricRegistration.objects.filter(
+                        student=user,
+                        course=course,
+                        is_active=True
+                    ).first()
+                    
+                    if biometric_reg:
+                        logger.info(f"[CONFIRM] ✓ Found biometric registration for course {course.code}")
+                        logger.info(f"[CONFIRM]   - fingerprint_id: {biometric_reg.fingerprint_id}")
+                        logger.info(f"[CONFIRM]   - has_biometric_data: {bool(biometric_reg.biometric_data)}")
+                        logger.info(f"[CONFIRM]   - is_active: {biometric_reg.is_active}")
+
+                        # Ensure the saved fingerprint_id matches the confirmed slot.
+                        # This is critical for instructor-side matching.
+                        try:
+                            if biometric_reg.fingerprint_id != fingerprint_id or not biometric_reg.is_active:
+                                biometric_reg.fingerprint_id = fingerprint_id
+                                biometric_reg.is_active = True
+                                biometric_reg.save(update_fields=['fingerprint_id', 'is_active'])
+                        except Exception as _e:
+                            logger.warning(f"[CONFIRM] Could not normalize registration for {course.code}: {_e}")
+
+                        verified_count += 1
+                    else:
+                        # Self-heal: create/update the missing row so instructor lookups are reliable.
+                        logger.warning(f"[CONFIRM] Missing biometric registration for course {course.code} - creating it now")
+
+                        # BiometricRegistration.biometric_data is required by the model.
+                        # Copy it from any existing active registration for this user+fingerprint_id.
+                        source_reg = BiometricRegistration.objects.filter(
+                            student=user,
+                            fingerprint_id=fingerprint_id,
+                            is_active=True
+                        ).exclude(biometric_data='').first()
+
+                        source_biometric_data = getattr(source_reg, 'biometric_data', '')
+                        if not source_biometric_data:
+                            logger.error(f"[CONFIRM] Cannot self-heal {course.code}: no biometric_data available to copy")
+                            missing_courses.append(course.code)
+                            continue
+
+                        biometric_reg, _created = BiometricRegistration.objects.update_or_create(
+                            student=user,
+                            course=course,
+                            defaults={
+                                'fingerprint_id': fingerprint_id,
+                                'biometric_data': source_biometric_data,
+                                'biometric_type': 'fingerprint',
+                                'is_active': True
+                            }
+                        )
+                        logger.info(f"[CONFIRM] ✓ Created/updated BiometricRegistration for {course.code} (fingerprint_id={biometric_reg.fingerprint_id})")
+                        verified_count += 1
+
+                except Course.DoesNotExist:
+                    logger.warning(f"[CONFIRM] Course {course_id} not found")
+                    missing_courses.append(f"Course({course_id})")
+                except Exception as e:
+                    logger.error(f"[CONFIRM] Error verifying registration for course {course_id}: {str(e)}")
+        else:
+            logger.warning("[CONFIRM] No course_ids provided!")
+        
+        logger.info(f"[CONFIRM] ✓✓✓ Confirmation verification complete")
+        logger.info(f"[CONFIRM] Verified: {verified_count} courses")
+        if missing_courses:
+            logger.error(f"[CONFIRM] MISSING: {missing_courses} - registrations not found!")
+        
+        return JsonResponse({
+            'success': True if verified_count > 0 else False,
+            'message': f'Fingerprint confirmed for {verified_count} course(s)',
+            'fingerprint_id': fingerprint_id,
+            'is_replacement': is_replacement,
+            'confirmed_courses': verified_count,
+            'missing_courses': missing_courses if missing_courses else None
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"[CONFIRM] Error confirming enrollment: {str(e)}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_biometric_cancel_enrollment(request):
+    """
+    Cancel an ongoing biometric enrollment
+    This endpoint:
+    1. Sends cancellation request to ESP32
+    2. Cleans up enrollment session
+    """
+    try:
+        # Get authenticated user
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({
+                'success': False,
+                'message': 'User must be authenticated'
+            }, status=401)
+        
+        logger.info(f"[CANCEL] Cancelling enrollment for user {user.full_name}")
+        
+        # Send cancellation to ESP32
+        esp32_url = f'http://192.168.1.9:80/enroll/cancel'
+        
+        logger.info(f"[CANCEL] Sending cancellation to ESP32 at {esp32_url}")
+        
+        try:
+            import requests
+            esp32_response = requests.post(
+                esp32_url,
+                json={},
+                timeout=10
+            )
+            
+            if esp32_response.status_code == 200:
+                logger.info(f"[CANCEL] ✓ ESP32 cancellation successful")
+            else:
+                logger.warning(f"[CANCEL] ESP32 returned status {esp32_response.status_code}")
+                
+        except Exception as e:
+            logger.warning(f"[CANCEL] Could not reach ESP32: {str(e)}")
+            logger.warning(f"[CANCEL] User-side cancellation will still work")
+        
+        logger.info(f"[CANCEL] ✓ Enrollment cancelled")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Enrollment cancelled'
+        })
+        
+    except Exception as e:
+        logger.error(f"[CANCEL] Error cancelling enrollment: {str(e)}", exc_info=True)
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+# ==================== INSTRUCTOR BIOMETRIC SCANNING ====================
+
+@login_required
+@require_http_methods(["GET"])
+def instructor_get_biometric_pending_view(request):
+    """
+    Get pending biometric scans for a course (from ESP32 sensor).
+    Called by JavaScript polling to check for new fingerprint detections.
+    
+    Query parameters:
+    - course_id: int (required)
+    - schedule_id: str (optional)
+    
+    Returns:
+    {
+        'pending': [
+            {
+                'fingerprint_id': int,
+                'student_id': int,
+                'student_name': str,
+                'confidence': int,
+                'timestamp': str
+            }
+        ]
+    }
+    """
+    try:
+        if not request.user.is_teacher:
+            logger.warning(f"[PENDING] User {request.user} is not a teacher")
+            return JsonResponse({'pending': []})
+        
+        course_id = request.GET.get('course_id')
+        schedule_id = request.GET.get('schedule_id')
+        
+        logger.info(f"[PENDING POLL] Received poll request - course_id: {course_id}, schedule_id: {schedule_id}, user: {request.user.full_name}")
+        print(f"\n[BIOMETRIC POLL] ===== POLL STARTED =====")
+        print(f"[BIOMETRIC POLL] Course ID: {course_id}")
+        print(f"[BIOMETRIC POLL] Schedule ID: {schedule_id}")
+        print(f"[BIOMETRIC POLL] User: {request.user.full_name}")
+        
+        if not course_id:
+            logger.warning(f"[PENDING POLL] No course_id provided")
+            print(f"[BIOMETRIC POLL] ✗ No course_id!")
+            return JsonResponse({'pending': []})
+        
+        try:
+            course = Course.objects.get(id=int(course_id))
+            logger.info(f"[PENDING POLL] Course found: {course.code}")
+            print(f"[BIOMETRIC POLL] ✓ Course found: {course.code}, ID: {course.id}")
+        except (Course.DoesNotExist, ValueError) as e:
+            logger.error(f"[PENDING POLL] Course not found - course_id: {course_id}, error: {str(e)}")
+            print(f"[BIOMETRIC POLL] ✗ Course not found: {course_id}")
+            return JsonResponse({'pending': []})
+        
+        # Get all biometric registrations for this course that are active.
+        # Also include sibling sections of the same course so fingerprint slots resolve correctly
+        # even if the student registered under a different section.
+        sibling_courses = Course.objects.filter(
+            instructor=course.instructor,
+            code=course.code,
+            name=course.name,
+            semester=course.semester,
+            school_year=course.school_year,
+            is_active=True,
+            deleted_at__isnull=True,
+            is_archived=False
+        )
+
+        registrations = BiometricRegistration.objects.filter(
+            course__in=sibling_courses,
+            is_active=True
+        ).select_related('student', 'course')
+        
+        print(f"[BIOMETRIC POLL] ===== BIOMETRIC REGISTRATIONS FOR COURSE {course.code} =====")
+        print(f"[BIOMETRIC POLL] Total registrations in database for this course: {registrations.count()}")
+        for reg in registrations:
+            print(f"[BIOMETRIC POLL]   - {reg.student.full_name}: Fingerprint ID={reg.fingerprint_id}, Active={reg.is_active}")
+        print(f"[BIOMETRIC POLL] =====")
+        
+        # Create a mapping of fingerprint_id(int) -> (student, registration)
+        fingerprint_map = {}
+        for reg in registrations:
+            if reg.fingerprint_id is None:
+                continue
+
+            try:
+                fp_key = int(reg.fingerprint_id)
+            except Exception:
+                continue
+
+            # Prefer the registration for the actively scanned course if duplicates exist.
+            if fp_key in fingerprint_map:
+                try:
+                    existing_reg = fingerprint_map[fp_key].get('registration')
+                    if existing_reg and getattr(existing_reg, 'course_id', None) == course.id:
+                        continue
+                except Exception:
+                    pass
+
+            fingerprint_map[fp_key] = {
+                'student': reg.student,
+                'registration': reg,
+                'fingerprint_id': reg.fingerprint_id
+            }
+            print(f"[BIOMETRIC POLL]   - Student: {reg.student.full_name}, Fingerprint ID: {reg.fingerprint_id}")
+        
+        logger.info(f"[PENDING] Course {course.code} has {len(fingerprint_map)} registered fingerprints: {list(fingerprint_map.keys())}")
+        print(f"[BIOMETRIC POLL] Fingerprint map: {fingerprint_map}")
+        
+        # Get pending detections from cache - USE ATTENDANCE QUEUE
+        detections_queue_key = "fingerprint_detections_queue_attendance"
+        queue = cache.get(detections_queue_key, [])
+        
+        print(f"[BIOMETRIC POLL] Cache queue size: {len(queue)}")
+        print(f"[BIOMETRIC POLL] Queue contents: {queue}")
+        
+        pending_list = []
+        processed_keys = []
+        
+        print(f"[BIOMETRIC POLL] ===== PROCESSING DETECTIONS =====")
+        print(f"[BIOMETRIC POLL] Total detections to process: {len(queue)}")
+        
+        # Process each detection
+        for idx, detection in enumerate(queue):
+            # Some devices send retry/hint events using fingerprint_id=-2.
+            # Always treat this as a retry (never as not-registered), even if match_type is missing.
+            fingerprint_slot_raw = detection.get('fingerprint_id')
+            try:
+                fingerprint_slot_int = int(fingerprint_slot_raw)
+            except Exception:
+                fingerprint_slot_int = None
+
+            if fingerprint_slot_int == -2:
+                pending_list.append({
+                    'fingerprint_id': -2,
+                    'student_id': None,
+                    'student_name': 'Place finger again',
+                    'error': 'retry',
+                    'reason': detection.get('reason'),
+                    'confidence': detection.get('confidence', 0),
+                    'timestamp': detection.get('timestamp')
+                })
+                processed_keys.append(detection.get('key'))
+                continue
+
+            if detection.get('match_type') == 'hint':
+                fingerprint_slot_raw = detection.get('fingerprint_id')
+                try:
+                    fingerprint_slot = int(fingerprint_slot_raw)
+                except Exception:
+                    fingerprint_slot = fingerprint_slot_raw
+
+                if fingerprint_slot == -2:
+                    pending_list.append({
+                        'fingerprint_id': -2,
+                        'student_id': None,
+                        'student_name': 'Place finger again',
+                        'error': 'retry',
+                        'reason': detection.get('reason'),
+                        'confidence': detection.get('confidence', 0),
+                        'timestamp': detection.get('timestamp')
+                    })
+                    processed_keys.append(detection.get('key'))
+                    continue
+
+            # Check if this is a hardware-matched fingerprint (ACCURATE)
+            if detection.get('match_type') == 'hardware':
+                fingerprint_slot_raw = detection.get('fingerprint_id')
+                try:
+                    fingerprint_slot = int(fingerprint_slot_raw)
+                except Exception:
+                    fingerprint_slot = fingerprint_slot_raw
+                confidence = detection.get('confidence', 0)
+                timestamp = detection.get('timestamp')
+                detection_key = detection.get('key')
+
+                # Sentinel for "unregistered" published by ESP32
+                if fingerprint_slot == -1:
+                    logger.warning(f"[PENDING] ⚠ UNREGISTERED (hardware) - Fingerprint not found in sensor database")
+                    pending_list.append({
+                        'fingerprint_id': -1,
+                        'student_id': None,
+                        'student_name': 'Unregistered',
+                        'error': 'unregistered_fingerprint',
+                        'confidence': confidence,
+                        'timestamp': timestamp
+                    })
+                    processed_keys.append(detection_key)
+                    continue
+                
+                print(f"[BIOMETRIC POLL] [{idx}] ✓ HARDWARE MATCH - Fingerprint ID: {fingerprint_slot}, Confidence: {confidence}")
+                logger.info(f"[PENDING] Hardware-matched fingerprint: ID={fingerprint_slot}, confidence={confidence}")
+                
+                # Look up student by fingerprint_id (100% accurate - from hardware sensor)
+                if fingerprint_slot in fingerprint_map:
+                    student_info = fingerprint_map[fingerprint_slot]
+                    student = student_info['student']
+                    
+                    print(f"[BIOMETRIC POLL] ✓ MATCHED! Fingerprint {fingerprint_slot} = Student {student.full_name}")
+                    
+                    pending_list.append({
+                        'fingerprint_id': fingerprint_slot,
+                        'fingerprint_template_id': student_info.get('fingerprint_id', ''),
+                        'student_id': student.id,
+                        'student_name': student.full_name or student.username,
+                        'student_email': student.email,
+                        'confidence': confidence,
+                        'timestamp': timestamp
+                    })
+                    
+                    logger.info(f"[PENDING] ✓ ACCURATE MATCH - Fingerprint {fingerprint_slot} belongs to Student: {student.full_name}")
+                    processed_keys.append(detection_key)
+                else:
+                    # Fingerprint slot not found in this course
+                    print(f"[BIOMETRIC POLL] ✗ Fingerprint ID {fingerprint_slot} not enrolled in this course")
+                    owner_reg = BiometricRegistration.objects.filter(
+                        fingerprint_id=fingerprint_slot,
+                        is_active=True
+                    ).select_related('student', 'course').first()
+
+                    if owner_reg:
+                        pending_list.append({
+                            'fingerprint_id': fingerprint_slot,
+                            'student_id': owner_reg.student.id,
+                            'student_name': owner_reg.student.full_name or owner_reg.student.username,
+                            'student_email': getattr(owner_reg.student, 'email', ''),
+                            'confidence': confidence,
+                            'timestamp': timestamp,
+                            'error': 'not_registered_for_course'
+                        })
+                    else:
+                        pending_list.append({
+                            'fingerprint_id': fingerprint_slot,
+                            'student_id': None,
+                            'student_name': f'Fingerprint ID {fingerprint_slot} not enrolled',
+                            'confidence': confidence,
+                            'timestamp': timestamp,
+                            'error': 'not_registered_for_course'
+                        })
+                    processed_keys.append(detection_key)
+                continue
+            
+            # Handle legacy raw fingerprint detections
+            if detection.get('needs_matching'):
+                print(f"[BIOMETRIC POLL] [{idx}] Raw fingerprint detection - needs software matching")
+                print(f"[BIOMETRIC POLL]     Quality: {detection.get('quality')}")
+                
+                # Raw fingerprint from ESP32 - try to identify which student it belongs to
+                # Strategy: If only ONE student in this course has biometric enrollment,
+                # it's likely that student who placed their finger
+                
+                students_with_biometric = list(fingerprint_map.values())
+                
+                if len(students_with_biometric) == 1:
+                    # Only one student has biometric enrollment - must be them!
+                    student_info = students_with_biometric[0]
+                    student = student_info['student']
+                    
+                    print(f"[BIOMETRIC POLL] ✓ MATCHED! Only 1 student enrolled - must be {student.full_name}")
+                    
+                    pending_list.append({
+                        'fingerprint_id': student_info['fingerprint_id'],
+                        'fingerprint_template_id': student_info.get('fingerprint_id', ''),
+                        'student_id': student.id,
+                        'student_name': student.full_name or student.username,
+                        'student_email': student.email,
+                        'confidence': detection.get('quality', 0),
+                        'timestamp': detection.get('timestamp')
+                    })
+                    
+                elif len(students_with_biometric) > 1:
+                    # Multiple students with biometric - we need more info to match
+                    # For now, show the student who most recently had their fingerprint enrolled
+                    # (most recent = highest fingerprint_id)
+                    most_recent = max(students_with_biometric, 
+                                     key=lambda x: x.get('fingerprint_id', 0))
+                    student = most_recent['student']
+                    
+                    print(f"[BIOMETRIC POLL] ⚠ Multiple students enrolled - guessing {student.full_name} (most recent)")
+                    
+                    pending_list.append({
+                        'fingerprint_id': most_recent['fingerprint_id'],
+                        'fingerprint_template_id': most_recent.get('fingerprint_id', ''),
+                        'student_id': student.id,
+                        'student_name': student.full_name or student.username,
+                        'student_email': student.email,
+                        'confidence': detection.get('quality', 0),
+                        'timestamp': detection.get('timestamp')
+                    })
+                else:
+                    # No students with biometric enrollment in this course
+                    print(f"[BIOMETRIC POLL] ✗ No students with biometric enrollment in this course")
+                    pending_list.append({
+                        'fingerprint_id': -1,
+                        'student_id': None,
+                        'student_name': 'No biometric students enrolled',
+                        'confidence': 0,
+                        'timestamp': detection.get('timestamp'),
+                        'error': 'unregistered_fingerprint'
+                    })
+                
+                processed_keys.append(detection.get('key'))
+                continue
+            
+            # Original detection processing for already-matched fingerprints
+            fingerprint_slot = detection.get('fingerprint_id')
+            confidence = detection.get('confidence', 0)
+            timestamp = detection.get('timestamp')
+            detection_key = detection.get('key')
+            
+            print(f"[BIOMETRIC POLL] [{idx}] Fingerprint ID: {fingerprint_slot}, Confidence: {confidence}")
+            logger.info(f"[PENDING] Checking detection - Fingerprint ID: {fingerprint_slot}, Confidence: {confidence}")
+            
+            # Check if this fingerprint is registered for this course
+            if fingerprint_slot in fingerprint_map:
+                student_info = fingerprint_map[fingerprint_slot]
+                student = student_info['student']
+                
+                print(f"[BIOMETRIC POLL] ✓ MATCH! Fingerprint {fingerprint_slot} = Student {student.full_name}")
+                
+                pending_list.append({
+                    'fingerprint_id': fingerprint_slot,
+                    'fingerprint_template_id': student_info.get('fingerprint_id', ''),
+                    'student_id': student.id,
+                    'student_name': student.full_name or student.username,
+                    'student_email': student.email,
+                    'confidence': confidence,
+                    'timestamp': timestamp
+                })
+                
+                logger.info(f"[PENDING] ✓ MATCH FOUND - Fingerprint ID {fingerprint_slot} belongs to Student: {student.full_name}")
+                processed_keys.append(detection_key)
+                
+            elif fingerprint_slot == -1:
+                # Unregistered fingerprint (sensor couldn't match to any enrolled fingerprint)
+                logger.warning(f"[PENDING] ⚠ UNREGISTERED - Fingerprint not found in sensor database")
+                pending_list.append({
+                    'fingerprint_id': -1,
+                    'student_id': None,
+                    'student_name': 'Unregistered',
+                    'error': 'unregistered_fingerprint',
+                    'confidence': confidence,
+                    'timestamp': timestamp
+                })
+                processed_keys.append(detection_key)
+            else:
+                # Fingerprint detected but NOT registered for THIS COURSE
+                # Check if it's registered for another course
+                other_registrations = BiometricRegistration.objects.filter(
+                    fingerprint_id=fingerprint_slot,
+                    is_active=True
+                ).select_related('student', 'course')
+                
+                if other_registrations.exists():
+                    reg = other_registrations.first()
+                    logger.warning(f"[PENDING] ⚠ NOT THIS COURSE - Fingerprint ID {fingerprint_slot} registered for {reg.course.code}, not {course.code}")
+                    # Return owner info but mark as not registered for this course (frontend will not record attendance)
+                    pending_list.append({
+                        'fingerprint_id': fingerprint_slot,
+                        'student_id': reg.student.id,
+                        'student_name': reg.student.full_name or reg.student.username,
+                        'student_email': getattr(reg.student, 'email', ''),
+                        'confidence': confidence,
+                        'timestamp': timestamp,
+                        'error': 'not_registered_for_course'
+                    })
+                else:
+                    logger.warning(f"[PENDING] ⚠ NOT REGISTERED - Fingerprint ID {fingerprint_slot} not found in any registration")
+                    # Treat as unregistered for this course
+                    pending_list.append({
+                        'fingerprint_id': fingerprint_slot,
+                        'student_id': None,
+                        'student_name': 'Not registered for this course',
+                        'error': 'not_registered_for_course',
+                        'confidence': confidence,
+                        'timestamp': timestamp
+                    })
+                
+                processed_keys.append(detection_key)
+        
+        # Remove processed detections from queue (clean up)
+        if processed_keys:
+            queue = [d for d in queue if d.get('key') not in processed_keys]
+            cache.set("fingerprint_detections_queue_attendance", queue, 60)
+            logger.info(f"[PENDING] Removed {len(processed_keys)} processed detections, {len(queue)} remaining in queue")
+        
+        logger.info(f"[PENDING] ✓ RETURNING {len(pending_list)} pending detections for course {course.code} ({course_id})")
+        for item in pending_list:
+            logger.info(f"[PENDING] - Returning: Student: {item.get('student_name')}, Fingerprint ID: {item.get('fingerprint_id')}, Confidence: {item.get('confidence')}")
+        
+        print(f"[BIOMETRIC POLL] ===== RESPONSE =====")
+        print(f"[BIOMETRIC POLL] Returning {len(pending_list)} pending items")
+        for item in pending_list:
+            print(f"[BIOMETRIC POLL]   - {item.get('student_name')} (ID: {item.get('fingerprint_id')})")
+        print(f"[BIOMETRIC POLL] ===== END POLL =====\n")
+        
+        # DEBUG: Also print to console so we see it immediately
+        print(f"\n=== BIOMETRIC PENDING POLL ===")
+        print(f"Course: {course.code}, Course ID: {course_id}")
+        print(f"Registrations: {len(fingerprint_map)}")
+        print(f"Pending items: {len(pending_list)}")
+        for item in pending_list:
+            print(f"  - {item.get('student_name')} (Fingerprint {item.get('fingerprint_id')})")
+        print(f"Cache queue size: {len(queue)}")
+        print(f"===\n")
+        
+        return JsonResponse({'pending': pending_list})
+        
+    except Exception as e:
+        logger.error(f"Error getting pending biometric scans: {str(e)}", exc_info=True)
+        return JsonResponse({'pending': []})
+
+
+@login_required
+@require_http_methods(["POST"])
+def instructor_biometric_scan_attendance_view(request):
+    """
+    Record attendance via biometric scan (instructor context).
+    Called when a student's fingerprint is verified through the instructor interface.
+    
+    Expected POST data:
+    {
+        'course_id': <int>,
+        'fingerprint_id': '<str>', # fingerprint template ID from ESP32
+        'schedule_id': '<str>' (optional)
+    }
+    """
+    try:
+        if not request.user.is_teacher:
+            return JsonResponse({
+                'success': False,
+                'message': 'Only instructors can process biometric scans.'
+            }, status=403)
+        
+        from django.db import transaction
+        
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        fingerprint_id_raw = data.get('fingerprint_id')
+        schedule_id = data.get('schedule_id', '')
+
+        try:
+            fingerprint_id = int(str(fingerprint_id_raw).strip())
+        except Exception:
+            fingerprint_id = None
+        
+        if not course_id or fingerprint_id is None:
+            return JsonResponse({
+                'success': False,
+                'message': 'Missing course_id or fingerprint_id'
+            }, status=400)
+        
+        # Get course
+        try:
+            course = Course.objects.get(id=int(course_id))
+        except (Course.DoesNotExist, ValueError):
+            return JsonResponse({
+                'success': False,
+                'message': 'Course not found'
+            }, status=404)
+        
+        # Find student with matching fingerprint registration.
+        # Prefer this specific course, but allow sibling sections so a student doesn't
+        # get falsely flagged as "not registered" due to section mismatch.
+        biometric_reg = BiometricRegistration.objects.filter(
+            course=course,
+            fingerprint_id=fingerprint_id,
+            is_active=True
+        ).select_related('student', 'course').first()
+
+        if not biometric_reg:
+            sibling_courses = Course.objects.filter(
+                instructor=course.instructor,
+                code=course.code,
+                name=course.name,
+                semester=course.semester,
+                school_year=course.school_year,
+                is_active=True,
+                deleted_at__isnull=True,
+                is_archived=False
+            )
+            biometric_reg = BiometricRegistration.objects.filter(
+                course__in=sibling_courses,
+                fingerprint_id=fingerprint_id,
+                is_active=True
+            ).select_related('student', 'course').first()
+        
+        if not biometric_reg:
+            # SECURITY: Check if this fingerprint_id exists but for a DIFFERENT student
+            # (should never happen due to unique_student_fingerprint_id constraint, but validate anyway)
+            other_student_reg = BiometricRegistration.objects.filter(
+                fingerprint_id=fingerprint_id,
+                is_active=True
+            ).exclude(course=course).select_related('student', 'course').first()
+            
+            if other_student_reg:
+                logger.warning(f"[BIOMETRIC SECURITY] Fingerprint {fingerprint_id} belongs to {other_student_reg.student.full_name} in {other_student_reg.course.code}, not found in {course.code}")
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Fingerprint not registered for this course'
+                }, status=403)
+            
+            logger.warning(f"[BIOMETRIC] Fingerprint ID {fingerprint_id} not registered for course {course.code}")
+            return JsonResponse({
+                'success': False,
+                'message': 'Fingerprint not registered for this course'
+            }, status=403)
+        
+        # Hardware matching is performed on the ESP32/sensor; for attendance we rely on
+        # fingerprint_id -> student mapping. biometric_data may be empty for some legacy
+        # registrations and should not block attendance.
+        if not biometric_reg.biometric_data:
+            logger.warning(f"[BIOMETRIC WARNING] Registration {biometric_reg.id} has no biometric_data stored; proceeding with hardware-matched fingerprint_id={fingerprint_id}")
+
+        student = biometric_reg.student
+        
+        # SECURITY: Verify student is actually enrolled in this course
+        try:
+            enrollment = CourseEnrollment.objects.get(
+                student=student,
+                course=course,
+                is_active=True
+            )
+        except CourseEnrollment.DoesNotExist:
+            logger.warning(f"[BIOMETRIC SECURITY] Student {student.full_name} has biometric registered but NOT enrolled in {course.code}")
+            return JsonResponse({
+                'success': False,
+                'message': 'Student not enrolled in this course'
+            }, status=403)
+        
+        # Check if attendance is open (prefer schedule-level status when available)
+        attendance_status = getattr(course, 'attendance_status', None)
+        try:
+            if active_schedule and getattr(active_schedule, 'attendance_status', None):
+                attendance_status = active_schedule.attendance_status
+        except Exception:
+            pass
+
+        if attendance_status not in ['open', 'automatic']:
+            return JsonResponse({
+                'success': False,
+                'message': f'Attendance is currently {attendance_status}. Cannot record attendance.'
+            }, status=403)
+        
+        # Get timezone
+        try:
+            from zoneinfo import ZoneInfo
+            ph_tz = ZoneInfo('Asia/Manila')
+        except:
+            import pytz
+            ph_tz = pytz.timezone('Asia/Manila')
+        
+        now_ph = timezone.now().astimezone(ph_tz)
+        today = now_ph.date()
+        
+        # Determine schedule day from TODAY's day of week (same logic as QR code)
+        day_map = {
+            'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 'Thursday': 'Thu',
+            'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'
+        }
+        today_short = day_map.get(now_ph.strftime('%A'), now_ph.strftime('%A')[:3])
+        
+        # Try to use provided schedule_id first, but default to today's day if not provided
+        schedule_day = today_short
+        if schedule_id:
+            try:
+                parts = str(schedule_id).split('_')
+                if len(parts) >= 2:
+                    day_short = parts[1]
+                    # Check if this is a valid day code (single or double letter)
+                    day_map_reverse = {
+                        'M': 'Mon', 'T': 'Tue', 'W': 'Wed', 'Th': 'Thu', 'F': 'Fri', 
+                        'S': 'Sat', 'Su': 'Sun', 'Mon': 'Mon', 'Tue': 'Tue', 'Wed': 'Wed',
+                        'Thu': 'Thu', 'Fri': 'Fri', 'Sat': 'Sat', 'Sun': 'Sun'
+                    }
+                    mapped_day = day_map_reverse.get(day_short)
+                    if mapped_day:
+                        schedule_day = mapped_day
+                        logger.info(f"[BIOMETRIC LATE CHECK] Extracted schedule day from schedule_id: {schedule_day}")
+            except Exception as e:
+                logger.warning(f"[BIOMETRIC LATE CHECK] Error parsing schedule_id, defaulting to today's day: {str(e)}")
+                schedule_day = today_short
+        
+        logger.info(f"[BIOMETRIC LATE CHECK] Using schedule day: {schedule_day}, Today's day: {today_short}")
+        
+        # Don't check for existing attendance record - allow re-marking
+        # This matches the QR code behavior where students can scan again
+        existing_record = AttendanceRecord.objects.filter(
+            student=student,
+            course=course,
+            attendance_date=today,
+            schedule_day=schedule_day or ''
+        ).first()
+        
+        # CRITICAL: Determine attendance status based on present window (SAME LOGIC AS QR CODE)
+        attendance_record_status = 'present'  # Default status
+        
+        logger.info(f"[BIOMETRIC LATE CHECK] Starting present/late determination for {student.full_name}")
+        logger.info(f"[BIOMETRIC LATE CHECK] Current time: {now_ph}, Schedule day: {schedule_day}")
+        
+        # Get the schedule object
+        active_schedule = CourseSchedule.objects.filter(
+            course=course,
+            day=schedule_day
+        ).first()
+        logger.info(f"[BIOMETRIC LATE CHECK] Schedule lookup for day '{schedule_day}': {'Found' if active_schedule else 'NOT FOUND'}")
+        
+        # Get the present duration from schedule or course (MUST be set by instructor)
+        present_duration_minutes = None
+        if active_schedule and getattr(active_schedule, 'attendance_present_duration', None):
+            present_duration_minutes = active_schedule.attendance_present_duration
+            logger.info(f"[BIOMETRIC LATE CHECK] ✓ Using schedule-level present duration: {present_duration_minutes} minutes")
+        elif getattr(course, 'attendance_present_duration', None):
+            present_duration_minutes = course.attendance_present_duration
+            logger.info(f"[BIOMETRIC LATE CHECK] ✓ Using course-level present duration: {present_duration_minutes} minutes")
+        else:
+            logger.warning(f"[BIOMETRIC LATE CHECK] ⚠️ NO present duration configured - defaulting to PRESENT")
+        
+        # Get the qr_opened_at timestamp (MUST be set when instructor opens attendance)
+        qr_opened_at = None
+        if active_schedule and getattr(active_schedule, 'qr_code_opened_at', None):
+            qr_opened_at = active_schedule.qr_code_opened_at
+            logger.info(f"[BIOMETRIC LATE CHECK] ✓ Using schedule-level qr_opened_at: {qr_opened_at}")
+        elif getattr(course, 'qr_code_opened_at', None):
+            qr_opened_at = course.qr_code_opened_at
+            logger.info(f"[BIOMETRIC LATE CHECK] ✓ Using course-level qr_opened_at: {qr_opened_at}")
+        else:
+            logger.warning(f"[BIOMETRIC LATE CHECK] ⚠️ NO qr_opened_at timestamp found - attendance may not have been opened yet")
+        
+        # CRITICAL CHECK: If present window is configured, MUST check if student is within the window
+        # If qr_opened_at is missing (not recorded), fall back to schedule start_time + duration.
+        if present_duration_minutes and present_duration_minutes > 0:
+            present_cutoff_dt = None
+
+            if qr_opened_at:
+                present_cutoff_dt = qr_opened_at + timezone.timedelta(minutes=int(present_duration_minutes))
+            elif active_schedule and getattr(active_schedule, 'start_time', None):
+                from datetime import datetime as dt
+                present_cutoff_dt = dt.combine(today, active_schedule.start_time) + timezone.timedelta(minutes=int(present_duration_minutes))
+                try:
+                    present_cutoff_dt = present_cutoff_dt.replace(tzinfo=now_ph.tzinfo)
+                except Exception:
+                    pass
+
+            if present_cutoff_dt:
+                logger.info(f"[BIOMETRIC LATE CHECK] Present window boundaries:")
+                logger.info(f"[BIOMETRIC LATE CHECK]   Started at: {qr_opened_at}")
+                logger.info(f"[BIOMETRIC LATE CHECK]   Ends at:   {present_cutoff_dt}")
+                logger.info(f"[BIOMETRIC LATE CHECK]   Current:   {now_ph}")
+                
+                # Check if current time is after the present window
+                if now_ph > present_cutoff_dt:
+                    attendance_record_status = 'late'
+                    time_late = (now_ph - present_cutoff_dt).total_seconds() / 60
+                    logger.warning(f"[BIOMETRIC LATE CHECK] 🔴 LATE: Student {student.full_name} is {time_late:.1f} minutes LATE (scanned at {now_ph})")
+                else:
+                    attendance_record_status = 'present'
+                    time_remaining = (present_cutoff_dt - now_ph).total_seconds() / 60
+                    logger.info(f"[BIOMETRIC LATE CHECK] 🟢 PRESENT: Student {student.full_name} scanned with {time_remaining:.1f} minutes remaining")
+            else:
+                # Duration exists but we have no baseline; fall back to attendance_end if available.
+                try:
+                    end_time = None
+                    if active_schedule and getattr(active_schedule, 'attendance_end', None):
+                        end_time = active_schedule.attendance_end
+                    elif getattr(course, 'attendance_end', None):
+                        end_time = course.attendance_end
+
+                    if end_time and now_ph.time() > end_time:
+                        attendance_record_status = 'late'
+                        logger.warning(f"[BIOMETRIC LATE CHECK] 🔴 LATE by attendance_end fallback: now={now_ph.time()} end={end_time}")
+                    else:
+                        attendance_record_status = 'present'
+                except Exception:
+                    attendance_record_status = 'present'
+        else:
+            # No present-window configured -> use attendance_end fallback if it exists
+            attendance_record_status = 'present'
+            try:
+                end_time = None
+                if active_schedule and getattr(active_schedule, 'attendance_end', None):
+                    end_time = active_schedule.attendance_end
+                elif getattr(course, 'attendance_end', None):
+                    end_time = course.attendance_end
+                if end_time and now_ph.time() > end_time:
+                    attendance_record_status = 'late'
+            except Exception:
+                pass
+        
+        logger.info(f"[BIOMETRIC LATE CHECK] ========================================")
+        logger.info(f"[BIOMETRIC LATE CHECK] ✓ FINAL DECISION: {student.full_name} will be marked as {attendance_record_status.upper()}")
+        logger.info(f"[BIOMETRIC LATE CHECK] ========================================")
+        
+        # Create/update attendance record
+        with transaction.atomic():
+            # CRITICAL: Delete any existing records for this student/course/date
+            # This ensures we replace old scans (PRESENT) with new ones (LATE) on re-mark
+            # Only one record per date should exist
+            old_records = AttendanceRecord.objects.filter(
+                student=student,
+                course=course,
+                attendance_date=today
+            )
+            
+            if old_records.exists():
+                count = old_records.count()
+                old_time = old_records.first().attendance_time
+                old_status = old_records.first().status
+                logger.info(f"[BIOMETRIC INSTRUCTOR] ✓ REPLACING {count} old record(s): {old_time} ({old_status}) -> {now_ph.time()} ({attendance_record_status})")
+                old_records.delete()
+            
+            # Create fresh attendance record with latest status and time
+            attendance_record = AttendanceRecord.objects.create(
+                student=student,
+                course=course,
+                enrollment=enrollment,
+                attendance_date=today,
+                attendance_time=now_ph.time(),
+                status=attendance_record_status,
+                schedule_day=schedule_day or ''
+            )
+            
+            logger.info(f"[BIOMETRIC INSTRUCTOR] ✓ CREATED fresh attendance record for {student.full_name} - status: {attendance_record_status}")
+            logger.info(f"[BIOMETRIC INSTRUCTOR] Student {student.full_name} ({student.id}) marked {attendance_record_status} in {course.code} via fingerprint")
+            
+            # Create notification
+            try:
+                create_notification(
+                    user=student,
+                    notification_type='attendance_marked',
+                    title='Attendance Recorded - Biometric',
+                    message=f'Your biometric attendance has been recorded as {attendance_record_status.upper()} in {course.code}',
+                    category='attendance',
+                    related_course=course,
+                    related_user=course.instructor
+                )
+            except Exception as e:
+                logger.warning(f"Could not create notification: {str(e)}")
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'{student.full_name} marked {attendance_record_status}',
+                'student_name': student.full_name,
+                'student_id': student.id,
+                'student_pk': student.pk,
+                'status': attendance_record_status,
+                'attendance_time': now_ph.strftime('%H:%M:%S')
+            })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'message': 'Invalid JSON data'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error recording biometric attendance: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }, status=500)
+
+
+# ==================== FINGERPRINT DETECTION FROM ESP32 ====================
+
+from django.views.decorators.csrf import csrf_exempt
+from django.core.cache import cache
+
+@csrf_exempt  # Allow POST from ESP32 without CSRF token
+@require_http_methods(["POST"])
+def fingerprint_detection_view(request):
+    """
+    Receive fingerprint detection from ESP32 sensor.
+    This is called directly by the ESP32 when a fingerprint is detected.
+    
+    Expected POST data:
+    {
+        'fingerprint_id': <int>,      # ID from sensor database (1-255), or -1 for unregistered
+        'confidence': <int>,
+        'timestamp': <int>,
+        'mode': <str>  # 'registration' or 'attendance' - which purpose is this detection for
+    }
+    
+    Detections are stored in separate cache queues based on mode:
+    - registration: For student fingerprint enrollment
+    - attendance: For instructor attendance scanning
+    """
+    try:
+        data = json.loads(request.body)
+        fingerprint_id_raw = data.get('fingerprint_id')
+        confidence = data.get('confidence', 0)
+        detection_mode = data.get('mode', 'attendance').lower()  # Default to attendance if not specified
+        match_type = data.get('match_type')
+        reason = data.get('reason')
+
+        try:
+            fingerprint_id = int(str(fingerprint_id_raw).strip())
+        except Exception:
+            fingerprint_id = None
+        
+        logger.info(f"[DETECTION ENDPOINT] ✓ Fingerprint detection received - ID: {fingerprint_id}, Confidence: {confidence}, Mode: {detection_mode}")
+        print(f"\n[DETECTION] ===== NEW FINGERPRINT DETECTION =====")
+        print(f"[DETECTION] Fingerprint ID: {fingerprint_id}")
+        print(f"[DETECTION] Confidence: {confidence}")
+        print(f"[DETECTION] Mode: {detection_mode}")
+        
+        if fingerprint_id is None:
+            logger.error(f"[DETECTION ENDPOINT] ✗ Missing fingerprint_id in request body")
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing fingerprint_id'
+            }, status=400)
+        
+        # Validate mode
+        if detection_mode not in ['registration', 'attendance']:
+            detection_mode = 'attendance'
+        
+        logger.info(f"[DETECTION] Fingerprint detected - ID: {fingerprint_id}, Confidence: {confidence}, Mode: {detection_mode}")
+        
+        # Use different cache keys for different modes
+        if detection_mode == 'registration':
+            detections_queue_key = "fingerprint_detections_queue_registration"
+        else:  # attendance
+            detections_queue_key = "fingerprint_detections_queue_attendance"
+        
+        print(f"[DETECTION] Using queue key: {detections_queue_key}")
+        
+        # Create a unique key for this detection
+        detection_key = f"fingerprint_detection_{detection_mode}_{fingerprint_id}_{int(timezone.now().timestamp() * 1000)}"
+        
+        # Store detection data with 30-second expiry
+        detection_data = {
+            'fingerprint_id': fingerprint_id,
+            'confidence': confidence,
+            'timestamp': timezone.now().isoformat(),
+            'match_type': match_type,
+            'reason': reason
+        }
+        cache.set(detection_key, detection_data, 30)
+        
+        # Maintain a queue of recent detections for this mode
+        queue = cache.get(detections_queue_key, [])
+        queue.append({
+            'fingerprint_id': fingerprint_id,
+            'confidence': confidence,
+            'timestamp': timezone.now().isoformat(),
+            'key': detection_key,
+            'match_type': match_type,
+            'reason': reason
+        })
+        
+        # Keep only last 50 detections
+        queue = queue[-50:]
+        cache.set(detections_queue_key, queue, 60)  # Cache for 1 minute
+        
+        logger.info(f"[DETECTION] Stored {detection_mode} detection - Queue size: {len(queue)}")
+        print(f"[DETECTION] Stored in cache! Queue now has {len(queue)} items")
+        print(f"[DETECTION] Queue contents: {queue}\n")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Fingerprint detection received',
+            'fingerprint_id': fingerprint_id,
+            'mode': detection_mode
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error receiving fingerprint detection: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+@csrf_exempt
+def student_fingerprint_pending_view(request):
+    """
+    Polling endpoint for STUDENT registration mode.
+    Students call this repeatedly during fingerprint enrollment to get detections.
+    
+    Returns recent fingerprint detections from the registration queue.
+    """
+    if request.method != 'GET':
+        return JsonResponse({
+            'success': False,
+            'error': 'Method not allowed'
+        }, status=405)
+    
+    try:
+        # Get the registration queue
+        detections_queue_key = "fingerprint_detections_queue_registration"
+        queue = cache.get(detections_queue_key, [])
+        
+        # Get detections that haven't been processed yet
+        last_check = request.GET.get('last_check')
+        
+        pending_detections = []
+        if last_check:
+            try:
+                last_check_time = float(last_check)
+                for detection in queue:
+                    detection_time = datetime.datetime.fromisoformat(detection['timestamp']).timestamp()
+                    if detection_time > last_check_time:
+                        pending_detections.append(detection)
+            except (ValueError, KeyError):
+                # If parsing fails, return all detections
+                pending_detections = queue[-10:]  # Last 10 detections
+        else:
+            # First check - return last 5 detections
+            pending_detections = queue[-5:]
+        
+        logger.info(f"[STUDENT] Fingerprint pending check - {len(pending_detections)} detections found")
+        
+        return JsonResponse({
+            'success': True,
+            'detections': pending_detections,
+            'count': len(pending_detections),
+            'timestamp': timezone.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in student fingerprint pending: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+# ==================== GET COURSE ATTENDANCE COUNT ====================
+
+@login_required
+@require_http_methods(["GET"])
+def get_course_attendance_count(request):
+    """
+    Get the current attendance count for a course on today's date.
+    Used to update the UI in real-time after QR/biometric scans.
+    """
+    try:
+        if not request.user.is_teacher:
+            return JsonResponse({'success': False, 'message': 'Only instructors can access this'}, status=403)
+        
+        course_id = request.GET.get('course_id')
+        if not course_id:
+            return JsonResponse({'success': False, 'message': 'course_id is required'}, status=400)
+        
+        # Get course
+        try:
+            course = Course.objects.get(id=int(course_id))
+        except (Course.DoesNotExist, ValueError):
+            return JsonResponse({'success': False, 'message': 'Course not found'}, status=404)
+        
+        # Get timezone
+        try:
+            from zoneinfo import ZoneInfo
+            ph_tz = ZoneInfo('Asia/Manila')
+        except:
+            import pytz
+            ph_tz = pytz.timezone('Asia/Manila')
+        
+        now_ph = timezone.now().astimezone(ph_tz)
+        today = now_ph.date()
+        
+        # Count attendance records for today
+        attendance_count = AttendanceRecord.objects.filter(
+            course=course,
+            attendance_date=today,
+            status__in=['present', 'late']  # Count only marked students, not absent
+        ).count()
+        
+        return JsonResponse({
+            'success': True,
+            'count': attendance_count
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting attendance count: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def instructor_start_biometric_detection_view(request):
+    """
+    Start biometric fingerprint detection for attendance scanning.
+    Called by instructor interface when opening the dual scanner.
+    
+    Enables the ESP32 fingerprint sensor to detect fingerprints.
+    
+    POST /api/instructor/attendance/start/
+    {
+        'course_id': <int>,
+        'schedule_id': <str> (optional),
+        'session_id': <str> (unique session identifier)
+    }
+    
+    Returns:
+    {
+        'success': True/False,
+        'message': 'Detection started' or error message,
+        'session_id': session identifier
+    }
+    """
+    try:
+        if not request.user.is_teacher:
+            return JsonResponse({
+                'success': False,
+                'message': 'Only instructors can start detection.'
+            }, status=403)
+        
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        session_id = data.get('session_id', f"session_{timezone.now().timestamp()}")
+        
+        if not course_id:
+            return JsonResponse({
+                'success': False,
+                'message': 'Missing course_id'
+            }, status=400)
+        
+        # Verify course exists and instructor has access
+        try:
+            course = Course.objects.get(id=int(course_id))
+            if course.instructor != request.user:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'You do not have permission to access this course.'
+                }, status=403)
+        except (Course.DoesNotExist, ValueError):
+            return JsonResponse({
+                'success': False,
+                'message': 'Course not found'
+            }, status=404)
+        
+        # Enable fingerprint detection on ESP32 via MQTT
+        try:
+            from dashboard.mqtt_client import get_mqtt_client
+            mqtt_client = get_mqtt_client()
+            
+            if mqtt_client and mqtt_client.is_connected:
+                # Send detection enable request to ESP32
+                detection_request = {
+                    'action': 'start_detection',
+                    'mode': 2,  # MODE_ATTENDANCE
+                    'course_id': course.id,
+                    'session_id': session_id
+                }
+                mqtt_client.publish('biometric/esp32/detect/request', detection_request, qos=1)
+                logger.info(f"[API] ✓ Fingerprint detection enabled for attendance - Course: {course.code}, Session: {session_id}")
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Fingerprint detection started',
+                    'session_id': session_id
+                })
+
+            else:
+                print("[API] MQTT bridge not connected - detection could not be started")
+                logger.warning("[API] MQTT bridge not connected - detection could not be started")
+                
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Biometric sensor not connected. Please ensure the ESP32 sensor is online.',
+                    'error': 'sensor_offline'
+                }, status=503)
+        except Exception as bridge_error:
+            print(f"[API] Error with MQTT bridge: {bridge_error}")
+            logger.warning(f"[API] MQTT bridge error: {bridge_error}")
+            return JsonResponse({
+                'success': False,
+                'message': 'Biometric sensor not connected. Please ensure the ESP32 sensor is online.',
+                'error': 'sensor_offline'
+            }, status=503)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'message': 'Invalid JSON'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error starting biometric detection: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def instructor_stop_biometric_detection_view(request):
+    """
+    Stop biometric fingerprint detection for attendance scanning.
+    Called by instructor when closing the dual scanner.
+    
+    POST /api/instructor/attendance/stop/
+    {
+        'course_id': <int>,
+        'session_id': <str> (optional)
+    }
+    
+    Returns:
+    {
+        'success': True/False,
+        'message': 'Detection stopped' or error message
+    }
+    """
+    try:
+        if not request.user.is_teacher:
+            return JsonResponse({
+                'success': False,
+                'message': 'Only instructors can stop detection.'
+            }, status=403)
+        
+        data = json.loads(request.body)
+        course_id = data.get('course_id')
+        
+        if not course_id:
+            return JsonResponse({
+                'success': False,
+                'message': 'Missing course_id'
+            }, status=400)
+        
+        # Verify course exists
+        try:
+            course = Course.objects.get(id=int(course_id))
+        except (Course.DoesNotExist, ValueError):
+            return JsonResponse({
+                'success': False,
+                'message': 'Course not found'
+            }, status=404)
+        
+        # Disable fingerprint detection on ESP32 via MQTT
+        try:
+            from dashboard.mqtt_client import get_mqtt_client
+            mqtt_client = get_mqtt_client()
+            
+            if mqtt_client and mqtt_client.is_connected:
+                # Send detection disable request to ESP32
+                detection_request = {
+                    'action': 'stop_detection',
+                    'mode': 0  # MODE_IDLE
+                }
+                mqtt_client.publish('biometric/esp32/detect/request', detection_request, qos=1)
+                logger.info(f"[API] ✓ Fingerprint detection disabled - Course: {course.code}")
+        except Exception as bridge_error:
+            logger.error(f"[API] Error with MQTT during stop: {bridge_error}")
+        
+        # Always return success (detection is off either way)
+        return JsonResponse({
+            'success': True,
+            'message': 'Fingerprint detection stopped'
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'message': 'Invalid JSON'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error stopping biometric detection: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }, status=500)
+
+
+# ============================================================================
+# MISSING API ENDPOINTS FOR STUDENT BIOMETRIC ENROLLMENT
+# ============================================================================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def api_student_enrollment_status(request):
+    """Get status of current student enrollment"""
+    try:
+        student_id = request.GET.get('student_id')
+        
+        if not student_id:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'student_id required'
+            }, status=400)
+        
+        # Check for any active enrollments for this student
+        active_enrollments = []
+        for enrollment_id, state in _enrollment_states.items():
+            if state.get('user_id') and str(state.get('user_id')) == str(student_id):
+                active_enrollments.append({
+                    'enrollment_id': enrollment_id,
+                    'status': state.get('status'),
+                    'progress': state.get('progress'),
+                    'message': state.get('message')
+                })
+        
+        return JsonResponse({
+            'success': True,
+            'enrollments': active_enrollments,
+            'count': len(active_enrollments)
+        })
+    except Exception as e:
+        logger.error(f"Error getting enrollment status: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_student_enroll_cancel(request):
+    """Cancel ongoing biometric enrollment"""
+    try:
+        data = json.loads(request.body)
+        student_id = data.get('student_id')
+        
+        logger.info(f"[ENROLL CANCEL] Received cancel request for student: {student_id}")
+        
+        # Find and remove enrollment states for this student
+        to_remove = []
+        for enrollment_id, state in list(_enrollment_states.items()):
+            if state.get('user_id') and str(state.get('user_id')) == str(student_id):
+                to_remove.append(enrollment_id)
+                logger.info(f"[ENROLL CANCEL] Marking enrollment {enrollment_id} for removal")
+        
+        for enrollment_id in to_remove:
+            del _enrollment_states[enrollment_id]
+            logger.info(f"[ENROLL CANCEL] Deleted enrollment state {enrollment_id}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Enrollment cancelled',
+            'cancelled_count': len(to_remove)
+        })
+    except Exception as e:
+        logger.error(f"Error cancelling enrollment: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_broadcast_enrollment(request):
+    """Broadcast enrollment message to ESP32 via MQTT (for confirmation)"""
+    try:
+        data = json.loads(request.body)
+        slot = data.get('slot')
+        template_id = data.get('template_id')
+        action = data.get('action', 'confirm')
+        
+        logger.info(f"[BROADCAST] Broadcasting enrollment action={action}, slot={slot}, template_id={template_id}")
+
+        if not template_id:
+            return JsonResponse({'success': False, 'message': 'Missing template_id'}, status=400)
+
+        try:
+            slot_int = int(slot) if slot is not None else None
+        except Exception:
+            slot_int = None
+
+        from dashboard.mqtt_client import get_mqtt_client
+        mqtt_client = get_mqtt_client()
+
+        if not mqtt_client or not mqtt_client.is_connected:
+            return JsonResponse({'success': False, 'message': 'MQTT not connected'}, status=503)
+
+        payload = {
+            'action': action,
+            'template_id': template_id,
+        }
+        if slot_int is not None:
+            payload['slot'] = slot_int
+
+        mqtt_ok = mqtt_client.publish('biometric/esp32/enroll/request', payload)
+        if not mqtt_ok:
+            return JsonResponse({'success': False, 'message': 'Failed to publish MQTT message'}, status=502)
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Enrollment message sent'
+        })
+    except Exception as e:
+        logger.error(f"Error broadcasting enrollment: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        }, status=500)

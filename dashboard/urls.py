@@ -56,6 +56,7 @@ urlpatterns = [
     path('instructor/scan-student-school-id/', views.instructor_scan_student_school_id_view, name='instructor_scan_student_school_id'),
     path('instructor/scan-student-qr-code/', views.instructor_scan_student_qr_code_view, name='instructor_scan_student_qr_code'),
     path('instructor/scanned-students/', views.instructor_get_scanned_students_view, name='instructor_get_scanned_students'),
+    path('instructor/biometric-students/', views.instructor_get_biometric_students_view, name='instructor_get_biometric_students'),
     path('instructor/decode-image/', views.instructor_decode_image_view, name='instructor_decode_image'),
     path('instructor/course-enrollments/<int:course_id>/', views.instructor_course_enrollments_view, name='instructor_course_enrollments'),
     path('instructor/register-student-qr-code/', views.instructor_register_student_qr_code_view, name='instructor_register_student_qr_code'),
@@ -69,8 +70,11 @@ urlpatterns = [
     path('student/verify-biometric/', views.student_verify_biometric_view, name='student_verify_biometric'),
     path('instructor/check-biometric-registration/', views.instructor_check_biometric_registration_view, name='instructor_check_biometric_registration'),
     path('api/biometric/enroll/', views.api_biometric_enroll_view, name='api_biometric_enroll'),
+    path('api/biometric/confirm/', views.api_biometric_confirm_fingerprint_view, name='api_biometric_confirm'),
     path('api/biometric/verify/', views.api_biometric_verify_view, name='api_biometric_verify'),
     path('api/biometric/scan-attendance/', views.api_biometric_scan_attendance_view, name='api_biometric_scan_attendance'),
+    path('api/biometric/check-enrollment-lock/', views.check_instructor_enrollment_lock, name='check_instructor_enrollment_lock'),
+    path('api/check-biometric/', views.api_check_biometric_view, name='api_check_biometric'),
     path('api/instructor/courses/', views.api_get_instructor_courses_view, name='api_get_instructor_courses'),
     path('api/student/enrolled-courses/', views.api_get_student_enrolled_courses_view, name='api_get_student_enrolled_courses'),
     # Instructor enable/disable registration for courses
@@ -113,7 +117,7 @@ urlpatterns = [
     path('admin-dashboard/courses/<int:course_id>/', admin_views.admin_course_detail_view, name='admin_course_detail'),
     path('admin-dashboard/reports/', admin_views.admin_reports_view, name='admin_reports'),
     path('admin-dashboard/departments/add/', admin_views.admin_add_department_view, name='admin_add_department'),
-    path('admin-dashboard/departments/add', admin_views.admin_add_department_view, name='admin_add_department_no_slash'),  # Without trailing slash
+    path('admin-dashboard/departments/add', admin_views.admin_add_department_view, name='admin_add_department_no_slash'),
     path('admin-dashboard/departments/<int:department_id>/update/', admin_views.admin_update_department_view, name='admin_update_department'),
     path('admin-dashboard/departments/<int:department_id>/delete/', admin_views.admin_delete_department_view, name='admin_delete_department'),
     path('admin-dashboard/programs/add/', admin_views.admin_add_program_view, name='admin_add_program'),
@@ -148,10 +152,40 @@ urlpatterns = [
     path('api/get-course-sections/', views.get_course_sections_view, name='api_get_course_sections'),
     path('api/move-students-to-section/', views.move_students_to_section_view, name='api_move_students_to_section'),
     
-    # Health check endpoint for Arduino connectivity
     path('api/health-check/', views.api_health_check, name='api_health_check'),
+    
+    # ESP32 Fingerprint Sensor Communication
+    path('api/esp32/config/', views.api_esp32_config, name='api_esp32_config'),
+    path('api/esp32/scan-feedback/', views.api_esp32_scan_feedback, name='api_esp32_scan_feedback'),
+    path('api/esp32/enrollment-complete/', views.api_esp32_enrollment_complete, name='api_esp32_enrollment_complete'),
     
     # WebSocket broadcast API endpoints
     path('api/broadcast-scan-update/', views.api_broadcast_scan_update, name='api_broadcast_scan_update'),
+    path('api/broadcast-enrollment/', views.api_broadcast_enrollment, name='api_broadcast_enrollment'),  # For confirmation messages
     path('api/broadcast-enrollment-complete/', views.api_broadcast_enrollment_complete, name='api_broadcast_enrollment_complete'),
+    path('api/scan-acknowledged/', views.api_scan_acknowledged, name='api_scan_acknowledged'),
+    path('api/check-scan-acknowledged/', views.api_check_scan_acknowledged, name='api_check_scan_acknowledged'),
+    
+    # Frontend enrollment management
+    path('api/start-enrollment/', views.api_start_enrollment, name='api_start_enrollment'),
+    path('api/student/enroll/start/', views.api_start_enrollment, name='api_student_enroll_start'),  # Alias for compatibility
+    path('api/student/enroll/status/', views.api_student_enrollment_status, name='api_student_enroll_status'),
+    path('api/student/enroll/cancel/', views.api_student_enroll_cancel, name='api_student_enroll_cancel'),
+    path('api/enrollment-status/<str:enrollment_id>/', views.api_enrollment_status, name='api_enrollment_status'),
+    path('api/enrollment-updates/<str:enrollment_id>/', views.api_enrollment_updates, name='api_enrollment_updates'),
+    path('api/save-enrollment/', views.api_save_enrollment, name='api_save_enrollment'),
+    path('api/biometric/confirm-enrollment/', views.api_biometric_confirm_enrollment, name='api_biometric_confirm_enrollment'),
+    path('api/biometric/cancel-enrollment/', views.api_biometric_cancel_enrollment, name='api_biometric_cancel_enrollment'),
+    path('api/get-enrolled-courses-status/', views.get_enrolled_courses_status_view, name='get_enrolled_courses_status'),
+    # Instructor Biometric Scanning (Combined QR + Biometric Attendance)
+    path('instructor/biometric-pending/', views.instructor_get_biometric_pending_view, name='instructor_get_biometric_pending'),
+    path('api/instructor/attendance/start/', views.instructor_start_biometric_detection_view, name='instructor_start_biometric_detection'),
+    path('api/instructor/attendance/stop/', views.instructor_stop_biometric_detection_view, name='instructor_stop_biometric_detection'),
+    path('instructor/biometric-scan-attendance/', views.instructor_biometric_scan_attendance_view, name='instructor_biometric_scan_attendance'),
+    path('get-course-attendance-count/', views.get_course_attendance_count, name='get_course_attendance_count'),
+    # Student Biometric Registration (separate from attendance)
+    path('student/fingerprint-pending/', views.student_fingerprint_pending_view, name='student_fingerprint_pending'),
+    # ESP32 Fingerprint Detection (sent directly from sensor)
+    # Supports mode parameter: 'registration' (students) or 'attendance' (instructors)
+    path('api/fingerprint-detection/', views.fingerprint_detection_view, name='fingerprint_detection'),
 ]

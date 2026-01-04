@@ -1,6 +1,10 @@
 {% extends 'dashboard/instructor/teacher.html' %}
 {% block dashboard_content %}
 
+{% include 'dashboard/shared/notification_system.html' %}
+
+<div class="p-4 md:p-8 bg-white lg:bg-gray-50 flex-grow rounded-2xl shadow-inner min-h-full">
+
 <!-- Present Window Modal Functions (Define Early) -->
 <script>
 // Initialize window variables from URL parameters on page load
@@ -41,6 +45,13 @@
 
 // Early wrapper functions - these are defined early and will call the real functions when needed
 // This ensures they're available even if the full functions are defined later
+
+// Ensure a notification function exists (shared notification_system.html should provide this)
+if (typeof window.showNotification !== 'function') {
+    window.showNotification = function(message) {
+        window.alert(message);
+    };
+}
 
 window.startCountdownWrapper = function(durationSeconds, courseId, scheduleId) {
     console.log('===== [WRAPPER] START COUNTDOWN WRAPPER CALLED =====');
@@ -270,11 +281,13 @@ function openCombinedControlModal() {
             console.warn('[CONTROL MODAL] Attendance button not found');
         }
         
-        // Load previously saved timer duration or use 15 as default
+        // Load previously saved timer duration - keep whatever was last set by instructor
         const savedDuration = localStorage.getItem('present_window_duration_global');
         const timerInput = document.getElementById('present-minutes-input');
         if (timerInput) {
-            timerInput.value = savedDuration || '15';
+            // Use the saved duration if available, otherwise leave empty
+            timerInput.value = savedDuration || '';
+            console.log('[CONTROL MODAL] Timer input set to:', timerInput.value, '(saved duration:', savedDuration, ')');
         }
         
         if (timerInput) {
@@ -493,10 +506,10 @@ function confirmControlAndClose() {
                     }
                 }
                 
-                // Priority 3: Default fallback to 15 minutes if still no duration
+                // Priority 3: Don't use a default - only use what instructor has explicitly set
+                // If no duration saved yet, don't start any timer automatically
                 if (!finalDuration) {
-                    finalDuration = 15;
-                    console.log('[CONFIRM] Using default duration:', finalDuration);
+                    console.log('[CONFIRM] No saved duration - timer will not auto-start');
                 }
                 
                 console.log('[CONFIRM] Final duration to use:', finalDuration, 'minutes');
@@ -527,7 +540,7 @@ function confirmControlAndClose() {
                     }
                     
                     if (typeof showNotification === 'function') {
-                        showNotification('Attendance opened - Present window auto-started for this class!', 'success');
+                        showNotification('Attendance opened - Present window started for this class!', 'success');
                     }
                 } else {
                     console.log('[CONFIRM] No timer set, just opening attendance');
@@ -673,17 +686,12 @@ function confirmControlAndClose() {
                             console.log('[CONFIRM] Updated timer display to stopped state');
                         }
                         
-                        // Reset timer duration to default (15 minutes) when closed/postponed
-                        const defaultDuration = 15 * 60; // 15 minutes in seconds
-                        window.presentWindowDuration = defaultDuration;
-                        localStorage.setItem('present_window_duration_global', 15);
-                        
-                        // Update display to show reset duration
-                        const timeEl = timerDisplay.querySelector('.text-2xl');
-                        if (timeEl) {
-                            timeEl.textContent = '15:00';
-                            console.log('[CONFIRM] Reset timer display to default 15:00');
-                        }
+                        // Keep the saved duration intact - don't reset to 15 minutes
+                        // The duration stays in localStorage so instructor's setting is preserved
+                        const savedDuration = localStorage.getItem('present_window_duration_global') || '0';
+                        const durationInSeconds = parseInt(savedDuration) * 60;
+                        window.presentWindowDuration = durationInSeconds;
+                        console.log('[CONFIRM] Kept saved duration:', savedDuration, 'minutes');
                     }
                 }
                 
@@ -714,7 +722,7 @@ function confirmControlAndClose() {
                             e.stopPropagation();
                             return openInstructorSchoolIDScannerFromButton(this);
                         };
-                        enabledButton.innerHTML = '<i class="fas fa-camera text-lg"></i>';
+                        enabledButton.innerHTML = '<i class="fas fa-qrcode text-lg mr-2"></i><i class="fas fa-fingerprint text-lg"></i>';
                         
                         if (currentButton) {
                             currentButton.replaceWith(enabledButton);
@@ -978,6 +986,102 @@ function selectAttendanceStatus(status) {
     }
     
     /* Modal animations */
+    
+    /* Attendance Control Buttons - Remove outline and active state */
+    .active-attendance-btn {
+        outline: none !important;
+        border: none !important;
+        box-shadow: none !important;
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        -moz-appearance: none !important;
+        background-clip: padding-box !important;
+        transition: none !important;
+        -webkit-user-select: none !important;
+        -moz-user-select: none !important;
+        user-select: none !important;
+    }
+    
+    .active-attendance-btn:focus {
+        outline: none !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+    
+    .active-attendance-btn:active {
+        outline: none !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+    
+    .active-attendance-btn:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+    
+    /* Close button - Red */
+    .closed-btn {
+        background-color: rgb(220, 38, 38) !important;
+        color: white !important;
+    }
+    
+    .closed-btn:hover {
+        background-color: rgb(185, 28, 28) !important;
+        color: white !important;
+    }
+    
+    .closed-btn:active {
+        background-color: rgb(153, 27, 27) !important;
+        color: white !important;
+    }
+    
+    .closed-btn:focus {
+        background-color: rgb(220, 38, 38) !important;
+        color: white !important;
+    }
+    
+    /* Open button - Green */
+    .open-btn {
+        background-color: rgb(34, 197, 94) !important;
+        color: white !important;
+    }
+    
+    .open-btn:hover {
+        background-color: rgb(22, 163, 74) !important;
+        color: white !important;
+    }
+    
+    .open-btn:active {
+        background-color: rgb(16, 92, 48) !important;
+        color: white !important;
+    }
+    
+    .open-btn:focus {
+        background-color: rgb(34, 197, 94) !important;
+        color: white !important;
+    }
+    
+    /* Postponed button - Yellow */
+    .postponed-btn {
+        background-color: rgb(202, 138, 4) !important;
+        color: white !important;
+    }
+    
+    .postponed-btn:hover {
+        background-color: rgb(161, 98, 7) !important;
+        color: white !important;
+    }
+    
+    .postponed-btn:active {
+        background-color: rgb(120, 53, 15) !important;
+        color: white !important;
+    }
+    
+    .postponed-btn:focus {
+        background-color: rgb(202, 138, 4) !important;
+        color: white !important;
+    }
     @keyframes fadeIn {
         from {
             opacity: 0;
@@ -1265,30 +1369,21 @@ function selectAttendanceStatus(status) {
                     
                     <div class="space-y-2 sm:space-y-3">
                         <!-- Closed Option -->
-                        <button id="btn-attendance-closed" type="button" onclick="selectAttendanceStatusCombined('closed')" title="Stop attendance - Students cannot scan" class="w-full px-3 sm:px-4 py-2 sm:py-3 bg-red-100 text-red-800 font-semibold text-sm sm:text-base rounded-lg hover:bg-red-300 transition duration-150 shadow-sm hover:shadow-md flex items-center gap-2 sm:gap-3 border-2 border-red-300 hover:border-red-500 active-attendance-btn" data-status="closed">
-                            <i class="fas fa-lock w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0"></i>
-                            <div class="text-left min-w-0">
-                                <div class="truncate">Closed</div>
-                                <div class="text-xs opacity-75 truncate hidden sm:block">Stop attendance</div>
-                            </div>
+                        <button id="btn-attendance-closed" type="button" onclick="selectAttendanceStatusCombined('closed')" title="Stop attendance - Students cannot scan" class="w-full px-3 sm:px-4 py-2 sm:py-3 text-white font-semibold text-sm sm:text-base rounded-lg shadow-md flex items-center gap-2 sm:gap-3 border-0 active-attendance-btn closed-btn" data-status="closed">
+                            <i class="fas fa-lock w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0"></i>
+                            <span>Close Attendance</span>
                         </button>
                         
                         <!-- Open Option -->
-                        <button id="btn-attendance-open" type="button" onclick="selectAttendanceStatusCombined('open')" title="Open attendance - Students can scan and timer starts" class="w-full px-3 sm:px-4 py-2 sm:py-3 bg-green-100 text-green-800 font-semibold text-sm sm:text-base rounded-lg hover:bg-green-300 transition duration-150 shadow-sm hover:shadow-md flex items-center gap-2 sm:gap-3 border-2 border-green-300 hover:border-green-500 active-attendance-btn" data-status="open">
-                            <i class="fas fa-door-open w-4 h-4 sm:w-5 sm:h-5 text-green-600 flex-shrink-0"></i>
-                            <div class="text-left min-w-0">
-                                <div class="truncate">Open</div>
-                                <div class="text-xs opacity-75 truncate hidden sm:block">Start attendance</div>
-                            </div>
+                        <button id="btn-attendance-open" type="button" onclick="selectAttendanceStatusCombined('open')" title="Open attendance - Students can scan and timer starts" class="w-full px-3 sm:px-4 py-2 sm:py-3 text-white font-semibold text-sm sm:text-base rounded-lg shadow-md flex items-center gap-2 sm:gap-3 border-0 active-attendance-btn open-btn" data-status="open">
+                            <i class="fas fa-door-open w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0"></i>
+                            <span>Open Attendance</span>
                         </button>
                         
                         <!-- Postponed Option -->
-                        <button id="btn-attendance-postponed" type="button" onclick="selectAttendanceStatusCombined('postponed')" title="Postpone - Temporarily pause attendance" class="w-full px-3 sm:px-4 py-2 sm:py-3 bg-yellow-100 text-yellow-800 font-semibold text-sm sm:text-base rounded-lg hover:bg-yellow-300 transition duration-150 shadow-sm hover:shadow-md flex items-center gap-2 sm:gap-3 border-2 border-yellow-300 hover:border-yellow-500 active-attendance-btn" data-status="postponed">
-                            <i class="fas fa-clock w-4 h-4 sm:w-5 sm:h-5 text-yellow-600 flex-shrink-0"></i>
-                            <div class="text-left min-w-0">
-                                <div class="truncate">Postponed</div>
-                                <div class="text-xs opacity-75 truncate hidden sm:block">Pause attendance</div>
-                            </div>
+                        <button id="btn-attendance-postponed" type="button" onclick="selectAttendanceStatusCombined('postponed')" title="Postpone - Temporarily pause attendance" class="w-full px-3 sm:px-4 py-2 sm:py-3 text-white font-semibold text-sm sm:text-base rounded-lg shadow-md flex items-center gap-2 sm:gap-3 border-0 active-attendance-btn postponed-btn" data-status="postponed">
+                            <i class="fas fa-clock w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0"></i>
+                            <span>Postpone Attendance</span>
                         </button>
                     </div>
                 </div>
@@ -1296,10 +1391,10 @@ function selectAttendanceStatus(status) {
             
             <!-- Confirm Button at Bottom -->
             <div class="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-200 flex justify-end gap-2 sm:gap-3">
-                <button type="button" onclick="closeCombinedControlModal()" class="px-4 sm:px-6 py-2 sm:py-3 bg-gray-300 text-gray-800 font-semibold text-sm sm:text-base rounded-lg hover:bg-gray-400 transition duration-150 shadow-md">
+                <button type="button" onclick="closeCombinedControlModal()" class="px-4 sm:px-6 py-2 sm:py-3 bg-gray-400 text-white font-semibold text-sm sm:text-base rounded-lg hover:bg-gray-500 transition duration-200 shadow-md flex items-center gap-2">
                     <i class="fas fa-times"></i> <span class="hidden sm:inline">Cancel</span>
                 </button>
-                <button type="button" onclick="confirmControlAndClose()" class="px-6 sm:px-8 py-2 sm:py-3 bg-indigo-600 text-white font-semibold text-sm sm:text-base rounded-lg hover:bg-indigo-700 transition duration-150 shadow-md flex items-center gap-2">
+                <button type="button" onclick="confirmControlAndClose()" class="px-6 sm:px-8 py-2 sm:py-3 bg-blue-600 text-white font-semibold text-sm sm:text-base rounded-lg hover:bg-blue-700 transition duration-200 shadow-md flex items-center gap-2">
                     <i class="fas fa-check"></i> <span class="hidden sm:inline">Confirm</span>
                 </button>
             </div>
@@ -1331,7 +1426,7 @@ function selectAttendanceStatus(status) {
                         <div class="min-w-0">
                             {% if e.section %}
                             <p class="mb-1">
-                                <span class="px-2 py-0.5 rounded-full font-bold text-[10px] text-white" style="background-color: {{ e.color }};">Section {{ e.section }}</span>
+                                <span class="section-badge px-2 py-0.5 rounded-full font-bold text-[10px] text-white" data-color="{{ e.color }}" style="background-color: #3C4770;">Section {{ e.section }}</span>
                             </p>
                             {% endif %}
                             <p class="text-sm font-semibold text-gray-900 truncate">{{ e.code }} • {{ e.name }}</p>
@@ -1403,10 +1498,10 @@ function selectAttendanceStatus(status) {
                                 data-course-name="{{ focus_course.name|escapejs }}" 
                                 data-section="{{ focus_course.section }}"
                                 data-schedule-id="{% if focus_course_next_entry and focus_course_next_entry.schedule_id %}{{ focus_course_next_entry.schedule_id }}{% endif %}"
-                                class="open-instructor-scanner px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition duration-150 shadow-md flex items-center gap-2"
+                                class="open-instructor-scanner px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition duration-200 shadow-md flex items-center gap-2"
                                 onclick="startUnifiedScan(this)">
-                                <i class="fas fa-id-card text-lg"></i>
-                                <span>Scan Student ID</span>
+                                <i class="fas fa-qrcode text-lg"></i><i class="fas fa-fingerprint text-lg"></i>
+                                <span>Start Dual Scanner</span>
                             </button>
                         {% else %}
                             <button disabled type="button" class="px-4 py-3 bg-gray-400 text-white font-semibold rounded-lg cursor-not-allowed shadow-md opacity-60">
@@ -1515,29 +1610,49 @@ function selectAttendanceStatus(status) {
 
 <!-- Instructor School ID Scanner Modal -->
 <div id="instructorSchoolIDScannerModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm hidden z-[9999] flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8 flex flex-col max-h-[90vh]">
-        <div class="flex justify-between items-start mb-4 flex-shrink-0">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 md:p-8 flex flex-col max-h-[90vh]">
+        <div class="flex justify-between items-start mb-6 flex-shrink-0 pb-4 border-b-2 border-blue-100">
             <div>
-                <h3 class="text-2xl font-bold flex items-center text-blue-600">
-                    <i class="fas fa-camera w-6 h-6 mr-2"></i> Scan Student ID
+                <h3 class="text-3xl font-bold flex items-center text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">
+                    <i class="fas fa-qrcode text-blue-600 mr-3 text-2xl"></i><i class="fas fa-fingerprint text-purple-600 mr-3 text-2xl"></i> Dual Attendance Scanner
                 </h3>
-                <p class="text-sm text-gray-600 mt-1" id="scanner-course-title"></p>
+                <p class="text-sm text-gray-600 mt-2" id="scanner-course-title"></p>
                 <p class="text-xs text-gray-500" id="scanner-section-title"></p>
+                <p class="text-xs text-green-600 font-semibold mt-2">✓ QR Code & Biometric enabled</p>
             </div>
-            <button onclick="closeInstructorSchoolIDScanner()" class="text-gray-400 hover:text-gray-600 transition duration-150 hover:opacity-75">
-                <i class="fas fa-times w-6 h-6"></i>
+            <button onclick="closeInstructorSchoolIDScanner()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition duration-150">
+                <i class="fas fa-times w-5 h-5"></i>
             </button>
         </div>
         
         <div class="flex-1 overflow-y-auto mb-4">
-            <div id="instructor-scanner-container" class="w-full bg-gray-100 rounded-lg mb-4 min-h-[300px] flex items-center justify-center">
-                <p class="text-gray-500 text-sm">Loading camera...</p>
-            </div>
-            
-            <div class="space-y-2">
-                <h4 class="text-sm font-semibold text-gray-700">Recently Scanned</h4>
-                <div id="scanned-students-list" class="space-y-2 max-h-[200px] overflow-y-auto">
-                    <p class="text-xs text-gray-500 text-center py-2">No students scanned yet</p>
+            <!-- Two-Column Layout: QR Code + Biometric Side by Side -->
+            <div class="grid grid-cols-2 gap-5">
+                <!-- QR Code Scanner (Left Column) -->
+                <div class="flex flex-col">
+                    <div class="flex items-center mb-3 pb-2 border-b-2 border-blue-100">
+                        <i class="fas fa-qrcode text-blue-600 text-xl mr-2"></i>
+                        <h4 class="text-sm font-bold text-gray-800">QR Code Scanning</h4>
+                    </div>
+                    <div id="instructor-scanner-container" class="w-full bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl h-[400px] flex items-center justify-center border-2 border-blue-300 shadow-sm">
+                        <p class="text-gray-600 text-sm font-medium">Loading camera...</p>
+                    </div>
+                </div>
+                
+                <!-- Biometric Scanner (Right Column) -->
+                <div class="flex flex-col">
+                    <div class="flex items-center mb-3 pb-2 border-b-2 border-purple-100">
+                        <i class="fas fa-fingerprint text-purple-600 text-xl mr-2"></i>
+                        <h4 class="text-sm font-bold text-gray-800">Biometric Scanning</h4>
+                    </div>
+                    <div id="biometric-scanner-status" class="w-full bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl h-[400px] flex flex-col items-center justify-center border-2 border-purple-300 shadow-sm p-6">
+                        <i class="fas fa-fingerprint text-6xl text-purple-600 mb-3"></i>
+                        <p class="text-gray-800 font-bold text-sm mb-2">Fingerprint Ready</p>
+                        <p class="text-xs text-gray-600 text-center mb-4">Place finger on sensor</p>
+                        <div id="biometric-status-message" class="text-xs text-gray-700 text-center p-2.5 bg-white rounded-lg border-2 border-purple-200 w-full font-medium">
+                            <i class="fas fa-spinner fa-spin mr-1.5"></i> Scanning for fingerprints...
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1545,9 +1660,9 @@ function selectAttendanceStatus(status) {
         <input type="hidden" id="scanner-course-id">
         <input type="hidden" id="scanner-schedule-id">
         
-        <div class="flex justify-end pt-4 border-t border-gray-100 flex-shrink-0">
-            <button onclick="closeInstructorSchoolIDScanner()" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm">
-                Close
+        <div class="flex justify-end pt-4 border-t-2 border-gray-100 flex-shrink-0">
+            <button onclick="closeInstructorSchoolIDScanner()" class="px-6 py-2.5 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition duration-200 shadow-sm">
+                <i class="fas fa-times mr-2"></i>Close
             </button>
         </div>
     </div>
@@ -2006,45 +2121,103 @@ function createOrUpdateTimer(key, expiry) {
     const updateFn = function() {
         const now = Date.now();
         const remaining = expiry - now;
-        const displayEl = document.getElementById('window-time');
-        if (!displayEl) return;
+        
+        // Try to find timer display element (check both possible IDs)
+        let displayEl = document.getElementById('window-time');
+        if (!displayEl) {
+            const timerDisplay = document.getElementById('present-timer-display');
+            if (timerDisplay) {
+                displayEl = timerDisplay.querySelector('div:first-child');
+            }
+        }
+        
+        console.log('[TIMER UPDATE] Current key:', key, 'Remaining:', remaining, 'DisplayEl:', displayEl ? 'found' : 'NOT FOUND');
+        
         if (remaining <= 0) {
-            displayEl.textContent = '00:00';
+            if (displayEl) displayEl.textContent = '00:00';
             // show ended state once
             if (!window.presentCountdownTimers[key]?.ended) {
                 window.presentCountdownTimers[key] = window.presentCountdownTimers[key] || {};
                 window.presentCountdownTimers[key].ended = true;
-                // Notify teacher
-                if (typeof showNotification === 'function') {
-                    showNotification('Present window ended — students who scan now will be marked late.', 'error');
-                }
-                // Optionally mark badge/UI - change active display style
-                const activeDisplay = document.getElementById('active-window-display');
-                if (activeDisplay) activeDisplay.classList.add('opacity-60');
+                
+                console.log('[TIMER ENDED] ===== TIMER EXPIRED ===== Key:', key);
+                
+                // Use a small delay to ensure notifications/sounds are ready
+                setTimeout(() => {
+                    // Notify teacher with pop message
+                    try {
+                        if (typeof showNotification === 'function') {
+                            console.log('[TIMER ENDED] Calling showNotification');
+                            showNotification('Present window ended — students who scan now will be marked late.', 'error');
+                        } else {
+                            console.warn('[TIMER ENDED] showNotification not a function, type:', typeof showNotification);
+                            alert('Present window ended — students who scan now will be marked late.');
+                        }
+                    } catch (err) {
+                        console.error('[TIMER ENDED] Error showing notification:', err);
+                        alert('Present window ended — students who scan now will be marked late.');
+                    }
+                    
+                    // Play window ended sound
+                    try {
+                        if (typeof playWindowEndedSound === 'function') {
+                            console.log('[TIMER ENDED] Calling playWindowEndedSound');
+                            playWindowEndedSound();
+                        } else {
+                            console.warn('[TIMER ENDED] playWindowEndedSound not a function, type:', typeof playWindowEndedSound);
+                        }
+                    } catch (err) {
+                        console.error('[TIMER ENDED] Error playing sound:', err);
+                    }
+                    
+                    // Optionally mark badge/UI - change active display style
+                    try {
+                        let activeDisplay = document.getElementById('active-window-display');
+                        if (!activeDisplay) {
+                            const timerContainer = document.getElementById('present-circle-container');
+                            if (timerContainer) activeDisplay = timerContainer;
+                        }
+                        
+                        if (activeDisplay) {
+                            console.log('[TIMER ENDED] Adding opacity-60 class to active display');
+                            activeDisplay.classList.add('opacity-60');
+                        }
+                    } catch (err) {
+                        console.error('[TIMER ENDED] Error updating display:', err);
+                    }
+                }, 100);
             }
             // stop timer and remove persisted key
             stopPresentCountdownForKey(key);
             return;
         }
+        
         const secs = Math.floor(remaining / 1000);
         const mm = String(Math.floor(secs / 60)).padStart(2, '0');
         const ss = String(secs % 60).padStart(2, '0');
-        displayEl.textContent = `${mm}:${ss}`;
+        if (displayEl) displayEl.textContent = `${mm}:${ss}`;
     };
 
     // run immediately then align to real-world seconds to avoid drift
     updateFn();
+    console.log('[CREATE TIMER] Timer created for key:', key, 'Expiry:', expiry, 'Now:', Date.now(), 'Remaining:', expiry - Date.now());
+    
     // compute ms until next full second
     const msToNextSecond = 1000 - (Date.now() % 1000) || 1000;
     const timeout = setTimeout(() => {
+        console.log('[CREATE TIMER] Initial timeout fired, setting up interval');
         // first aligned tick
         updateFn();
         // then run every full second
-        const interval = setInterval(updateFn, 1000);
+        const interval = setInterval(() => {
+            console.log('[TIMER TICK] Timer tick - checking expiry');
+            updateFn();
+        }, 1000);
         window.presentCountdownTimers[key] = { interval: interval, timeout: null, expiry: expiry, ended: false };
     }, msToNextSecond);
     // store timeout so we can clear it if needed
     window.presentCountdownTimers[key] = { interval: null, timeout: timeout, expiry: expiry, ended: false };
+    console.log('[CREATE TIMER] Timer queued for', msToNextSecond, 'ms');
 }
 
 // Resume any active countdowns saved in localStorage on load
@@ -2436,23 +2609,16 @@ window.openInstructorSchoolIDScanner = function(courseId, courseCode, courseName
     // Show modal
     modal.classList.remove('hidden');
     
-    // Start scanner after modal is visible
+    // Refresh both QR and Biometric student lists on modal open
+    console.log('[SCANNER OPEN] Refreshing student lists...');
+    updateScannedStudentsList();
+    updateBiometricStudentsList(normalizedCourseId, normalizedScheduleId);
+    
+    // Start BOTH scanners simultaneously
     setTimeout(() => {
         startInstructorSchoolIDScanner(normalizedCourseId, section);
+        startBiometricScanning();
     }, 100);
-};
-
-window.closeInstructorSchoolIDScanner = function() {
-    const modal = document.getElementById('instructorSchoolIDScannerModal');
-    if (modal) {
-        modal.classList.add('hidden');
-    }
-    
-    // Stop scanner
-    if (instructorSchoolIDScanner) {
-        instructorSchoolIDScanner.stop().catch(err => console.log('Scanner already stopped'));
-        instructorSchoolIDScanner = null;
-    }
 };
 
 window.startInstructorSchoolIDScanner = async function(courseId, section) {
@@ -2492,12 +2658,28 @@ window.startInstructorSchoolIDScanner = async function(courseId, section) {
     instructorSchoolIDScanner = new Html5Qrcode('instructor-qr-scanner');
     
     const qrCodeConfig = {
-        fps: 30,
-        qrbox: { width: 400, height: 400 },
+        // Optimized config (matches the working registration scanner approach)
+        fps: 15,
+        qrbox: function(viewfinderWidth, viewfinderHeight) {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const size = Math.floor(minEdge * 0.85);
+            return {
+                width: Math.max(240, Math.min(1200, size)),
+                height: Math.max(240, Math.min(1200, size))
+            };
+        },
+        aspectRatio: undefined,
+        disableFlip: false,
+        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+        videoConstraints: {
+            facingMode: 'environment',
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 }
+        },
         rememberLastUsedCamera: true,
-        supportedScanTypes: [Html5QrcodeScanType.CAMERA, Html5QrcodeScanType.CAMERA_AND_FILE],
-        disableFlip: true,
-        aspectRatio: 1.0
+        experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+        }
     };
     
     instructorSchoolIDScanner.start(
@@ -2508,7 +2690,14 @@ window.startInstructorSchoolIDScanner = async function(courseId, section) {
     ).catch(err => {
         console.error('Failed to start scanner:', err);
         alert('Unable to start camera. Please check permissions.');
-        closeInstructorSchoolIDScanner();
+        try {
+            const container = document.getElementById('instructor-scanner-container');
+            if (container) {
+                container.innerHTML = '<div class="w-full h-full flex items-center justify-center p-4"><p class="text-sm text-red-600 font-semibold">Unable to start QR camera. Biometric scanner will continue running.</p></div>';
+            }
+        } catch (e) {
+            console.error('Failed to update QR scanner UI after camera error:', e);
+        }
     });
 };
 
@@ -2532,28 +2721,60 @@ window.onInstructorSchoolIDScanned = async function(decodedText, decodedResult) 
         instructorSchoolIDScanner = null;
     }
     
-    // Send scanned school ID to backend to create/update attendance record
+    // Route to the correct backend endpoint:
+    // - student school ID scans => instructor_scan_student_school_id
+    // - registered QR code scans (32-hex or URL containing qr_code=...) => instructor_scan_student_qr_code
     const scheduleIdVal = document.getElementById('scanner-schedule-id').value || null;
     const courseIdVal = document.getElementById('scanner-course-id').value;
+    const rawValue = (decodedText || '').trim();
     
-    fetch('{% url "dashboard:instructor_scan_student_school_id" %}', {
+    let scanEndpointUrl = '{% url "dashboard:instructor_scan_student_school_id" %}';
+    let scanPayload = {
+        school_id: rawValue,
+        course_id: parseInt(courseIdVal),
+        schedule_id: scheduleIdVal || null
+    };
+    
+    // Extract a registered QR ID if present
+    let extractedQr = null;
+    try {
+        if (rawValue && (rawValue.startsWith('http://') || rawValue.startsWith('https://'))) {
+            const url = new URL(rawValue);
+            extractedQr = url.searchParams.get('qr_code') || null;
+            if (!extractedQr) {
+                const m = rawValue.match(/([a-f0-9]{32})/i);
+                extractedQr = m ? m[1] : null;
+            }
+        } else {
+            const m = rawValue.match(/^([a-f0-9]{32})$/i) || rawValue.match(/([a-f0-9]{32})/i);
+            extractedQr = m ? m[1] : null;
+        }
+    } catch (e) {
+        extractedQr = null;
+    }
+    
+    if (extractedQr) {
+        scanEndpointUrl = '{% url "dashboard:instructor_scan_student_qr_code" %}';
+        scanPayload = {
+            qr_code: extractedQr,
+            course_id: parseInt(courseIdVal),
+            schedule_id: scheduleIdVal || null
+        };
+    }
+    
+    fetch(scanEndpointUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
         },
-        body: JSON.stringify({
-            school_id: decodedText.trim(),
-            course_id: parseInt(courseIdVal),
-            schedule_id: scheduleIdVal || null
-        })
+        body: JSON.stringify(scanPayload)
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            const scanned = data.scanned_value ? ` [${data.scanned_value}]` : '';
             const status = data.status || 'present';
-            const msg = `${data.student_name} marked ${status === 'late' ? 'late' : 'present'}${scanned}`;
+            const msg = `${data.student_name} marked ${status === 'late' ? 'late' : 'present'}`;
             const notifType = status === 'late' ? 'warning' : 'success';
             showScannerNotification(`✓ ${msg}`, notifType);
             // Play sound: success for present, error for late
@@ -2583,7 +2804,7 @@ window.onInstructorSchoolIDScanned = async function(decodedText, decodedResult) 
                 startInstructorSchoolIDScanner(courseId, document.getElementById('scanner-section-title').textContent);
             }, 800);
         } else {
-            showScannerNotification('✗ QR code ID not found', 'error');
+            showScannerNotification(data.message || 'Scan failed', 'error');
             // Play error sound
             try {
                 console.log('QR ID not found - playing error sound');
@@ -2620,23 +2841,47 @@ window.lastScannedScheduleId = null;
 // Global audio objects for better performance and repeated playback
 const scanAudioObjects = {
     success: null,
-    error: null
+    error: null,
+    windowEnded: null
 };
 
 // Initialize audio objects on first load
 function initScanAudio() {
     try {
-        scanAudioObjects.success = new Audio('/static/sounds/success-sound-effect.mp3');
-        scanAudioObjects.success.volume = 0.5;
-        scanAudioObjects.error = new Audio('/static/sounds/error-sound-effect.mp3');
-        scanAudioObjects.error.volume = 0.5;
-        console.log('Scan audio objects initialized successfully');
+        // Create audio elements with preload
+        if (!scanAudioObjects.success) {
+            scanAudioObjects.success = new Audio('/static/sounds/success-sound-effect.mp3');
+            scanAudioObjects.success.preload = 'auto';
+            scanAudioObjects.success.volume = 0.5;
+        }
+        
+        if (!scanAudioObjects.error) {
+            scanAudioObjects.error = new Audio('/static/sounds/error-sound-effect.mp3');
+            scanAudioObjects.error.preload = 'auto';
+            scanAudioObjects.error.volume = 0.5;
+        }
+        
+        if (!scanAudioObjects.windowEnded) {
+            scanAudioObjects.windowEnded = new Audio('/static/audio/bell-ringing.mp3');
+            scanAudioObjects.windowEnded.preload = 'auto';
+            scanAudioObjects.windowEnded.volume = 0.6;
+        }
+        
+        console.log('[AUDIO INIT] Scan audio objects initialized successfully');
     } catch (e) {
-        console.error('Audio initialization failed:', e);
+        console.error('[AUDIO INIT] Audio initialization failed:', e);
     }
 }
 
-// Initialize on page load
+// Try to initialize audio immediately
+try {
+    initScanAudio();
+    console.log('[AUDIO INIT] Audio initialized immediately');
+} catch (e) {
+    console.warn('[AUDIO INIT] Immediate audio init failed, will retry on DOMContentLoaded:', e);
+}
+
+// Also initialize on page load as backup
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initScanAudio);
 } else {
@@ -2680,6 +2925,129 @@ function playScanErrorSound() {
             console.warn('Error audio object not initialized');
         }
     } catch (e) { console.warn('Audio error:', e); }
+}
+
+function playWindowEndedSound() {
+    try {
+        console.log('[PLAY WINDOW SOUND] Starting to play window ended sound');
+        
+        // List of possible audio file paths to try
+        const audioPaths = [
+            '/static/audio/bell-ringing.mp3',
+            'static/audio/bell-ringing.mp3',
+            '/static/sounds/bell-ringing.mp3',
+            'static/sounds/bell-ringing.mp3',
+            '/static/bell-ringing.mp3',
+            'static/bell-ringing.mp3'
+        ];
+        
+        // Ensure audio is initialized
+        if (!scanAudioObjects.windowEnded) {
+            console.log('[PLAY WINDOW SOUND] Audio not initialized, initializing now');
+            initScanAudio();
+        }
+        
+        // Function to attempt playing audio
+        const attemptPlay = (fallbackPath) => {
+            let audioElement = new Audio(fallbackPath);
+            audioElement.volume = 0.7;
+            audioElement.preload = 'auto';
+            
+            console.log('[PLAY WINDOW SOUND] Attempting to play from:', fallbackPath);
+            
+            try {
+                audioElement.currentTime = 0;
+                const playPromise = audioElement.play();
+                
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        console.log('[PLAY WINDOW SOUND] ✓ Audio played successfully from:', fallbackPath);
+                    }).catch(err => {
+                        console.warn('[PLAY WINDOW SOUND] Play failed from', fallbackPath + ':', err.message);
+                        if (err.name === 'NotAllowedError') {
+                            console.log('[PLAY WINDOW SOUND] Autoplay policy blocked audio - user interaction may be needed');
+                            // Try again on next user interaction
+                            const tryOnInteraction = () => {
+                                audioElement.play().catch(e => console.warn('Retry also failed:', e));
+                                document.removeEventListener('click', tryOnInteraction);
+                            };
+                            document.addEventListener('click', tryOnInteraction, { once: true });
+                        } else if (err.name === 'NotSupportedError') {
+                            console.warn('[PLAY WINDOW SOUND] Audio format not supported:', fallbackPath);
+                        }
+                    });
+                } else {
+                    console.log('[PLAY WINDOW SOUND] Audio play method returned undefined (older browser)');
+                }
+                return audioElement;
+            } catch (e) {
+                console.error('[PLAY WINDOW SOUND] Error during play attempt:', e);
+                return null;
+            }
+        };
+        
+        // Try pre-initialized audio first
+        if (scanAudioObjects.windowEnded && scanAudioObjects.windowEnded.src) {
+            console.log('[PLAY WINDOW SOUND] Playing pre-initialized audio');
+            const result = attemptPlay(scanAudioObjects.windowEnded.src);
+            if (result) scanAudioObjects.windowEnded = result;
+        } else {
+            // Try each path in order until one works
+            let audioPlayed = false;
+            for (let path of audioPaths) {
+                console.log('[PLAY WINDOW SOUND] Trying path:', path);
+                const audio = attemptPlay(path);
+                if (audio) {
+                    scanAudioObjects.windowEnded = audio;
+                    audioPlayed = true;
+                    break;
+                }
+            }
+            
+            if (!audioPlayed) {
+                console.warn('[PLAY WINDOW SOUND] Could not find audio file at any of the attempted paths');
+                console.log('[PLAY WINDOW SOUND] Falling back to Web Audio API beep sound');
+                try {
+                    playFallbackBeepSound();
+                } catch (e) {
+                    console.error('[PLAY WINDOW SOUND] Fallback beep also failed:', e);
+                }
+            }
+        }
+        
+    } catch (e) { 
+        console.error('[PLAY WINDOW SOUND] Critical error:', e); 
+    }
+}
+
+// Fallback beep sound using Web Audio API (no external file needed)
+function playFallbackBeepSound() {
+    try {
+        console.log('[FALLBACK BEEP] Generating beep sound using Web Audio API');
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // Set up the beep parameters
+        oscillator.frequency.value = 800; // Hz
+        oscillator.type = 'sine';
+        
+        // Ramp up volume
+        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.1);
+        
+        // Play for 200ms then fade out
+        oscillator.start(audioContext.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.5);
+        oscillator.stop(audioContext.currentTime + 0.5);
+        
+        console.log('[FALLBACK BEEP] ✓ Beep sound played successfully');
+    } catch (e) {
+        console.error('[FALLBACK BEEP] Web Audio API beep failed:', e);
+    }
 }
 
 // UX helper: enable/insert a Scan button for a course/schedule (used immediately after opening attendance)
@@ -2757,8 +3125,10 @@ window.showScannerNotification = function(message, type) {
         let cls = 'bg-red-500 text-white';
         if (type === 'success') cls = 'bg-green-500 text-white';
         else if (type === 'warning') cls = 'bg-yellow-300 text-black';
-        notification.className = `px-4 py-3 rounded-lg font-semibold text-sm fixed top-0 left-50 z-[999999999] ${cls}`;
-        notification.style.transform = 'translateX(-50%)';
+        notification.className = `px-4 py-3 rounded-lg font-semibold text-sm fixed top-1/2 left-1/2 z-[999999999] ${cls}`;
+        notification.style.transform = 'translate(-50%, -50%)';
+        notification.style.maxWidth = '90vw';
+        notification.style.whiteSpace = 'normal';
         notification.textContent = message;
         document.body.appendChild(notification);
         
@@ -2781,25 +3151,552 @@ window.updateScannedStudentsList = function() {
         .then(response => response.json())
         .then(data => {
             const list = document.getElementById('scanned-students-list');
-            if (list && data.students) {
-                list.innerHTML = data.students.map(student => {
-                    const status = student.status || 'present';
-                    const bg = status === 'late' ? 'bg-yellow-50 border-yellow-200' : (status === 'absent' ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200');
-                    const timeLabel = student.time || 'N/A';
-                    return `
-                    <div class="flex items-center justify-between p-2 ${bg} rounded-lg border">
-                        <span class="text-sm font-semibold text-gray-900">${student.name} <span class="text-xs text-gray-500">${status === 'late' ? '(Late)' : ''}</span></span>
-                        <span class="text-xs text-gray-500">${timeLabel}</span>
-                    </div>`;
-                }).join('');
-            }
-            // Update scanned count display if provided
-            if (typeof data.count !== 'undefined') {
-                const countEl = document.getElementById('student-scanned-count');
-                if (countEl) countEl.textContent = data.count;
+            if (list) {
+                // QR Code ID scan doesn't show any student information
+                // Only biometric side shows verified students
+                // Keep QR scanned list empty as per design
+                list.innerHTML = '';
             }
         })
         .catch(err => console.log('Could not update scanned students list'));
+};
+
+// ==================== DUAL-MODE BIOMETRIC + QR SCANNING ====================
+
+// Setup - Run BOTH scanners simultaneously (no tabs)
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('[DUAL MODE] Dual scanner initialized');
+});
+
+window.closeInstructorSchoolIDScanner = function() {
+    const modal = document.getElementById('instructorSchoolIDScannerModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    
+    // Stop QR scanner
+    if (instructorSchoolIDScanner) {
+        instructorSchoolIDScanner.stop().catch(err => console.log('QR Scanner already stopped'));
+        instructorSchoolIDScanner = null;
+    }
+    
+    // Stop biometric polling
+    if (window.biometricScanningInterval) {
+        clearInterval(window.biometricScanningInterval);
+        window.biometricScanningInterval = null;
+    }
+    
+    // Stop biometric auto-refresh
+    if (window.biometricAutoRefreshInterval) {
+        clearInterval(window.biometricAutoRefreshInterval);
+        window.biometricAutoRefreshInterval = null;
+    }
+    
+    // CRITICAL: Disable ESP32 detection mode when closing scanner via Django API
+    // This prevents continuous detection when no one is actively scanning
+    console.log('[BIOMETRIC] ❌ SCANNER CLOSED - Disabling detection mode via API');
+    
+    const sessionId = window.attendanceSessionId || 'unknown';
+    const courseId = document.getElementById('scanner-course-id')?.value || null;
+    fetch('/api/instructor/attendance/stop/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({session_id: sessionId, course_id: courseId})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log('[BIOMETRIC] ✅ Detection stopped');
+        } else {
+            console.error('[BIOMETRIC] ❌ Failed to stop detection:', data.message);
+        }
+    })
+    .catch(error => {
+        console.error('[BIOMETRIC] Cannot reach ESP32 to disable - may already be disconnected');
+    });
+
+    
+    console.log('[DUAL MODE] Both scanners stopped');
+};
+
+window.startBiometricScanning = function() {
+    console.log('[BIOMETRIC] 📷 INSTRUCTOR CAMERA BUTTON CLICKED - Initializing biometric scanning');
+    
+    const courseId = document.getElementById('scanner-course-id').value;
+    const scheduleId = document.getElementById('scanner-schedule-id').value;
+    const statusEl = document.getElementById('biometric-status-message');
+    
+    if (!courseId) {
+        console.error('[BIOMETRIC] Course ID not found');
+        return;
+    }
+    
+    // Update status to show we're connecting to ESP32
+    if (statusEl) {
+        statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting to fingerprint sensor...';
+        statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700');
+        statusEl.classList.add('bg-blue-50', 'border-blue-200', 'text-blue-700');
+    }
+    
+    // CRITICAL: Set ESP32 detection mode to ATTENDANCE (mode=2) BEFORE polling
+    // This tells the ESP32 to detect fingerprints for attendance (not registration)
+    console.log('[BIOMETRIC] Setting ESP32 detection mode to ATTENDANCE...');
+    
+    // Clear any existing polling interval
+    if (window.biometricScanningInterval) {
+        clearInterval(window.biometricScanningInterval);
+    }
+    
+    // Generate session ID for tracking
+    const attendanceSessionId = `attendance_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Send mode-setting request via Django API (network-agnostic)
+    fetch('/api/instructor/attendance/start/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            course_id: courseId,
+            schedule_id: scheduleId,
+            session_id: attendanceSessionId
+        })
+    })
+    .then(response => {
+        console.log('[BIOMETRIC] API responded with status:', response.status);
+        console.log('[BIOMETRIC] Response object:', response);
+        
+        // Try to parse as JSON
+        return response.text().then(text => {
+            console.log('[BIOMETRIC] Raw response text:', text);
+            try {
+                const data = JSON.parse(text);
+                return {status: response.status, data: data};
+            } catch (e) {
+                console.error('[BIOMETRIC] Failed to parse JSON:', e);
+                return {status: response.status, data: null, rawText: text};
+            }
+        });
+    })
+    .then(result => {
+        const response_status = result.status;
+        const data = result.data;
+        
+        console.log('[BIOMETRIC] Response status:', response_status);
+        console.log('[BIOMETRIC] Parsed data:', data);
+        console.log('[BIOMETRIC] Raw text:', result.rawText);
+        
+        const ok = (response_status === 200 && data && (data.success === true || data.status === 'success'));
+        if (ok) {
+            console.log('[BIOMETRIC] ✅ SUCCESS: Attendance detection started');
+            window.attendanceSessionId = attendanceSessionId;  // Store for stop request
+            
+            // Only START POLLING after detection is successfully started
+            startBiometricPolling(courseId, scheduleId, statusEl, attendanceSessionId);
+        } else if (!data) {
+            console.error('[BIOMETRIC] ❌ API returned non-JSON response');
+            console.error('[BIOMETRIC] Response was:', result.rawText);
+            if (statusEl) {
+                statusEl.innerHTML = '<i class="fas fa-exclamation-circle text-red-600"></i> API error: Invalid response format';
+                statusEl.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+                statusEl.classList.remove('bg-blue-50', 'border-blue-200', 'text-blue-700');
+            }
+        } else {
+            console.error('[BIOMETRIC] ❌ Failed to start detection:', data.message);
+            if (statusEl) {
+                statusEl.innerHTML = '<i class="fas fa-exclamation-circle text-red-600"></i> ' + (data.message || 'Unknown error');
+                statusEl.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+                statusEl.classList.remove('bg-blue-50', 'border-blue-200', 'text-blue-700');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('[BIOMETRIC] ❌ Network error reaching API');
+        console.error('[BIOMETRIC] Error details:', error);
+        console.error('[BIOMETRIC] Error message:', error.message);
+        console.error('[BIOMETRIC] Error stack:', error.stack);
+        if (statusEl) {
+            statusEl.innerHTML = '<i class="fas fa-exclamation-circle text-red-600"></i> Cannot reach attendance service: ' + error.message;
+            statusEl.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+            statusEl.classList.remove('bg-blue-50', 'border-blue-200', 'text-blue-700');
+        }
+    });
+};
+
+// Separate function for polling - called ONLY after mode is set
+window.startBiometricPolling = function(courseId, scheduleId, statusEl, attendanceSessionId) {
+    console.log('[BIOMETRIC] ✓ Detection started successfully. Starting to poll for fingerprints...');
+    console.log('[BIOMETRIC POLL START] courseId:', courseId, 'type:', typeof courseId);
+    console.log('[BIOMETRIC POLL START] scheduleId:', scheduleId, 'type:', typeof scheduleId);
+    console.log('[BIOMETRIC POLL START] sessionId:', attendanceSessionId);
+    
+    // Update status message
+    if (statusEl) {
+        statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning for fingerprints...';
+        statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700', 'bg-blue-50', 'border-blue-200', 'text-blue-700');
+        statusEl.classList.add('bg-green-50', 'border-green-200', 'text-green-700');
+    }
+    
+    // Store polling interval ID for cleanup
+    if (!window.biometricScanningInterval) {
+        window.biometricScanningInterval = null;
+    }
+    
+    // Auto-refresh the biometric students list every 3 seconds
+    let autoRefreshInterval = setInterval(() => {
+        console.log('[BIOMETRIC AUTO-REFRESH] Refreshing biometric students list...');
+        updateBiometricStudentsList(courseId, scheduleId);
+        updateScannedStudentsList();
+    }, 3000);
+    
+    // Store the auto-refresh interval for cleanup
+    if (!window.biometricAutoRefreshInterval) {
+        window.biometricAutoRefreshInterval = null;
+    }
+    window.biometricAutoRefreshInterval = autoRefreshInterval;
+    
+    // Poll for biometric attendance every 2 seconds
+    window.biometricScanningInterval = setInterval(() => {
+        const params = new URLSearchParams();
+        params.append('course_id', courseId);
+        if (scheduleId) params.append('schedule_id', scheduleId);
+        
+        const pollUrl = `{% url 'dashboard:instructor_get_biometric_pending' %}?${params}`;
+        console.log(`[BIOMETRIC POLL] URL: ${pollUrl}, Course ID: ${courseId}`);
+        
+        fetch(pollUrl)
+            .then(response => {
+                console.log(`[BIOMETRIC POLL] Response status: ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                console.log(`[BIOMETRIC POLL] ===== RESPONSE DATA =====`);
+                console.log(`[BIOMETRIC POLL] Raw response:`, data);
+                console.log(`[BIOMETRIC POLL] Pending array:`, data.pending);
+                console.log(`[BIOMETRIC POLL] Pending count: ${data.pending ? data.pending.length : 'undefined'}`);
+                if (data.pending && data.pending.length > 0) {
+                    data.pending.forEach((item, idx) => {
+                        console.log(`[BIOMETRIC POLL] [${idx}] Student: ${item.student_name}, Fingerprint ID: ${item.fingerprint_id}, Error: ${item.error || 'none'}`);
+                    });
+                }
+                
+                // Check for error responses
+                if (data.error === 'unregistered_fingerprint') {
+                    // Fingerprint detected but NOT registered
+                    if (statusEl) {
+                        statusEl.innerHTML = '<i class="fas fa-exclamation-triangle text-red-600 mr-1"></i> ⚠️ Fingerprint not registered for this course';
+                        statusEl.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+                        statusEl.classList.remove('bg-white', 'border-blue-200', 'text-gray-600');
+                    }
+                    showScannerNotification('⚠️ Fingerprint not registered for this course. Please register first.', 'warning');
+                    console.warn('[BIOMETRIC] Unregistered fingerprint detected');
+                    
+                    // Reset after warning
+                    setTimeout(() => {
+                        if (statusEl) {
+                            statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning for fingerprints...';
+                            statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700');
+                            statusEl.classList.add('bg-white', 'border-blue-200', 'text-gray-600');
+                        }
+                    }, 3000);
+                    return;
+                }
+                
+                if (data.pending && data.pending.length > 0) {
+                    // Process the first pending biometric
+                    const pending = data.pending[0];
+                    console.log('[BIOMETRIC] Fingerprint detected:', pending);
+                    
+                    // Check for error conditions in the pending data
+                    if (pending.error === 'unregistered_fingerprint') {
+                        // Fingerprint not found in sensor database
+                        if (statusEl) {
+                            statusEl.innerHTML = '<i class="fas fa-exclamation-triangle text-red-600 mr-1"></i> ⚠️ Fingerprint not found - Not registered';
+                            statusEl.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+                            statusEl.classList.remove('bg-white', 'border-blue-200', 'text-gray-600', 'bg-green-50');
+                        }
+                        showScannerNotification('⚠️ Fingerprint not registered. Please register first.', 'warning');
+                        console.warn('[BIOMETRIC] Unregistered fingerprint');
+                        
+                        // Reset after 3 seconds
+                        setTimeout(() => {
+                            if (statusEl) {
+                                statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning for fingerprints...';
+                                statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700');
+                                statusEl.classList.add('bg-white', 'border-blue-200', 'text-gray-600');
+                            }
+                        }, 3000);
+                        return;
+                    } else if (pending.error === 'retry') {
+                        if (statusEl) {
+                            statusEl.innerHTML = '<i class="fas fa-hand-paper text-yellow-600 mr-1"></i> Please press firmly again';
+                            statusEl.classList.add('bg-yellow-50', 'border-yellow-200', 'text-yellow-700');
+                            statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700', 'bg-white', 'border-blue-200', 'text-gray-600', 'bg-green-50');
+                        }
+
+                        try {
+                            showScannerNotification('Please press firmly again', 'warning');
+                        } catch (e) {
+                            console.warn('Notification error:', e);
+                        }
+
+                        setTimeout(() => {
+                            if (statusEl) {
+                                statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning for fingerprints...';
+                                statusEl.classList.remove('bg-yellow-50', 'border-yellow-200', 'text-yellow-700');
+                                statusEl.classList.add('bg-white', 'border-blue-200', 'text-gray-600');
+                            }
+                        }, 1800);
+                        return;
+                    } else if (pending.error === 'not_registered_for_course') {
+                        // Fingerprint registered but NOT for this course
+                        if (statusEl) {
+                            statusEl.innerHTML = '<i class="fas fa-ban text-red-600 mr-1"></i> ⚠️ Fingerprint not registered for this course';
+                            statusEl.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+                            statusEl.classList.remove('bg-white', 'border-blue-200', 'text-gray-600', 'bg-green-50');
+                        }
+                        showScannerNotification('⚠️ This fingerprint is not registered for this course.', 'warning');
+                        console.warn('[BIOMETRIC] Fingerprint not registered for this course');
+                        
+                        // Reset after 3 seconds
+                        setTimeout(() => {
+                            if (statusEl) {
+                                statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning for fingerprints...';
+                                statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700');
+                                statusEl.classList.add('bg-white', 'border-blue-200', 'text-gray-600');
+                            }
+                        }, 3000);
+                        return;
+                    }
+                    
+                    // Update status to show detection
+                    if (statusEl) {
+                        statusEl.innerHTML = `<i class="fas fa-check-circle text-green-600"></i> Fingerprint detected - Processing ${pending.student_name}...`;
+                        statusEl.classList.add('bg-green-50', 'border-green-200', 'text-green-700');
+                        statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700', 'bg-white', 'border-blue-200', 'text-gray-600');
+                    }
+                    
+                    processInstructorBiometricScan(pending, courseId, scheduleId);
+                } else if (data.error === 'server_error') {
+                    // Server error occurred
+                    if (statusEl) {
+                        statusEl.innerHTML = `<i class="fas fa-exclamation-circle text-red-600 mr-1"></i> Server error: ${data.message}`;
+                        statusEl.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+                        statusEl.classList.remove('bg-white', 'border-blue-200', 'text-gray-600');
+                    }
+                    console.error('[BIOMETRIC] Server error:', data.message);
+                } else {
+                    // Still waiting - keep scanning indefinitely (no timeout warning)
+                    if (statusEl) {
+                        statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning for fingerprints...';
+                        statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700', 'bg-yellow-50', 'border-yellow-200', 'text-yellow-700');
+                        statusEl.classList.add('bg-white', 'border-blue-200', 'text-gray-600');
+                    }
+                }
+            })
+            .catch(err => {
+                console.error('[BIOMETRIC] Polling error:', err);
+                if (statusEl) {
+                    statusEl.innerHTML = `<i class="fas fa-times-circle text-red-600 mr-1"></i> Connection error: ${err.message}`;
+                    statusEl.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+                    statusEl.classList.remove('bg-white', 'border-blue-200', 'text-gray-600');
+                }
+            });
+    }, 2000);
+};
+
+window.processInstructorBiometricScan = function(scanData, courseId, scheduleId) {
+    console.log('[BIOMETRIC] Processing scan:', scanData);
+    
+    const statusEl = document.getElementById('biometric-status-message');
+    
+    // Send the biometric scan to the server
+    fetch('{% url "dashboard:instructor_biometric_scan_attendance" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+        },
+        body: JSON.stringify({
+            course_id: parseInt(courseId),
+            fingerprint_id: scanData.fingerprint_id,
+            schedule_id: scheduleId || null
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const status = data.status || 'present';
+            const statusText = status === 'late' ? 'Late' : 'Present';
+            const msg = `${data.student_name} marked ${statusText.toLowerCase()}`;
+            const notifType = status === 'late' ? 'warning' : 'success';
+            showScannerNotification(msg, notifType);
+            
+            // Update status message with matching colors
+            if (statusEl) {
+                const icon = status === 'late' ? '⏱️' : '✓';
+                statusEl.innerHTML = `<i class="fas fa-check-circle ${status === 'late' ? 'text-yellow-600' : 'text-green-600'}"></i> ${icon} ${data.student_name} - ${status.toUpperCase()}`;
+                if (status === 'late') {
+                    statusEl.classList.add('bg-yellow-50', 'border-yellow-200', 'text-yellow-700');
+                    statusEl.classList.remove('bg-green-50', 'border-green-200', 'text-green-700', 'bg-red-50', 'border-red-200', 'text-red-700', 'bg-white', 'border-blue-200', 'text-gray-600');
+                } else {
+                    statusEl.classList.add('bg-green-50', 'border-green-200', 'text-green-700');
+                    statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700', 'bg-white', 'border-blue-200', 'text-gray-600', 'bg-yellow-50', 'border-yellow-200', 'text-yellow-700');
+                }
+            }
+            
+            // Play success/error sound
+            try {
+                if (status === 'late') {
+                    playScanErrorSound();
+                } else {
+                    playScanSuccessSound();
+                }
+            } catch(e) {
+                console.error('Audio playback error:', e);
+            }
+            
+            // Update biometric students list
+            updateBiometricStudentsList(courseId, scheduleId);
+            
+            // Update the attendance count
+            updateAttendanceCount(courseId);
+            
+            // Reset status after 2 seconds
+            setTimeout(() => {
+                if (statusEl) {
+                    statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning for fingerprints...';
+                    statusEl.classList.remove('bg-green-50', 'border-green-200', 'text-green-700');
+                    statusEl.classList.add('bg-white', 'border-blue-200', 'text-gray-600');
+                }
+            }, 2000);
+        } else {
+            // Handle specific error types
+            const errorMsg = data.message || 'Biometric scan failed';
+            let displayMsg = `✗ ${errorMsg}`;
+            
+            // Add helpful context for common errors
+            if (errorMsg.includes('not registered')) {
+                displayMsg = '❌ Fingerprint not registered for this course';
+            } else if (errorMsg.includes('not enrolled')) {
+                displayMsg = '❌ Student not enrolled in this course';
+            } else if (errorMsg.includes('already marked')) {
+                displayMsg = '⚠️ Student already marked as ' + (errorMsg.includes('present') ? 'present' : 'late');
+            }
+            
+            showScannerNotification(displayMsg, 'error');
+            
+            // Update status message with error
+            if (statusEl) {
+                statusEl.innerHTML = `<i class="fas fa-times-circle text-red-600 mr-1"></i> ${displayMsg}`;
+                statusEl.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+                statusEl.classList.remove('bg-white', 'border-blue-200', 'text-gray-600', 'bg-green-50', 'border-green-200', 'text-green-700');
+            }
+            
+            try {
+                playScanErrorSound();
+            } catch(e) {
+                console.error('Audio playback error:', e);
+            }
+            
+            // Reset status after 3 seconds
+            setTimeout(() => {
+                if (statusEl) {
+                    statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning for fingerprints...';
+                    statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700');
+                    statusEl.classList.add('bg-white', 'border-blue-200', 'text-gray-600');
+                }
+            }, 3000);
+        }
+    })
+    .catch(err => {
+        console.error('[BIOMETRIC] Error processing scan:', err);
+        showScannerNotification('Error: Could not process biometric scan', 'error');
+        
+        // Update status message
+        if (statusEl) {
+            statusEl.innerHTML = `<i class="fas fa-times-circle text-red-600 mr-1"></i> Error processing scan: ${err.message}`;
+            statusEl.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+            statusEl.classList.remove('bg-white', 'border-blue-200', 'text-gray-600');
+        }
+        
+        // Reset status after 3 seconds
+        setTimeout(() => {
+            if (statusEl) {
+                statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning for fingerprints...';
+                statusEl.classList.remove('bg-red-50', 'border-red-200', 'text-red-700');
+                statusEl.classList.add('bg-white', 'border-blue-200', 'text-gray-600');
+            }
+        }, 3000);
+    });
+};
+
+window.updateBiometricStudentsList = function(courseId, scheduleId) {
+    const params = new URLSearchParams();
+    params.append('course_id', courseId);
+    if (scheduleId) params.append('schedule_id', scheduleId);
+    
+    console.log('[BIOMETRIC MODAL] Fetching latest students list for courseId:', courseId);
+    
+    // Use dedicated biometric endpoint to get only biometric scans
+    fetch(`{% url 'dashboard:instructor_get_biometric_students' %}?${params}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log('[BIOMETRIC MODAL] Response data:', data);
+            const list = document.getElementById('biometric-students-list');
+            if (list && data.students) {
+                if (data.students.length > 0) {
+                    console.log('[BIOMETRIC MODAL] Updating list with', data.students.length, 'students');
+                    list.innerHTML = data.students.map(student => {
+                        const status = student.status || 'present';
+                        const bg = status === 'late' ? 'bg-yellow-100 border-yellow-300' : (status === 'absent' ? 'bg-red-100 border-red-300' : 'bg-green-100 border-green-300');
+                        const timeLabel = student.time || 'N/A';
+                        const statusIcon = status === 'late' ? '⏱️' : (status === 'absent' ? '❌' : '✓');
+                        console.log('[BIOMETRIC MODAL] Adding student:', student.name, 'Status:', status, 'Time:', timeLabel);
+                        return `
+                        <div class="flex items-center justify-between p-3 ${bg} rounded-md border text-xs">
+                            <span class="text-lg font-medium">
+                                ${statusIcon}
+                            </span>
+                            <span class="text-gray-700 text-xs font-medium">${timeLabel}</span>
+                        </div>`;
+                    }).join('');
+                } else {
+                    list.innerHTML = '<p class="text-xs text-gray-500 text-center py-3">Waiting for fingerprint...</p>';
+                }
+            }
+        })
+        .catch(err => {
+            console.error('[BIOMETRIC MODAL] Error updating list:', err);
+        });
+};
+
+// Update the main attendance count display
+window.updateAttendanceCount = function(courseId) {
+    const params = new URLSearchParams();
+    params.append('course_id', courseId);
+    
+    console.log('[ATTENDANCE COUNT] Fetching latest attendance count for courseId:', courseId);
+    
+    // Fetch the current attendance count from the server
+    fetch(`{% url 'dashboard:get_course_attendance_count' %}?${params}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && typeof data.count !== 'undefined') {
+                const countEl = document.getElementById('student-scanned-count');
+                if (countEl) {
+                    countEl.textContent = data.count;
+                    console.log('[ATTENDANCE COUNT] Updated count to:', data.count);
+                }
+            }
+        })
+        .catch(err => {
+            console.error('[ATTENDANCE COUNT] Error updating count:', err);
+        });
 };
 
 // QR Code Modal Functions
@@ -3214,17 +4111,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 // Get course ID - try attendance-control first, then fallback to first course link
-                let courseId = document.getElementById('attendance-control')?.getAttribute('data-course-id') || '';
-                if (!courseId) {
+                let selectedCourseId = document.getElementById('attendance-control')?.getAttribute('data-course-id') || '';
+                if (!selectedCourseId) {
                     // Try to get first course from the schedule list
                     const firstCourseLink = document.querySelector('a[onclick*="loadCourse"]');
                     if (firstCourseLink) {
                         const match = firstCourseLink.getAttribute('onclick')?.match(/loadCourse\((\d+)/);
-                        if (match && match[1]) courseId = match[1];
+                        if (match && match[1]) selectedCourseId = match[1];
                     }
                 }
                 
-                if (!courseId) {
+                if (!selectedCourseId) {
                     alert('Please select a class first or wait for the page to load');
                     return;
                 }
@@ -3245,9 +4142,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
                 document.getElementById('present-window-minutes').textContent = inputVal;
-                const courseId = document.getElementById('attendance-control')?.getAttribute('data-course-id') || '';
                 const scheduleId = document.getElementById('attendance-control')?.getAttribute('data-schedule-id') || '';
-                document.getElementById('present-window-course-id').value = courseId;
+                document.getElementById('present-window-course-id').value = selectedCourseId;
                 document.getElementById('present-window-schedule-id').value = scheduleId;
                 document.getElementById('present-window-minutes-input').value = inputVal;
                 modal.classList.remove('hidden');
@@ -3784,6 +4680,14 @@ function startCircleCountdownForSchedule(durationSeconds, courseId, scheduleId) 
             localStorage.setItem(key, 'false');
             console.log('[COUNTDOWN SCHEDULE] Expired for courseId:', courseId, 'scheduleId:', scheduleId);
             
+            // Play sound effect when window expires
+            try {
+                console.log('[COUNTDOWN SCHEDULE] Playing window ended sound');
+                playWindowEndedSound();
+            } catch (e) {
+                console.warn('[COUNTDOWN SCHEDULE] Failed to play sound:', e);
+            }
+            
             if (typeof showNotification === 'function') {
                 showNotification('Present window expired', 'info');
             }
@@ -3904,6 +4808,14 @@ function startCircleCountdown(durationSeconds, courseId, scheduleId) {
             localStorage.setItem(countdownKey, 'false');
             console.log('[COUNTDOWN] Expired for course', courseId, 'schedule', scheduleId);
             
+            // Play sound effect when window expires
+            try {
+                console.log('[COUNTDOWN] Playing window ended sound');
+                playWindowEndedSound();
+            } catch (e) {
+                console.warn('[COUNTDOWN] Failed to play sound:', e);
+            }
+            
             if (typeof showNotification === 'function') {
                 showNotification('Present window expired', 'info');
             }
@@ -4018,6 +4930,12 @@ function restoreTimerDisplay() {
 
 // Attach event listeners
 document.addEventListener('DOMContentLoaded', function() {
+    // Apply dynamic colors for section badges via data attributes
+    document.querySelectorAll('.section-badge[data-color]').forEach(el => {
+        const c = el.dataset.color;
+        if (c) el.style.backgroundColor = c;
+    });
+
     // Restore timer immediately
     restoreTimerDisplay();
     
@@ -4069,5 +4987,5 @@ document.addEventListener('DOMContentLoaded', function() {
     updatePresentTotalDisplay();
 });
 </script>
+</div>
 {% endblock %}
-

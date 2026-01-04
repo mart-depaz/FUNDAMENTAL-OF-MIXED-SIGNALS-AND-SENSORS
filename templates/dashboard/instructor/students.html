@@ -342,10 +342,6 @@
                             <div class="flex-grow min-w-0">
                             <div class="flex items-center gap-2 flex-wrap mb-1">
                                 <h3 class="text-base font-semibold text-gray-900 truncate">{{ display_name }}</h3>
-                                {% if enrollment.section_display %}
-                                <span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">Sec {{ enrollment.section_display }}</span>
-                                {% endif %}
-                                <span class="px-3 py-1 text-xs font-semibold rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">{{ enrollment.year_level|ordinal_year }}</span>
                             </div>
                                 
                                 <!-- Registration Status Indicators -->
@@ -673,6 +669,25 @@
                     <i class="fas fa-users mr-2 text-indigo-600"></i> Select Students to Reassign
                     <span class="ml-2 text-xs text-gray-500">(<span id="transfer-selected-count">0</span> selected)</span>
                 </label>
+                
+                <!-- Search Bar -->
+                <div class="mb-3 relative">
+                    <div class="relative">
+                        <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                        <input type="text" 
+                               id="transfer-student-search" 
+                               placeholder="Search by name or ID..." 
+                               class="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition duration-150"
+                               onkeyup="window.filterTransferStudents(this.value)">
+                        <button onclick="document.getElementById('transfer-student-search').value = ''; window.filterTransferStudents('');" 
+                                class="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 transition hidden" 
+                                type="button"
+                                id="transfer-search-clear-btn">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                
                 <div class="transfer-modal-student-list" id="transfer-student-list">
                     <div class="text-center py-8 text-gray-500">
                         <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
@@ -1828,7 +1843,7 @@ function loadTransferStudentsFromServer(courseId) {
                     const profilePic = enrollment.profile_picture;
                     
                     html += `
-                        <div class="transfer-modal-student-item" onclick="this.querySelector('input[type=checkbox]').click()">
+                        <div class="transfer-modal-student-item" data-student-id="${enrollment.student_id_number}" data-student-name="${enrollment.full_name}" onclick="this.querySelector('input[type=checkbox]').click()">
                             <input type="checkbox" data-enrollment-id="${enrollment.id}" onchange="window.updateTransferUI()">
                             <div class="flex-shrink-0 mr-3">
                                 ${profilePic ? 
@@ -1838,7 +1853,7 @@ function loadTransferStudentsFromServer(courseId) {
                             </div>
                             <div class="flex-1">
                                 <p class="font-semibold text-gray-900">${enrollment.full_name}</p>
-                                <p class="text-xs text-gray-500">${enrollment.section}</p>
+                                <p class="text-xs text-gray-500">${enrollment.student_id_number}</p>
                             </div>
                         </div>
                     `;
@@ -1858,6 +1873,56 @@ function loadTransferStudentsFromServer(courseId) {
             console.error('[TRANSFER] Fetch error:', error);
             studentList.innerHTML = '<div class="text-center py-8 text-red-500"><p>Error loading students: ' + error.message + '</p></div>';
         });
+}
+
+function filterTransferStudents(searchTerm) {
+    const studentList = document.getElementById('transfer-student-list');
+    const items = studentList.querySelectorAll('.transfer-modal-student-item');
+    const searchLower = searchTerm.toLowerCase().trim();
+    const clearBtn = document.getElementById('transfer-search-clear-btn');
+
+    // Show/hide clear button based on input
+    if (searchTerm.length > 0) {
+        clearBtn.classList.remove('hidden');
+    } else {
+        clearBtn.classList.add('hidden');
+    }
+
+    let visibleCount = 0;
+    let hiddenCount = 0;
+    
+    items.forEach(item => {
+        const studentName = item.getAttribute('data-student-name') || '';
+        const studentId = item.getAttribute('data-student-id') || '';
+        const fullText = (studentName + ' ' + studentId).toLowerCase();
+        
+        if (fullText.includes(searchLower)) {
+            item.style.display = 'flex';
+            item.classList.add('animate-fadeIn');
+            visibleCount++;
+        } else {
+            item.style.display = 'none';
+            hiddenCount++;
+        }
+    });
+    
+    // Show "no results" message if all items are hidden
+    if (visibleCount === 0 && items.length > 0) {
+        if (!document.getElementById('transfer-no-results')) {
+            const noResultsDiv = document.createElement('div');
+            noResultsDiv.id = 'transfer-no-results';
+            noResultsDiv.className = 'text-center py-8 text-gray-500';
+            noResultsDiv.innerHTML = '<i class="fas fa-search text-2xl mb-2 block opacity-50"></i><p>No students match your search</p>';
+            studentList.appendChild(noResultsDiv);
+        }
+    } else {
+        const noResultsDiv = document.getElementById('transfer-no-results');
+        if (noResultsDiv) {
+            noResultsDiv.remove();
+        }
+    }
+    
+    console.log('[SEARCH] Filter result: ' + visibleCount + ' shown, ' + hiddenCount + ' hidden');
 }
 
 function loadTransferSections(courseId) {
@@ -1978,6 +2043,7 @@ window.openTransferStudentsModal = openTransferStudentsModal;
 window.closeTransferStudentsModal = closeTransferStudentsModal;
 window.updateTransferUI = updateTransferUI;
 window.submitTransferStudents = submitTransferStudents;
+window.filterTransferStudents = filterTransferStudents;
 
 // Remove old functions that are no longer needed
 window.toggleMoveStudentsMode = function() { };

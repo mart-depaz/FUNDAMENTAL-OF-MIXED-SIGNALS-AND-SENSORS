@@ -198,12 +198,12 @@
         padding: 12px 14px !important;
         font-size: 12px !important;
     }
-    
+
     .notification-content {
         font-size: 12px !important;
         line-height: 1.3 !important;
     }
-    
+
     .notification-icon {
         font-size: 17px !important;
         min-width: 17px !important;
@@ -222,5 +222,98 @@
     width: fit-content !important;
 }
 
+@media (max-width: 479px) {
+    #notification-container {
+        top: var(--teacher-header-offset, 56px) !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        padding-top: 8px !important;
+        width: calc(100% - 16px) !important;
+        max-width: 100% !important;
+    }
 
+    .notification-toast {
+        width: 100% !important;
+        max-width: 480px !important;
+        min-width: 0 !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
+}
 
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+img,
+video,
+canvas,
+svg {
+    max-width: 100%;
+    height: auto;
+}
+
+input,
+select,
+textarea {
+    max-width: 100%;
+}
+
+table {
+    width: 100%;
+    max-width: 100%;
+}
+
+@media (max-width: 1024px) {
+    body:not(.schedule-page) {
+        overflow-y: auto !important;
+    }
+
+    .main-content {
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        min-width: 0 !important;
+    }
+
+    .content,
+    main,
+    #main-content {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
+@media (max-width: 640px) {
+    nav.w-full > div {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    nav.w-full a {
+        min-width: 0;
+    }
+
+    nav.w-full span.text-white.font-bold.text-lg {
+        font-size: 1rem;
+        line-height: 1.2;
+    }
+}

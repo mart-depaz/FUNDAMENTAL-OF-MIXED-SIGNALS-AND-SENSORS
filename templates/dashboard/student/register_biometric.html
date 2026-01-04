@@ -403,8 +403,8 @@
                 <div id="registerFingerprintVisual" style="font-size: 72px; color: #ccc; margin: 30px 0;">
                     <i class="fas fa-fingerprint"></i>
                 </div>
-                <p id="registerStatus" class="text-muted mb-3">Waiting for fingerprint scan...</p>
-                <div class="progress" style="height: 25px;" id="registerProgress" style="display:none;">
+                <p id="registerStatus" class="text-muted mb-3">Click "Start Registration" to begin</p>
+                <div class="progress" style="height: 25px; display:none;" id="registerProgress">
                     <div id="registerProgressBar" class="progress-bar progress-bar-animated" role="progressbar" style="width: 0%"></div>
                 </div>
             </div>
@@ -417,6 +417,10 @@
         </div>
     </div>
 </div>
+
+<!-- Hidden input to store course ID -->
+<input type="hidden" id="currentRegisterCourseId" value="">
+<input type="hidden" id="currentScanCourseId" value="">
 
 <!-- Scan Modal -->
 <div class="modal fade" id="scanModal" tabindex="-1" role="dialog" aria-labelledby="scanModalTitle" aria-hidden="true">
@@ -448,23 +452,121 @@
 </div>
 
 <script>
+// LOG WHEN SCRIPT LOADS
+console.log('[INIT] register_biometric.html script loaded');
+
 function setRegisterCourse(courseId) {
+    console.log('[setRegisterCourse] Called with courseId:', courseId);
     document.getElementById('currentRegisterCourseId').value = courseId;
+    console.log('[setRegisterCourse] Set input value to:', courseId);
 }
 
 function setScanCourse(courseId) {
+    console.log('[setScanCourse] Called with courseId:', courseId);
     document.getElementById('currentScanCourseId').value = courseId;
 }
 
 document.getElementById('startRegisterBtn')?.addEventListener('click', function() {
-    // Start biometric registration process
     const courseId = document.getElementById('currentRegisterCourseId').value;
-    console.log('Starting registration for course:', courseId);
+    console.log('[START REGISTER] Click event fired');
+    console.log('[START REGISTER] Course ID:', courseId);
     
-    // Show progress
-    document.getElementById('registerProgressBar').style.width = '100%';
-    document.getElementById('registerStatus').textContent = 'Fingerprint registered successfully!';
+    if (!courseId) {
+        console.error('[START REGISTER] No course ID found!');
+        document.getElementById('registerStatus').innerHTML = '<span style="color: red;">Error: No course selected</span>';
+        return;
+    }
+    
+    // Disable button
+    document.getElementById('startRegisterBtn').disabled = true;
+    document.getElementById('startRegisterBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
+    document.getElementById('registerStatus').textContent = 'Connecting to sensor...';
+    document.getElementById('registerProgress').style.display = 'block';
+    document.getElementById('registerProgressBar').style.width = '50%';
+    
+    // Get CSRF token
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    console.log('[START REGISTER] CSRF Token:', csrfToken ? 'present' : 'missing');
+    
+    const payload = {
+        course_id: parseInt(courseId)
+    };
+    
+    console.log('[START REGISTER] Sending POST to /dashboard/api/start-enrollment/');
+    console.log('[START REGISTER] Payload:', payload);
+    
+    // Make POST request to Django API
+    fetch('/dashboard/api/start-enrollment/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(response => {
+        console.log('[START REGISTER] Response status:', response.status);
+        console.log('[START REGISTER] Response headers:', response.headers);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('[START REGISTER] Success response:', data);
+        if (data.success) {
+            document.getElementById('registerStatus').textContent = 'Sensor connected! Place your finger on the sensor now...';
+            document.getElementById('registerProgressBar').style.width = '100%';
+            document.getElementById('registerFingerprintVisual').style.color = '#28a745';
+            
+            // Poll for enrollment status
+            const enrollmentId = data.enrollment_id;
+            console.log('[START REGISTER] Polling with enrollment_id:', enrollmentId);
+            pollEnrollmentStatus(enrollmentId);
+        } else {
+            throw new Error(data.message || 'Enrollment failed');
+        }
+    })
+    .catch(error => {
+        console.error('[START REGISTER] Error:', error);
+        document.getElementById('registerStatus').innerHTML = `<span style="color: red;">Error: ${error.message}</span>`;
+        document.getElementById('startRegisterBtn').disabled = false;
+        document.getElementById('startRegisterBtn').innerHTML = '<i class="fas fa-play"></i> Start Registration';
+    });
 });
+
+function pollEnrollmentStatus(enrollmentId) {
+    // Poll the enrollment status endpoint every 500ms
+    const pollInterval = setInterval(() => {
+        fetch(`/dashboard/api/enrollment-status/${enrollmentId}/`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Status:', data);
+            if (data.status === 'completed') {
+                clearInterval(pollInterval);
+                document.getElementById('registerStatus').textContent = 'Success! Biometric registered.';
+                document.getElementById('registerProgressBar').style.width = '100%';
+            } else if (data.status === 'failed') {
+                clearInterval(pollInterval);
+                document.getElementById('registerStatus').innerHTML = `<span style="color: red;">Failed: ${data.message}</span>`;
+            }
+        })
+        .catch(error => {
+            console.error('Status poll error:', error);
+        });
+    }, 500);
+    
+    // Timeout after 120 seconds
+    setTimeout(() => {
+        clearInterval(pollInterval);
+        document.getElementById('registerStatus').innerHTML = '<span style="color: orange;">Timeout waiting for fingerprint</span>';
+    }, 120000);
+}
 
 document.getElementById('startScanBtn')?.addEventListener('click', function() {
     // Start attendance scan

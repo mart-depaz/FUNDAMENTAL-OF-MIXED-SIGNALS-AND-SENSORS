@@ -69,13 +69,22 @@ const registrationAudioObjects = {
 // Initialize audio objects on first load
 function initRegistrationAudio() {
     try {
+        // Create scan success audio - preload
         registrationAudioObjects.scanSuccess = new Audio('/static/sounds/success-sound-effect.mp3');
         registrationAudioObjects.scanSuccess.volume = 0.5;
+        registrationAudioObjects.scanSuccess.preload = 'auto';
+        
+        // Create scan error audio - preload
         registrationAudioObjects.scanError = new Audio('/static/sounds/error-sound-effect.mp3');
         registrationAudioObjects.scanError.volume = 0.5;
+        registrationAudioObjects.scanError.preload = 'auto';
+        
+        // Create registration success audio - preload
         registrationAudioObjects.regSuccess = new Audio('/static/sounds/registration-success-beep.mp3');
         registrationAudioObjects.regSuccess.volume = 0.5;
-        console.log('Registration audio objects initialized');
+        registrationAudioObjects.regSuccess.preload = 'auto';
+        
+        console.log('Registration audio objects initialized with preload');
     } catch (e) {
         console.debug('Audio initialization failed:', e);
     }
@@ -103,10 +112,30 @@ function playScanSuccessSound() {
             // Pause and reset to beginning
             registrationAudioObjects.scanSuccess.pause();
             registrationAudioObjects.scanSuccess.currentTime = 0;
-            // Play with promise handling
+            
+            // Force load if not loaded
+            if (registrationAudioObjects.scanSuccess.readyState < 2) {
+                registrationAudioObjects.scanSuccess.load();
+            }
+            
+            // Play with promise handling and fallback
             const playPromise = registrationAudioObjects.scanSuccess.play();
             if (playPromise !== undefined) {
-                playPromise.catch(err => console.debug('Audio play failed:', err));
+                playPromise
+                    .then(() => {
+                        console.log('✓ Scan success sound played');
+                    })
+                    .catch(err => {
+                        console.warn('Audio play failed (first attempt):', err);
+                        // Retry with fresh audio object
+                        try {
+                            const retryAudio = new Audio('/static/sounds/success-sound-effect.mp3');
+                            retryAudio.volume = 0.5;
+                            retryAudio.play().catch(e => console.debug('Retry failed:', e));
+                        } catch (e) {
+                            console.debug('Retry exception:', e);
+                        }
+                    });
             }
         }
     } catch (e) {
@@ -120,10 +149,30 @@ function playScanErrorSound() {
             // Pause and reset to beginning
             registrationAudioObjects.scanError.pause();
             registrationAudioObjects.scanError.currentTime = 0;
-            // Play with promise handling
+            
+            // Force load if not loaded
+            if (registrationAudioObjects.scanError.readyState < 2) {
+                registrationAudioObjects.scanError.load();
+            }
+            
+            // Play with promise handling and fallback
             const playPromise = registrationAudioObjects.scanError.play();
             if (playPromise !== undefined) {
-                playPromise.catch(err => console.debug('Audio play failed:', err));
+                playPromise
+                    .then(() => {
+                        console.log('✓ Scan error sound played');
+                    })
+                    .catch(err => {
+                        console.warn('Audio play failed (first attempt):', err);
+                        // Retry with fresh audio object
+                        try {
+                            const retryAudio = new Audio('/static/sounds/error-sound-effect.mp3');
+                            retryAudio.volume = 0.5;
+                            retryAudio.play().catch(e => console.debug('Retry failed:', e));
+                        } catch (e) {
+                            console.debug('Retry exception:', e);
+                        }
+                    });
             }
         }
     } catch (e) {
@@ -137,10 +186,30 @@ function playRegistrationSuccessSound() {
             // Pause and reset to beginning
             registrationAudioObjects.regSuccess.pause();
             registrationAudioObjects.regSuccess.currentTime = 0;
-            // Play with promise handling
+            
+            // Force load if not loaded
+            if (registrationAudioObjects.regSuccess.readyState < 2) {
+                registrationAudioObjects.regSuccess.load();
+            }
+            
+            // Play with promise handling and fallback
             const playPromise = registrationAudioObjects.regSuccess.play();
             if (playPromise !== undefined) {
-                playPromise.catch(err => console.debug('Audio play failed:', err));
+                playPromise
+                    .then(() => {
+                        console.log('✓ Registration success sound played');
+                    })
+                    .catch(err => {
+                        console.warn('Audio play failed (first attempt):', err);
+                        // Retry with fresh audio object
+                        try {
+                            const retryAudio = new Audio('/static/sounds/registration-success-beep.mp3');
+                            retryAudio.volume = 0.5;
+                            retryAudio.play().catch(e => console.debug('Retry failed:', e));
+                        } catch (e) {
+                            console.debug('Retry exception:', e);
+                        }
+                    });
             }
         }
     } catch (e) {

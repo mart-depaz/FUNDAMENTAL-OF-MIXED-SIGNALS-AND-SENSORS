@@ -21,20 +21,36 @@ IS_ORACLE = os.environ.get('ORACLE') == 'true'
 IS_PRODUCTION = os.environ.get('PRODUCTION', 'false').lower() == 'true' or IS_RENDER or IS_ORACLE
 
 # ALLOWED_HOSTS: default to '*' in development; in production set via env var
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',') if os.environ.get('ALLOWED_HOSTS') else ['*']
-ALLOWED_HOSTS = ['192.168.1.16', '*']
+# Add Cloudflare tunnel domains (both named and quick tunnels)
+ALLOWED_HOSTS = [
+    '192.168.1.10', 
+    'localhost', 
+    '127.0.0.1', 
+    '*',
+    '*.cfargotunnel.com',  # Cloudflare tunnel (named)
+    '*.trycloudflare.com',  # Cloudflare quick tunnel
+]
 
 # CSRF trusted origins - include common local dev hosts plus any explicit origins
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost",
     "http://127.0.0.1",
     "http://0.0.0.0:8000",
+    # Cloudflare Tunnel domains
+    "https://*.cfargotunnel.com",  # Cloudflare tunnel (named)
+    "https://*.trycloudflare.com",  # Cloudflare quick tunnel
+    "https://*.yourdomain.com",  # Replace with your actual Cloudflare domain
 ]
 
 # Add any environment-provided trusted origins (comma-separated)
 if os.environ.get('CSRF_TRUSTED_ORIGINS'):
     for origin in os.environ.get('CSRF_TRUSTED_ORIGINS').split(','):
         CSRF_TRUSTED_ORIGINS.append(origin.strip())
+
+# ESP32 Fingerprint Sensor Configuration
+# The IP address of the ESP32 fingerprint sensor on the local network
+# Can be set via environment variable ESP32_IP, defaults to 192.168.1.9
+ESP32_IP = os.environ.get('ESP32_IP', '192.168.1.9')
 
 # Add Render and Cloudflare patterns if present
 CSRF_TRUSTED_ORIGINS.extend([
@@ -84,7 +100,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'channels',  # Channels support
-    'dashboard',
+    'dashboard.apps.DashboardConfig',
     'accounts',
 ]
 
@@ -256,7 +272,8 @@ CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
 if DEBUG:
     CACHES = {
         'default': {
-            'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'biometric-detection-cache',
         }
     }
 
@@ -268,3 +285,8 @@ CHANNEL_LAYERS = {
         'BACKEND': 'channels.layers.InMemoryChannelLayer'
     }
 }
+
+# Authentication URLs
+LOGIN_URL = '/'  # Redirect to root login page
+LOGIN_REDIRECT_URL = '/dashboard/student-dashboard/'  # Redirect after successful login
+LOGOUT_REDIRECT_URL = '/'  # Redirect after logout

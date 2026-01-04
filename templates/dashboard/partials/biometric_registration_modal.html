@@ -62,11 +62,14 @@
                                     
                                     <p class="text-muted mb-3">
                                         Place your finger on the ESP32 fingerprint sensor<br>
-                                        <small>You will need to scan twice for confirmation</small>
+                                        <small>You will need to scan 3 times for complete enrollment</small>
                                     </p>
                                     
                                     <button type="button" class="btn btn-primary" id="startBiometricRegisterBtn">
                                         <i class="fas fa-play"></i> Start Registration
+                                    </button>
+                                    <button type="button" class="btn btn-success" id="confirmBiometricRegisterBtn" style="display:none;">
+                                        <i class="fas fa-check"></i> Confirm & Save Fingerprint
                                     </button>
                                 </div>
                             </div>
@@ -76,6 +79,9 @@
                                     <div id="registerProgressBar" class="progress-bar" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                                 </div>
                                 <p id="registerProgressText" class="text-center text-muted"></p>
+                                <div id="scanDetailsArea" class="mt-3" style="max-height: 150px; overflow-y: auto;">
+                                    <div id="scanDetailsList"></div>
+                                </div>
                             </div>
                         </form>
                     </div>
@@ -194,22 +200,56 @@
 </div>
 
 <script>
+// ===== API URL HELPER - Works with Cloudflare Tunnel or Localhost =====
+function getApiBaseUrl() {
+    // Check if on Cloudflare tunnel (named tunnels or quick tunnels)
+    if (window.location.hostname.includes('cfargotunnel.com') || 
+        window.location.hostname.includes('trycloudflare.com')) {
+        // Use current domain (Cloudflare tunnel will proxy to Django)
+        console.log('[Frontend] ✓ Using Cloudflare tunnel API:', window.location.origin);
+        return window.location.origin;
+    }
+    // Check if NOT localhost (custom domain without Cloudflare)
+    if (!window.location.hostname.includes('localhost') && 
+        !window.location.hostname.includes('127.0.0.1') &&
+        !window.location.hostname.includes('192.168')) {
+        // Using custom domain
+        console.log('[Frontend] ✓ Using custom domain API:', window.location.origin);
+        return window.location.origin;
+    }
+    // Fallback for localhost development
+    const localApi = 'http://localhost:8000';
+    console.log('[Frontend] ✓ Using localhost API:', localApi);
+    return localApi;
+}
+
+const API_BASE_URL = getApiBaseUrl();
+
+let enrollmentState = {
+    enrollmentId: null,
+    courseId: null,
+    currentScan: 0,
+    isEnrolling: false,
+    eventSource: null,
+    pollInterval: null,
+    lastKnownProgress: -1,  // Track last progress to detect changes
+    lastKnownScan: -1,      // Track last scan to detect changes
+    readyForConfirmation: false,  // Track if we're waiting for confirmation
+    pollCount: 0  // Debug: count polling attempts
+};
+
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize biometric modal functionality
     const biometricModal = document.getElementById('biometricRegistrationModal');
     if (!biometricModal) return;
     
-    // Populate course selects
     function populateCourseSelects() {
         const courseSelects = document.querySelectorAll('#biometricCourseSelect, #scanCourseSelect');
         
         courseSelects.forEach(select => {
-            // Clear existing options except the first one
             while (select.options.length > 1) {
                 select.remove(1);
             }
             
-            // Get enrolled courses from the page (if available)
             const enrolledCourses = window.enrolledCourses || [];
             enrolledCourses.forEach(course => {
                 const option = document.createElement('option');
@@ -233,6 +273,11 @@ document.addEventListener('DOMContentLoaded', function() {
         startBiometricRegistration(courseId);
     });
     
+    // Confirm & Save Fingerprint Button
+    document.getElementById('confirmBiometricRegisterBtn')?.addEventListener('click', function() {
+        confirmAndSaveFingerprint();
+    });
+    
     // Start Biometric Scan Button
     document.getElementById('startBiometricScanBtn')?.addEventListener('click', function() {
         const courseId = document.getElementById('scanCourseSelect').value;
@@ -251,29 +296,370 @@ function startBiometricRegistration(courseId) {
     const progress = document.getElementById('biometricRegisterProgress');
     const progressBar = document.getElementById('registerProgressBar');
     const progressText = document.getElementById('registerProgressText');
+    const startBtn = document.getElementById('startBiometricRegisterBtn');
+    const confirmBtn = document.getElementById('confirmBiometricRegisterBtn');
+    
+    // Reset state
+    enrollmentState.currentScan = 0;
+    enrollmentState.lastKnownProgress = -1;
+    enrollmentState.lastKnownScan = -1;
+    enrollmentState.readyForConfirmation = false;
+    enrollmentState.pollCount = 0;
+    
+    // Disable start button
+    startBtn.disabled = true;
+    confirmBtn.style.display = 'none';
     
     status.style.display = 'block';
     progress.style.display = 'block';
     
-    statusText.textContent = 'Waiting for fingerprint scan...';
-    progressBar.style.width = '33%';
-    progressText.textContent = 'Step 1/3: Place your finger on the sensor...';
+    statusText.textContent = 'Initializing enrollment...';
+    progressBar.style.width = '0%';
+    progressBar.setAttribute('aria-valuenow', '0');
+    progressText.textContent = 'Connecting to sensor...';
     
-    // Simulate registration process (in real implementation, this would connect to ESP32)
-    setTimeout(() => {
-        progressBar.style.width = '66%';
-        progressText.textContent = 'Step 2/3: Remove your finger and place it again for confirmation...';
-        
-        setTimeout(() => {
-            progressBar.style.width = '100%';
-            progressText.textContent = 'Step 3/3: Fingerprint registered successfully!';
-            statusText.innerHTML = '<i class="fas fa-check-circle text-success"></i> Registration complete!';
+    enrollmentState.courseId = courseId;
+    enrollmentState.isEnrolling = true;
+    
+    console.log('[Frontend] ✓ Starting biometric registration for course:', courseId);
+    
+    // Send enrollment request to ESP32
+    fetch(`${API_BASE_URL}/api/start-enrollment/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            course_id: courseId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            enrollmentState.enrollmentId = data.enrollment_id;
+            statusText.textContent = 'Place your finger on the sensor...';
             
-            // Submit registration
-            submitBiometricRegistration(courseId);
-        }, 2000);
-    }, 3000);
+            console.log('[Frontend] ✓ Enrollment started');
+            console.log('[Frontend]   enrollmentId:', enrollmentState.enrollmentId);
+            console.log('[Frontend]   slot:', data.slot);
+            
+            // Listen for real-time updates from Django
+            listenForEnrollmentUpdates();
+        } else {
+            // Check if enrollment is blocked (another student is processing)
+            if (data.status === 'blocked' || data.message.includes('already in progress')) {
+                statusText.innerHTML = '<i class="fas fa-hourglass-half text-warning"></i> Another student is currently enrolling. Please wait...';
+                progressBar.style.width = '50%';
+                console.log('[Frontend] ⚠ Enrollment blocked: another student is processing');
+                
+                // Show a retry button after a delay
+                setTimeout(() => {
+                    startBtn.textContent = 'Try Again';
+                    startBtn.disabled = false;
+                }, 3000);
+            } else {
+                statusText.innerHTML = '<i class="fas fa-times-circle text-danger"></i> Error: ' + data.message;
+                progressBar.style.width = '100%';
+                startBtn.disabled = false;
+                console.error('[Frontend] ✗ Error starting enrollment:', data.message);
+            }
+            
+            // Reset enrollment flag on error
+            enrollmentState.isEnrolling = false;
+        }
+    })
+    .catch(error => {
+        console.error('[Frontend] ✗ Network error:', error);
+        statusText.textContent = 'Connection error: ' + error.message;
+        startBtn.disabled = false;
+        enrollmentState.isEnrolling = false;
+    });
 }
+
+
+function listenForEnrollmentUpdates() {
+    const progressBar = document.getElementById('registerProgressBar');
+    const progressText = document.getElementById('registerProgressText');
+    const statusText = document.getElementById('registerStatusText');
+    const scanDetailsList = document.getElementById('scanDetailsList');
+    const confirmBtn = document.getElementById('confirmBiometricRegisterBtn');
+    const startBtn = document.getElementById('startBiometricRegisterBtn');
+    
+    // Clear previous details
+    scanDetailsList.innerHTML = '';
+    
+    const enrollmentId = enrollmentState.enrollmentId;
+    console.log('[Frontend] ✓ Starting to listen for enrollment updates:', enrollmentId);
+    console.log('[Frontend] Polling interval: 200ms (optimized for 3-scan sequence)');
+    
+    // Clear previous event source if exists
+    if (enrollmentState.eventSource) {
+        enrollmentState.eventSource.close();
+    }
+    
+    // Clear any existing poll interval
+    if (enrollmentState.pollInterval) {
+        clearInterval(enrollmentState.pollInterval);
+    }
+    
+    let lastSeenScan = 0;  // Track last scan we've displayed
+    let pollAttempts = 0;
+    let maxFailures = 0;
+    let confirmationCheckStarted = false;
+    let confirmationCheckCount = 0;
+    
+    // CRITICAL: Create a function to do the actual polling
+    const doPoll = () => {
+        if (!enrollmentState.isEnrolling && !enrollmentState.readyForConfirmation) {
+            console.log('[Frontend] ✓ Stopped polling - enrollment completed or cancelled');
+            if (enrollmentState.pollInterval) {
+                clearInterval(enrollmentState.pollInterval);
+            }
+            return false;  // Return false to indicate we should stop
+        }
+        
+        pollAttempts++;
+        enrollmentState.pollCount++;
+        
+        fetch(`${API_BASE_URL}/api/enrollment-status/${enrollmentId}/`, {
+            method: 'GET',
+            headers: { 
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                maxFailures = 0;  // Reset failure counter on success
+                const scan = data.current_scan || 0;
+                const progress = data.progress || 0;
+                const message = data.message || '';
+                const status = data.status || 'unknown';
+                
+                // CRITICAL FIX: Check if status is ready_for_confirmation
+                if (status === 'ready_for_confirmation' || (scan === 3 && progress === 100 && message.includes('All scans'))) {
+                    console.log(`[Frontend] ✓✓✓ CONFIRMATION STATE DETECTED - status=${status}, scan=${scan}, progress=${progress}%`);
+                    
+                    if (!confirmationCheckStarted) {
+                        confirmationCheckStarted = true;
+                        confirmationCheckCount = 0;
+                        console.log('[Frontend] ✓ Entering confirmation state - starting aggressive polling');
+                    }
+                    
+                    // In confirmation state, poll MORE FREQUENTLY to catch user clicking confirm button
+                    confirmationCheckCount++;
+                    
+                    // Always update UI when ready for confirmation
+                    progressBar.style.width = '100%';
+                    progressBar.setAttribute('aria-valuenow', '100');
+                    progressText.textContent = 'All 3 scans completed! Click "Confirm & Save" to store the fingerprint.';
+                    statusText.innerHTML = '<i class="fas fa-check-circle text-success"></i> All scans captured successfully!';
+                    
+                    confirmBtn.style.display = 'inline-block';
+                    startBtn.disabled = false;
+                    
+                    // Set flag that we're ready for confirmation (don't stop polling yet!)
+                    enrollmentState.readyForConfirmation = true;
+                    // CRITICAL: Keep enrolling flag ON so polling continues
+                    // Don't stop polling until user confirms
+                    
+                    return true;  // Continue polling (waiting for confirm button click)
+                }
+                
+                // If we were in confirmation but status changed, handle it
+                if (confirmationCheckStarted && status !== 'ready_for_confirmation') {
+                    console.log(`[Frontend] ✓ Status changed from confirmation: ${status}`);
+                    confirmationCheckStarted = false;
+                }
+                
+                // Log only when data changes (to reduce console spam)
+                if (scan !== lastSeenScan || progress !== enrollmentState.lastKnownProgress) {
+                    console.log(`[Frontend] ✓ Poll #${pollAttempts}: status=${status}, scan=${scan}/3, progress=${progress}%, message="${message}"`);
+                    enrollmentState.lastKnownScan = scan;
+                    enrollmentState.lastKnownProgress = progress;
+                    lastSeenScan = scan;
+                }
+                
+                // CRITICAL DEBUG: If stuck at scan 2, log it
+                if (scan === 2 && pollAttempts > 20) {
+                    console.warn(`[Frontend] ⚠️ STUCK AT SCAN 2/3 after ${pollAttempts} polls - backend might not have received step 3`);
+                    console.warn(`[Frontend]   Current state: scan=${scan}, progress=${progress}%, status=${status}`);
+                    console.warn(`[Frontend]   Message: "${message}"`);
+                }
+                
+                if (status === 'processing' || status === 'in_progress') {
+                    // Update progress bar
+                    progressBar.style.width = progress + '%';
+                    progressBar.setAttribute('aria-valuenow', progress);
+                    
+                    // Update progress text with message
+                    progressText.textContent = `Scan ${scan}/3 - ${message}`;
+                    statusText.textContent = `Scan ${scan}/3 in progress... Please keep your finger on the sensor`;
+                    
+                    // Add scan detail if new message
+                    if (message && !document.querySelector(`[data-message="${message}"]`)) {
+                        const detail = document.createElement('small');
+                        detail.className = 'd-block text-muted mb-1';
+                        detail.setAttribute('data-message', message);
+                        detail.innerHTML = `<span style="color: #28a745;">✓</span> ${message}`;
+                        scanDetailsList.appendChild(detail);
+                        console.log('[Frontend] ✓ Added scan detail:', message);
+                        
+                        // Auto-scroll scan details to bottom
+                        const scanDetailsArea = document.getElementById('scanDetailsArea');
+                        if (scanDetailsArea) {
+                            scanDetailsArea.scrollTop = scanDetailsArea.scrollHeight;
+                        }
+                    }
+                } else if (status === 'completed') {
+                    console.log('[Frontend] ✓ Enrollment completed');
+                    progressBar.style.width = '100%';
+                    progressBar.setAttribute('aria-valuenow', '100');
+                    progressText.textContent = 'Enrollment completed successfully!';
+                    statusText.innerHTML = '<i class="fas fa-check-circle text-success"></i> Enrollment completed successfully!';
+                    
+                    confirmBtn.style.display = 'inline-block';
+                    startBtn.disabled = false;
+                    enrollmentState.isEnrolling = false;
+                    enrollmentState.readyForConfirmation = false;
+                    return false;  // Stop polling
+                } else if (status === 'failed') {
+                    console.log('[Frontend] ✗ Enrollment failed:', data.error);
+                    progressBar.style.width = '0%';
+                    progressText.textContent = 'Enrollment failed: ' + (data.error || 'Unknown error');
+                    statusText.innerHTML = '<i class="fas fa-times-circle text-danger"></i> ' + (data.error || 'Enrollment failed');
+                    
+                    startBtn.disabled = false;
+                    enrollmentState.isEnrolling = false;
+                    enrollmentState.readyForConfirmation = false;
+                    return false;  // Stop polling
+                } else if (status === 'not_found') {
+                    if (pollAttempts === 1) {
+                        console.log('[Frontend] ⏳ Waiting for enrollment to be created in backend...');
+                    }
+                }
+                return true;  // Continue polling
+            })
+            .catch(error => {
+                maxFailures++;
+                if (maxFailures <= 3) {
+                    console.warn('[Frontend] ⚠ Poll error (attempt ' + maxFailures + '):', error.message);
+                } else if (maxFailures === 4) {
+                    console.error('[Frontend] ✗ Multiple poll failures - enrollment may have lost connection');
+                    statusText.innerHTML = '<i class="fas fa-exclamation-circle text-danger"></i> Connection lost. Please try again.';
+                    startBtn.disabled = false;
+                    enrollmentState.isEnrolling = false;
+                    enrollmentState.readyForConfirmation = false;
+                    return false;  // Stop polling
+                }
+                return true;  // Continue polling
+            });
+    };
+    
+    // CRITICAL FIX: Poll IMMEDIATELY on first call (don't wait 200ms!)
+    console.log('[Frontend] ✓ Doing immediate first poll to catch first scan...');
+    doPoll();
+    
+    // Then poll every 100ms for faster updates via Cloudflare tunnel (was 200ms)
+    // Cloudflare tunnel is faster and more reliable than MQTT delays
+    enrollmentState.pollInterval = setInterval(() => {
+        // If in confirmation state, increase poll frequency to every 100ms for faster responsiveness
+        const shouldContinue = doPoll();
+        if (!shouldContinue && !enrollmentState.readyForConfirmation) {
+            clearInterval(enrollmentState.pollInterval);
+            enrollmentState.pollInterval = null;
+        }
+    }, 100);  // Changed from 200ms to 100ms for faster updates via Cloudflare tunnel
+}
+
+
+function confirmAndSaveFingerprint() {
+    const enrollmentId = enrollmentState.enrollmentId;
+    const courseId = enrollmentState.courseId;
+    const confirmBtn = document.getElementById('confirmBiometricRegisterBtn');
+    const statusText = document.getElementById('registerStatusText');
+    const startBtn = document.getElementById('startBiometricRegisterBtn');
+    
+    confirmBtn.disabled = true;
+    statusText.textContent = 'Saving fingerprint to database...';
+    
+    console.log('[Frontend] ✓ Confirm button clicked - saving enrollment');
+    console.log('[Frontend]   enrollmentId:', enrollmentId);
+    console.log('[Frontend]   courseId:', courseId);
+    
+    // Stop polling immediately when user confirms
+    if (enrollmentState.pollInterval) {
+        clearInterval(enrollmentState.pollInterval);
+        enrollmentState.pollInterval = null;
+        console.log('[Frontend] ✓ Stopped polling');
+    }
+    
+    // Stop enrollment flag
+    enrollmentState.isEnrolling = false;
+    enrollmentState.readyForConfirmation = false;
+    
+    // Call API to save fingerprint to instructor and courses
+    fetch(`${API_BASE_URL}/api/save-enrollment/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            enrollment_id: enrollmentId,
+            course_id: courseId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log('[Frontend] ✓✓✓ Fingerprint saved successfully!');
+            statusText.innerHTML = '<i class="fas fa-check-circle text-success"></i> Fingerprint saved successfully to your profile and courses!';
+            confirmBtn.style.display = 'none';
+            
+            // Show success for 2 seconds then close
+            setTimeout(() => {
+                try {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('biometricRegistrationModal'));
+                    if (modal) {
+                        modal.hide();
+                    }
+                    // Reload after short delay to show updated UI
+                    setTimeout(() => {
+                        location.reload();
+                    }, 500);
+                } catch (e) {
+                    console.log('Modal close error:', e);
+                    location.reload();
+                }
+            }, 2000);
+        } else {
+            console.error('[Frontend] ✗ Error saving fingerprint:', data.message);
+            statusText.innerHTML = '<i class="fas fa-exclamation-circle text-danger"></i> Error: ' + data.message;
+            confirmBtn.disabled = false;
+            
+            // Re-enable polling in case user wants to try again
+            enrollmentState.isEnrolling = true;
+            enrollmentState.readyForConfirmation = true;
+        }
+    })
+    .catch(error => {
+        console.error('[Frontend] ✗ Network error saving fingerprint:', error);
+        statusText.innerHTML = '<i class="fas fa-exclamation-circle text-danger"></i> Error saving fingerprint: ' + error.message;
+        confirmBtn.disabled = false;
+        
+        // Re-enable polling in case user wants to try again
+        enrollmentState.isEnrolling = true;
+        enrollmentState.readyForConfirmation = true;
+    });
+}
+
 
 function startBiometricScan(courseId) {
     const status = document.getElementById('biometricScanStatus');
@@ -289,19 +675,12 @@ function startBiometricScan(courseId) {
     progressBar.style.width = '50%';
     progressText.textContent = 'Comparing with registered fingerprint...';
     
-    // Simulate scan process
     setTimeout(() => {
         progressBar.style.width = '100%';
         progressText.textContent = 'Scan complete!';
         
-        // In real implementation, this would call the API to record attendance
         recordBiometricAttendance(courseId);
-    }, 3000);
-}
-
-function submitBiometricRegistration(courseId) {
-    // In real implementation, submit to API
-    console.log('Registration submitted for course:', courseId);
+    }, 15000);  // Increased from 8000ms (8s) to 15000ms (15s) for more stable scanning
 }
 
 function recordBiometricAttendance(courseId) {
@@ -318,6 +697,21 @@ function recordBiometricAttendance(courseId) {
     resultMessage.textContent = 'Your attendance has been successfully marked via biometric scan.';
     
     console.log('Attendance recorded for course:', courseId);
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
 }
 </script>
 

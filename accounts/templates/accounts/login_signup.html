@@ -1264,8 +1264,15 @@
                 const message = document.getElementById('signup-message');
                 message.classList.add('hidden');
                 if (data.success) {
-                    message.textContent = data.message || '✅ Your teacher account has been created successfully! Redirecting to dashboard...';
-                    message.className = 'message success';
+                    const successMsg = data.message || '✅ Your teacher account has been created successfully! Redirecting to dashboard...';
+                    if (typeof showNotification === 'function') {
+                        showNotification(successMsg, 'success');
+                    } else {
+                        message.textContent = successMsg;
+                        message.className = 'message success';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                     setTimeout(() => {
                         if (data.redirect) {
                             window.location.href = data.redirect;
@@ -1274,19 +1281,29 @@
                         }
                     }, 1000);
                 } else {
-                    message.textContent = data.message || '❌ An error occurred during signup.';
-                    message.className = 'message error';
+                    const errorMsg = data.message || '❌ An error occurred during signup.';
+                    if (typeof showNotification === 'function') {
+                        showNotification(errorMsg, 'error');
+                    } else {
+                        message.textContent = errorMsg;
+                        message.className = 'message error';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                 }
-                message.classList.remove('hidden');
-                showMessageWithFade(message);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
             }).catch(error => {
-                const message = document.getElementById('signup-message');
-                message.classList.remove('hidden');
-                message.textContent = '❌ An unexpected error occurred. Please try again later.';
-                message.className = 'message error';
-                showMessageWithFade(message);
+                const errorMsg = '❌ An unexpected error occurred. Please try again later.';
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                } else {
+                    const message = document.getElementById('signup-message');
+                    message.classList.remove('hidden');
+                    message.textContent = errorMsg;
+                    message.className = 'message error';
+                    showMessageWithFade(message);
+                }
                 console.error('Fetch error:', error);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
@@ -1313,8 +1330,15 @@
                 const message = document.getElementById('signup-message');
                 message.classList.add('hidden');
                 if (data.success) {
-                    message.textContent = data.message || '✅ Your student account has been created successfully! Redirecting to dashboard...';
-                    message.className = 'message success';
+                    const successMsg = data.message || '✅ Your student account has been created successfully! Redirecting to dashboard...';
+                    if (typeof showNotification === 'function') {
+                        showNotification(successMsg, 'success');
+                    } else {
+                        message.textContent = successMsg;
+                        message.className = 'message success';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                     setTimeout(() => {
                         if (data.redirect) {
                             window.location.href = data.redirect;
@@ -1323,19 +1347,29 @@
                         }
                     }, 1000);
                 } else {
-                    message.textContent = data.message || '❌ An error occurred during signup.';
-                    message.className = 'message error';
+                    const errorMsg = data.message || '❌ An error occurred during signup.';
+                    if (typeof showNotification === 'function') {
+                        showNotification(errorMsg, 'error');
+                    } else {
+                        message.textContent = errorMsg;
+                        message.className = 'message error';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                 }
-                message.classList.remove('hidden');
-                showMessageWithFade(message);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
             }).catch(error => {
-                const message = document.getElementById('signup-message');
-                message.classList.remove('hidden');
-                message.textContent = '❌ An unexpected error occurred. Please try again later.';
-                message.className = 'message error';
-                showMessageWithFade(message);
+                const errorMsg = '❌ An unexpected error occurred. Please try again later.';
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                } else {
+                    const message = document.getElementById('signup-message');
+                    message.classList.remove('hidden');
+                    message.textContent = errorMsg;
+                    message.className = 'message error';
+                    showMessageWithFade(message);
+                }
                 console.error('Fetch error:', error);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
@@ -1365,23 +1399,40 @@
                     document.getElementById('forgot-header-text').textContent = 'Step 2: Enter Verification Code';
                     document.getElementById('verify-form').classList.add('hidden');
                     document.getElementById('code-verification-form').classList.remove('hidden');
-                    message.textContent = data.message || `✅ Verification code sent to ${data.email}. Please check your inbox (and spam/junk folder).`;
-                    message.className = 'message success';
+                    const successMsg = data.message || `✅ Verification code sent to ${data.email}. Please check your inbox (and spam/junk folder).`;
+                    if (typeof showNotification === 'function') {
+                        showNotification(successMsg, 'success');
+                    } else {
+                        message.textContent = successMsg;
+                        message.className = 'message success';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                     verifiedEmail = data.email;
                 } else {
-                    message.textContent = data.message || '❌ An error occurred. Please try again.';
-                    message.className = 'message error';
+                    const errorMsg = data.message || '❌ An error occurred. Please try again.';
+                    if (typeof showNotification === 'function') {
+                        showNotification(errorMsg, 'error');
+                    } else {
+                        message.textContent = errorMsg;
+                        message.className = 'message error';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                 }
-                message.classList.remove('hidden');
-                showMessageWithFade(message);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
             }).catch(error => {
-                const message = document.getElementById('forgot-message');
-                message.classList.remove('hidden');
-                message.textContent = '❌ An unexpected error occurred. Please try again later.';
-                message.className = 'message error';
-                showMessageWithFade(message);
+                const errorMsg = '❌ An unexpected error occurred. Please try again later.';
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                } else {
+                    const message = document.getElementById('forgot-message');
+                    message.classList.remove('hidden');
+                    message.textContent = errorMsg;
+                    message.className = 'message error';
+                    showMessageWithFade(message);
+                }
                 console.error('Fetch error:', error);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
@@ -1411,22 +1462,39 @@
                     document.getElementById('forgot-header-text').textContent = 'Step 3: Enter New Password';
                     document.getElementById('code-verification-form').classList.add('hidden');
                     document.getElementById('reset-password-form').classList.remove('hidden');
-                    message.textContent = '✅ Code verified. Please set your new password below.';
-                    message.className = 'message success';
+                    const successMsg = '✅ Code verified. Please set your new password below.';
+                    if (typeof showNotification === 'function') {
+                        showNotification(successMsg, 'success');
+                    } else {
+                        message.textContent = successMsg;
+                        message.className = 'message success';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                 } else {
-                    message.textContent = data.message || '❌ Incorrect code. Please try again.';
-                    message.className = 'message error';
+                    const errorMsg = data.message || '❌ Incorrect code. Please try again.';
+                    if (typeof showNotification === 'function') {
+                        showNotification(errorMsg, 'error');
+                    } else {
+                        message.textContent = errorMsg;
+                        message.className = 'message error';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                 }
-                message.classList.remove('hidden');
-                showMessageWithFade(message);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
             }).catch(error => {
-                const message = document.getElementById('forgot-message');
-                message.classList.remove('hidden');
-                message.textContent = '❌ An unexpected error occurred. Please try again later.';
-                message.className = 'message error';
-                showMessageWithFade(message);
+                const errorMsg = '❌ An unexpected error occurred. Please try again later.';
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                } else {
+                    const message = document.getElementById('forgot-message');
+                    message.classList.remove('hidden');
+                    message.textContent = errorMsg;
+                    message.className = 'message error';
+                    showMessageWithFade(message);
+                }
                 console.error('Fetch error:', error);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
@@ -1453,25 +1521,42 @@
                 const message = document.getElementById('forgot-message');
                 message.classList.add('hidden');
                 if (data.success) {
-                    message.textContent = '🎉 Your password has been successfully reset! You can now log in.';
-                    message.className = 'message success';
+                    const successMsg = '🎉 Your password has been successfully reset! You can now log in.';
+                    if (typeof showNotification === 'function') {
+                        showNotification(successMsg, 'success');
+                    } else {
+                        message.textContent = successMsg;
+                        message.className = 'message success';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                     setTimeout(() => {
                         switchSection('login-tab', 'login-section');
                     }, 2000);
                 } else {
-                    message.textContent = data.message || '❌ An error occurred. Please try again.';
-                    message.className = 'message error';
+                    const errorMsg = data.message || '❌ An error occurred. Please try again.';
+                    if (typeof showNotification === 'function') {
+                        showNotification(errorMsg, 'error');
+                    } else {
+                        message.textContent = errorMsg;
+                        message.className = 'message error';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                 }
-                message.classList.remove('hidden');
-                showMessageWithFade(message);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
             }).catch(error => {
-                const message = document.getElementById('forgot-message');
-                message.classList.remove('hidden');
-                message.textContent = '❌ An unexpected error occurred. Please try again later.';
-                message.className = 'message error';
-                showMessageWithFade(message);
+                const errorMsg = '❌ An unexpected error occurred. Please try again later.';
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                } else {
+                    const message = document.getElementById('forgot-message');
+                    message.classList.remove('hidden');
+                    message.textContent = errorMsg;
+                    message.className = 'message error';
+                    showMessageWithFade(message);
+                }
                 console.error('Fetch error:', error);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
@@ -1499,27 +1584,45 @@
                 const message = document.getElementById('forgot-message');
                 message.classList.add('hidden');
                 if (data.success) {
-                    message.textContent = data.message || `✅ Code resent to ${verifiedEmail}. Please check your inbox (and spam/junk folder).`;
-                    message.className = 'message success';
+                    const successMsg = data.message || `✅ Code resent to ${verifiedEmail}. Please check your inbox (and spam/junk folder).`;
+                    if (typeof showNotification === 'function') {
+                        showNotification(successMsg, 'success');
+                    } else {
+                        message.textContent = successMsg;
+                        message.className = 'message success';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                 } else {
-                    message.textContent = data.message || '❌ Failed to resend code. Please try again.';
-                    message.className = 'message error';
+                    const errorMsg = data.message || '❌ Failed to resend code. Please try again.';
+                    if (typeof showNotification === 'function') {
+                        showNotification(errorMsg, 'error');
+                    } else {
+                        message.textContent = errorMsg;
+                        message.className = 'message error';
+                        message.classList.remove('hidden');
+                        showMessageWithFade(message);
+                    }
                 }
-                message.classList.remove('hidden');
-                showMessageWithFade(message);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
             }).catch(error => {
-                const message = document.getElementById('forgot-message');
-                message.classList.remove('hidden');
-                message.textContent = '❌ An unexpected error occurred. Please try again later.';
-                message.className = 'message error';
-                showMessageWithFade(message);
+                const errorMsg = '❌ An unexpected error occurred. Please try again later.';
+                if (typeof showNotification === 'function') {
+                    showNotification(errorMsg, 'error');
+                } else {
+                    const message = document.getElementById('forgot-message');
+                    message.classList.remove('hidden');
+                    message.textContent = errorMsg;
+                    message.className = 'message error';
+                    showMessageWithFade(message);
+                }
                 console.error('Fetch error:', error);
                 submitBtn.classList.remove('loading');
                 submitBtn.disabled = false;
             });
         });
+
     </script>
 </body>
 </html>

@@ -8,11 +8,15 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import re_path
 from library_root import status_views
+from dashboard import views as dashboard_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('accounts.urls')),  # For login/signup
     path('dashboard/', include('dashboard.urls')),  # Include dashboard URLs with namespace
+    # API routes without /dashboard/ prefix for biometric detection
+    path('api/instructor/attendance/start/', dashboard_views.instructor_start_biometric_detection_view, name='api_instructor_start_biometric_detection'),
+    path('api/instructor/attendance/stop/', dashboard_views.instructor_stop_biometric_detection_view, name='api_instructor_stop_biometric_detection'),
     # Health and live checks
     path('health/', status_views.health_view, name='health'),
     path('live/', status_views.live_view, name='live'),

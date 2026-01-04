@@ -504,10 +504,12 @@ class BiometricRegistration(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Biometric Registration'
         verbose_name_plural = 'Biometric Registrations'
-        unique_together = [['student', 'course']]  # One biometric per student per course
+        unique_together = [['student', 'course']]  # One biometric registration per student per course
+        # Removed unique constraint on (student, fingerprint_id) to allow same fingerprint across courses
         indexes = [
             models.Index(fields=['course', 'is_active']),
             models.Index(fields=['student', 'is_active']),
+            models.Index(fields=['fingerprint_id', 'course', 'is_active']),  # Optimize fingerprint + course lookups
         ]
     
     def __str__(self):

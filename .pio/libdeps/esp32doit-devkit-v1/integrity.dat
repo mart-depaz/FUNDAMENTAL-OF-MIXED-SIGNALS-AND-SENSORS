@@ -1,0 +1,6 @@
+WiFi
+ArduinoJson@^6.21.0
+PubSubClient@^2.8.0
+HTTPClient
+Adafruit Fingerprint Sensor Library@^2.1.0
+WebServer

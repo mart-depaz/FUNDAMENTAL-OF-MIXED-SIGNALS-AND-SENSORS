@@ -84,303 +84,54 @@ templates folder : library_system/templates/dashboard/schedule.html
        ULTRA-SMALL MOBILE PORTRAIT (320px - 479px)
        ======================================== */
     @media (max-width: 479px) {
-        /* Override parent main-content positioning for schedule content */
+        body {
+            margin: 0 !important;
+            padding-top: var(--teacher-header-offset, 0px) !important;
+        }
+
         main#main-content {
-            position: relative !important;
-            height: auto !important;
             padding: 0 !important;
             margin: 0 !important;
         }
 
-        /* Inner wrapper in student.html - ensure it's full width and uses grid */
         main#main-content > div {
-            width: 100vw !important;
-            padding: 0 !important;
+            padding: 0.5rem !important;
             margin: 0 !important;
-            margin-left: calc(-50vw + 50%) !important;
             border-radius: 0 !important;
-            background: white !important;
             box-shadow: none !important;
-            display: grid !important;
-            grid-template-columns: 1fr !important;
-            gap: 0 !important;
-        }
-
-        /* Make the div wrapper inside main-content a grid for schedule layout */
-        div:has(#schedule-view) {
-            display: grid !important;
-            grid-template-columns: 1fr !important;
-            gap: 0 !important;
-            width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-        }
-
-        /* HIDE ALL H2 headings */
-        h2 {
-            display: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            height: 0 !important;
-            line-height: 0 !important;
-            visibility: hidden !important;
-        }
-
-        /* HIDE ALL P paragraphs */
-        p {
-            display: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            height: 0 !important;
-            line-height: 0 !important;
-            visibility: hidden !important;
-        }
-
-        /* HIDE ALL DIV elements that are NOT #schedule-view or #controls */
-        div:not(#schedule-view):not(#controls):not([class*="flex"]):not([class*="grid"]) {
-            display: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            height: 0 !important;
-            line-height: 0 !important;
-            visibility: hidden !important;
-        }
-
-        /* AGGRESSIVE: Hide by specific classes - any div with these classes */
-        div[class*="mb-"],
-        div[class*="bg-indigo"],
-        div[class*="bg-yellow"],
-        div[class*="bg-red"],
-        div[class*="text-yellow"],
-        div[class*="text-indigo"],
-        div[class*="shadow"],
-        div[class*="border-yellow"],
-        div[class*="border-indigo"],
-        section:not(#controls) {
-            display: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            height: 0 !important;
-            line-height: 0 !important;
-            visibility: hidden !important;
-            overflow: hidden !important;
-            position: static !important;
-        }
-
-        /* Remove sticky/fixed from any element */
-        * {
-            position: relative !important;
-        }
-
-        #schedule-view,
-        #controls {
-            position: relative !important;
-        }
-
-        /* Remove margin-bottom from any elements that might create gaps */
-        h2, h3, h4, h5, h6, p {
-            margin: 0 !important;
-            margin-bottom: 0 !important;
-            padding: 0 !important;
-            line-height: 1 !important;
-        }
-
-        /* Remove all margin-bottom utilities */
-        [class*="mb-"] {
-            margin-bottom: 0 !important;
-        }
-
-        [class*="mt-"] {
-            margin-top: 0 !important;
-        }
-
-        [class*="p-"] {
-            padding: 0 !important;
-        }
-
-        /* Schedule view - APPEARS AT TOP */
-        #schedule-view {
-            display: block !important;
-            padding: 0 !important;
-            border-radius: 0 !important;
-            margin: 0 !important;
-            overflow-x: auto !important;
-            -webkit-overflow-scrolling: touch !important;
-            box-shadow: none !important;
-            border: none !important;
-            width: 100% !important;
-            min-height: auto !important;
             background: white !important;
-            position: relative !important;
-            top: 0 !important;
         }
 
-        /* Controls section */
         #controls {
-            display: flex !important;
             flex-wrap: wrap !important;
-            gap: 0.15rem !important;
-            margin: 0 !important;
-            padding: 0.15rem !important;
-            justify-content: flex-start !important;
-            background: white !important;
+            gap: 0.5rem !important;
+            align-items: flex-start !important;
         }
 
         #controls input,
         #controls select,
         #controls button {
-            padding: 0.25rem 0.35rem !important;
-            font-size: 0.6rem !important;
-            margin: 0 !important;
-            height: auto !important;
-            line-height: 1.2 !important;
-            white-space: nowrap !important;
-            flex-shrink: 0 !important;
+            width: 100% !important;
         }
 
-        /* Section heading - ultra-minimal */
-        #schedule-view h3 {
-            font-size: 0.8rem !important;
-            margin: 0 0 0.3rem 0 !important;
-            padding: 0 !important;
-            line-height: 1.1 !important;
+        #schedule-view {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
         }
 
-        /* Loading spinner - minimal */
-        #schedule-view #loading-spinner {
-            padding: 0.35rem !important;
-            margin: 0 !important;
-            font-size: 0.65rem !important;
-        }
-
-        /* Table styling - CRITICAL */
         #schedule-table {
-            font-size: 0.55rem !important;
             min-width: 100% !important;
-            margin: 0 !important;
-            border-collapse: collapse !important;
-            border-spacing: 0 !important;
+            font-size: 0.75rem !important;
         }
 
-        /* Table header */
-        #schedule-table thead {
-            display: table-header-group !important;
-        }
-
-        #schedule-table thead tr {
-            display: table-row !important;
-        }
-
-        #schedule-table thead th {
-            padding: 0.2rem 0.08rem !important;
-            font-size: 0.55rem !important;
-            text-align: center !important;
-            font-weight: 600 !important;
-            border: 0.5px solid #e5e7eb !important;
-        }
-
-        /* Time column */
-        #schedule-table td:first-child,
-        #schedule-table th:first-child {
-            width: 30px !important;
-            min-width: 30px !important;
-            max-width: 30px !important;
-            padding: 0.15rem 0.08rem !important;
-            font-size: 0.5rem !important;
-        }
-
-        /* Table body cells */
-        #schedule-table tbody tr {
-            display: table-row !important;
-        }
-
+        #schedule-table thead th,
         #schedule-table tbody td {
-            padding: 0.15rem 0.08rem !important;
-            font-size: 0.55rem !important;
-            border: 0.5px solid #e5e7eb !important;
+            padding: 0.25rem !important;
         }
 
-        /* Course cell styling */
-        #schedule-table tbody td[data-id] {
-            border-radius: 0.2rem !important;
-            padding: 0.2rem 0.1rem !important;
-            box-shadow: none !important;
-            border: 0.5px solid !important;
-        }
-
-        /* Course title in table */
         #schedule-table .timetable-course-title {
-            font-size: 0.55rem !important;
-            line-height: 0.9 !important;
-            -webkit-line-clamp: 1 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-
-        /* Course details text */
-        #schedule-table .text-xs {
-            font-size: 0.48rem !important;
-            line-height: 0.9 !important;
-            margin: 0.08rem 0 !important;
-        }
-
-        /* My Courses section */
-        #schedule-view .grid {
-            grid-template-columns: 1fr !important;
-            gap: 0.3rem !important;
-        }
-
-        /* Course card styling */
-        #schedule-view .border-2 {
-            padding: 0.35rem !important;
-            border-radius: 0.3rem !important;
-            margin: 0 !important;
-        }
-
-        #schedule-view .border-2 h5 {
-            font-size: 0.8rem !important;
-            margin: 0 0 0.2rem 0 !important;
-        }
-
-        #schedule-view .border-2 p {
-            font-size: 0.6rem !important;
-            margin: 0.08rem 0 !important;
-        }
-
-        /* No classes message */
-        #no-classes-message {
-            padding: 0.35rem !important;
-            font-size: 0.65rem !important;
-            margin: 0 !important;
-        }
-
-        /* Remove ALL unnecessary white space */
-        div[class*="space-y"] {
-            gap: 0 !important;
-        }
-
-        /* Content wrapper - remove all padding on mobile */
-        main#main-content > div {
-            padding: 0 !important;
-            margin: 0 !important;
-        }
-
-        /* Parent container - no spacing */
-        body {
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-
-        div {
-            margin: 0 !important;
-        }
-
-        h2, h3, h4, h5, h6 {
-            margin: 0 !important;
-        }
-
-        p {
-            margin: 0 !important;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
         }
     }
 
